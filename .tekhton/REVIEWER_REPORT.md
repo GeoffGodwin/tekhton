@@ -1,36 +1,7 @@
-# Reviewer Report — m36.3 Intake Stage Port (Review Cycle 1)
+# Reviewer Report — m41
 
 ## Verdict
-REPLAN_REQUIRED
-
-**Rationale:** The pipeline is in a structurally broken state that no rework cycle can resolve. m36.3's acceptance criteria are impossible to satisfy in the current codebase:
-
-- m36.3 requires `internal/intake/` (m36.2 deliverable) and `internal/stages/architect/` (m36.1 deliverable) to exist. Both are **absent** from disk.
-- m36.3 requires `internal/intake/testdata/clarifications_golden.md` for the byte-identical CLARIFICATIONS.md parity test. That file does not exist.
-- The `GoImpl: intake.RunStage` registration in `internal/stagerunner/helpers.go` cannot be written because the `internal/stages/intake/` package does not exist.
-- `stages/intake.sh` and both `lib/intake_*.sh` helper files are still present — the bash-delete step cannot run without the Go replacement first landing.
-
-The manifest marks m36.1 and m36.2 as `done`, but verification confirms their code was never committed:
-
-| Deliverable | Expected by | Status |
-|---|---|---|
-| `internal/stages/architect/` | m36.1 | MISSING |
-| `internal/intake/` package | m36.2 | MISSING |
-| `cmd/tekhton/intake.go` | m36.2 | MISSING |
-| `internal/intake/testdata/clarifications_golden.md` | m36.2 | MISSING |
-
-This is the **third consecutive null run** on this branch (same pattern as m36.2 and the two prior runs documented by the coder). Each null run consumes a pipeline attempt without advancing the milestone. A rework cycle would produce a fourth null run for the same reason.
-
-**Required operator action before re-running:**
-1. Reopen m36.1 in the manifest: `tekhton dag advance m36.1 todo`
-2. Reopen m36.2 in the manifest: `tekhton dag advance m36.2 todo`
-3. Implement m36.1 (`internal/stages/architect/`) in a dedicated run
-4. Implement m36.2 (`internal/intake/` + `cmd/tekhton/intake.go`) in a dedicated run
-5. Then re-run m36.3
-
-Alternatively: collapse m36.1 + m36.2 + m36.3 into a single larger milestone scoped to the full intake arc so the entire port lands in one run (the 1,400 LOC estimate is within one Opus session budget).
-
----
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 None
@@ -39,12 +10,34 @@ None
 None
 
 ## Non-Blocking Notes
-- The coder's null-run summary is accurate, well-structured, and correctly diagnoses the dependency gap. The "Observed Issues (out of scope)" section names the exact manifest reconciliation commands needed. No issues with the coder's output itself.
-- The `MANIFEST.cfg` `done` entries for m36.1 and m36.2 represent phantom completions: the harness accepted commits that only touched `.tekhton/DRIFT_LOG.md` / `.tekhton/NON_BLOCKING_LOG.md` as milestone-complete. Once the operator reconciles the manifest, a pipeline-health milestone should tighten the acceptance gate to require at least one non-`.tekhton/` file change before a milestone may be marked `done`.
+- `lib/finalize_commit.sh` is at 287 lines — within the 300-line ceiling but a single future addition will breach it. Consider extracting `_do_git_commit` or the bookkeeping helpers into a `finalize_commit_helpers.sh` before the next touch.
+- `stages/coder.sh` is at 1202 lines — far over the 300-line bash ceiling. This is a pre-existing debt (predates m41); the m41 change was a minimal two-warn-lines-and-remove-call edit. Flag for a dedicated refactor milestone.
 
 ## Coverage Gaps
 None
 
 ## Drift Observations
-- `internal/stages/` contains `cleanup`, `docs`, `security`, `staglog` but not `architect` or `intake`. The m35 arc landed correctly; the m36 arc did not. The asymmetry will confuse future developers reading the package layout. Resolves automatically once manifest is reconciled and the arcs run properly.
-- `internal/stagerunner/helpers.go` presumably still has `Script: "stages/intake.sh"` and `Helpers: [...]` entries for `StageIntake` (the GoImpl registration from m36.3 never ran). This is the correct pre-m36.3 state; flag here so the m36.3 implementer follows the Design §Sequencing note order: land Go entry → register GoImpl → delete bash files → drop Helpers entries.
+- `stages/coder.sh:1202` — The file has ballooned well past the 300-line ceiling through accumulated sub-stage sourcing and feature accretion. The scout / build-fix sub-stages have their own files (`coder_prerun.sh`, `coder_buildfix.sh`) but `run_stage_coder` itself has not been split. A dedicated refactor milestone to extract `_run_coder_milestone_setup`, `_run_coder_main`, and `_run_coder_gates` into companion files would bring this back under control.
+- `lib/finalize_commit.sh:_run_commit_bookkeeping` — execs a `tekhton commit-bookkeeping` subcommand that is not listed in the Architecture Map's Cobra subcommand inventory. If this was added after m21, the architecture map entry should be updated to document it.
+
+---
+
+## Verification Summary
+
+All three m41 goals are present and correct in the already-shipped code (commit `74652dc`):
+
+**Goal 1 — Dotted-id resolution + bold-label support**
+- `lib/milestone_window.sh:74`: `^[0-9]+(\.[0-9]+)?$` regex correctly handles dotted IDs like `49.2` and `40.1`.
+- `lib/milestone_window.sh:110-153` (`_read_milestone_file`): DAG-path wins with glob fallback for `<id>-*.md` and zero-padded variants. `shopt -s nullglob` prevents phantom literal expansions.
+- `lib/milestone_window_build.sh:112` (`_extract_first_paragraph_and_acceptance`): regex `(#+[[:space:]]+|\*\*)?` matches both `## Acceptance Criteria` and `**Acceptance Criteria:**`. `Watch For` / `Seeds Forward` are explicitly exempted from the heading-end check at line 123.
+
+**Goal 2 — Block-unavailable is non-fatal**
+- `stages/coder.sh:256-262`: `set_focused_milestone_block` failure emits two `warn` lines and falls through; no `trip_commit_gate` call.
+- Grep over `stages/` and `lib/` for `trip_commit_gate.*milestone_block_unavailable`: zero matches in production code (only appears in test assertions confirming its absence).
+- Existing hollow-run gates (`coder_did_not_produce_summary`, `completion_gate_failed_substantive_work_only`, `reviewer_did_not_produce_report`, `tester_did_not_produce_report`) remain untouched.
+
+**Goal 3 — Honest single-line diagnostic**
+- `lib/finalize_commit_sentinel.sh:41-53` (`_final_check_reason_read`): reads line 2 of `.final_check_result`, strips `# ` prefix, trims whitespace.
+- `lib/finalize_commit.sh:183-198` (`_hook_commit`): calls `_final_check_reason_read` and prints `Commit blocked: <reason> (see .tekhton/.final_check_result)`. The contradictory `FINAL_CHECK_RESULT=0 / persisted=1` string is demoted to `log_verbose` only.
+
+**Test files**: `tests/test_milestone_window_focused.sh`, `tests/test_coder_block_unavailable_gate.sh`, and `tests/test_finalize_commit_block_reason.sh` are all present on disk. The coder reports 504 shell PASS / 0 FAIL.
