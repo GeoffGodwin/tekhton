@@ -1,103 +1,93 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 6 files (3 primary modified this run + 3 freshness samples), 61 bash
-assertions across 3 primary files, ~20 Go test functions across 3 freshness-sample files.
+Tests audited: 2 files, ~37 assertions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Bold-label Watch For not verified by the extractor bold-label fixture
-- File: tests/test_milestone_window_focused.sh:460-463
-- Issue: `_extract_first_paragraph_and_acceptance` is tested with two markup fixtures.
-  The H2 fixture correctly asserts that `watch one` (from `## Watch For`) survives
-  truncation. The bold-label fixture (`BOLD_FIXTURE`) only asserts that `crit alpha`
-  (the AC body) is present; it does not assert that `**Watch For:**` content (`watch
-  alpha`) is preserved. A regression in the bold-label Watch For path inside the
-  extractor would go undetected because neither the H2 fixture nor the bold-label
-  fixture would catch it — the H2 fixture tests `## Watch For` (H2), not
-  `**Watch For:**` (bold-label).
-- Severity: LOW
-- Action: Add `echo "$output" | grep -q "watch alpha" && result=0 || result=1` and
-  `assert "[m41] extractor keeps **Watch For:** section for bold-label markup" "$result"`
-  after the existing `crit alpha` assertion at line 463.
+#### INTEGRITY: Group 5 always-passes regardless of outcome
+- File: tests/test_milestone_acceptance_noop.sh:236-241
+- Issue: The `if _run_op_was_called; then ... else ... fi` block calls `pass` in
+  both branches, making it a vacuous assertion. The comment on the else branch says
+  "Acceptable: `true` exits 0 so the acceptance still passes; no crash" — but the
+  behavior when `_is_noop_test_cmd` is absent is fully deterministic, not ambiguous.
+  When `_is_noop_test_cmd` is undefined, `declare -f _is_noop_test_cmd &>/dev/null`
+  at `milestone_acceptance.sh:37` returns non-zero, the `&&` short-circuits, and the
+  normal path executes `run_op "Running acceptance tests" bash -c "true"`. The
+  sentinel file is created inside the `$(...)` subshell (filesystem writes persist
+  from subshells), so `_run_op_was_called` will be true. The expected outcome is
+  determined; the test should assert only that outcome.
+  Fix:
+  ```bash
+  if _run_op_was_called; then
+      pass "run_op called when _is_noop_test_cmd absent (falls through to normal path)"
+  else
+      fail "run_op NOT called when _is_noop_test_cmd absent — normal path should have run bash -c 'true'"
+  fi
+  ```
+- Severity: MEDIUM
+- Action: Replace the always-pass if/else with the above definite assertion. The
+  fixed test would catch any future regression where the `declare -f` guard is
+  inverted or the normal path is accidentally gated on the helper's presence.
 
-#### EXERCISE: Structural grep cannot verify runtime firing of warn-and-continue block
-- File: tests/test_coder_block_unavailable_gate.sh:49-61
-- Issue: The test correctly uses structural grep to enforce that the warn strings exist
-  in coder.sh, matching the pattern used by `scripts/wedge-audit.sh` and
-  `tests/test_tekhton_dir_root_cleanliness.sh`. However, grep cannot confirm these
-  warn calls are on a reachable code path — if they were placed inside a dead
-  conditional branch, the test would still pass. This is an inherent limitation of
-  the structural pattern, not a test authoring defect.
+#### COVERAGE: No-op loop omits /usr/bin/true variant
+- File: tests/test_milestone_acceptance_noop.sh:116
+- Issue: The Group 1 loop `for noop in "true" ":" "/bin/true"` exercises 3 of the 5
+  recognized no-op values. `_is_noop_test_cmd` at `hooks_final_checks_helpers.sh:23`
+  also matches `"/usr/bin/true"` and `""` (empty). The empty case is separately tested
+  at line 145-158, but `/usr/bin/true` has no coverage in this integration path. This
+  is LOW because `_is_noop_test_cmd` itself is exercised with all five variants in
+  `tests/test_preflight_noop_test_cmd.sh` (per CODER_SUMMARY.md); the gap here affects
+  only the `check_milestone_acceptance` integration path.
 - Severity: LOW
-- Action: No fix required for this test. A future Go integration test that exercises
-  the coder stage subprocess with a deliberately unresolvable milestone ID would close
-  this gap — but that is scope for a new milestone, not this one.
+- Action: Add `"/usr/bin/true"` to the loop:
+  `for noop in "true" ":" "/bin/true" "/usr/bin/true"`. One additional iteration,
+  no setup required.
 
 ### Rubric Scorecard
 
-**Assertion Honesty — PASS (all three primary files)**
-All assertions derive from real function outputs or implementation-file grep results.
-Expected values are either string constants present in the implementation under test
-(`coder_did_not_produce_summary`, `hollow-run gates remain in effect`,
-`**Watch For:**`) or content from fixture files written by the test itself. No
-tautologies, no always-pass branches, no magic constants unconnected to logic.
+**Assertion Honesty — PASS (test_init_test_cmd_detection.sh); MEDIUM concern
+(test_milestone_acceptance_noop.sh Group 5)**
+All 22 assertions in `test_init_test_cmd_detection.sh` call `_m42_test_cmd_fallback`
+or `_m42_test_cmd_fallback_source` with controlled fixture files; expected values
+(`"cargo test"`, `"go test ./..."`, `"npm test"`, `"pytest"`, etc.) are string
+literals returned by the implementation. For `test_milestone_acceptance_noop.sh`,
+14 of 15 distinct assertion sites are honest; the Group 5 if/else described above
+is the exception.
 
-**Edge Case Coverage — PASS (all three primary files)**
-- test_milestone_window_focused.sh: MILESTONE_MODE=false, empty _CURRENT_MILESTONE,
-  unknown ID (99), cold-start manifest state (M23 regression guard), tight budget
-  with full-content guarantee, dag_number_to_id absent, already-prefixed ID,
-  dotted-id with no manifest row (m49.2), stale DAG file entry → glob fallback (9
-  distinct failure modes).
-- test_coder_block_unavailable_gate.sh: negative assertion (removed pattern absent),
-  positive assertion (replacement warns present), scope assertion (no other occurrence
-  in stages/ or lib/).
-- test_finalize_commit_block_reason.sh: absent sentinel, normal `# reason`, tight
-  `#reason` (no space after #), padded whitespace, missing reason line fallback,
-  in-memory FINAL_CHECK_RESULT path.
+**Edge Case Coverage — PASS (both files)**
+`test_init_test_cmd_detection.sh` covers: npm placeholder rejection, Gemfile without
+rspec, no-manifest (empty), requirements.txt-only Python path (tester addition), all
+tested priority pairings (Cargo > Node, Cargo > requirements.txt, Go > Python,
+pyproject.toml > requirements.txt). `test_milestone_acceptance_noop.sh` covers: three
+no-op forms, empty TEST_CMD, real TEST_CMD (happy path), failing TEST_CMD, and the
+`_is_noop_test_cmd`-absent graceful-degradation path.
 
-**Implementation Exercise — PASS (all three primary files)**
-- test_milestone_window_focused.sh sources and calls `set_focused_milestone_block`,
-  `_read_milestone_file`, and `_extract_first_paragraph_and_acceptance` via the real
-  implementation files. Only `run_build_gate` is stubbed.
-- test_coder_block_unavailable_gate.sh uses grep on the real source file — the
-  accepted structural pattern for large-file invariants in this codebase.
-- test_finalize_commit_block_reason.sh calls `trip_commit_gate` (real, from common.sh),
-  `_final_check_reason_read` (real, from finalize_commit_sentinel.sh), and `_hook_commit`
-  (real, from finalize_commit.sh). `git` is stubbed only to prevent real commits.
+**Implementation Exercise — PASS (both files)**
+Both files source the real implementation files (`lib/init_config_test_cmd.sh`,
+`lib/hooks_final_checks_helpers.sh`, `lib/milestone_acceptance.sh`). Stubs are
+limited to infrastructure dependencies not under test (`parse_milestones`,
+`run_build_gate`, `emit_event`, `save_acceptance_test_output`). The `run_op` stub
+executes the real command (`"$@"`) so exit code propagation is preserved.
 
 **Test Weakening — N/A**
-The TESTER_REPORT claims the three bash files were the only test files modified. All
-assertions in these files appear to be new additions covering previously untested paths
-(dotted-id, stale-DAG, bold-label markup, cold-start manifest). No pre-existing
-assertions were identified as narrowed or removed.
+The TESTER_REPORT states both files were new or had additions only. No pre-existing
+assertions were modified.
 
-**Test Naming — PASS (all three primary files)**
-Pass/fail message strings encode both the scenario and expected outcome. The `[m41]`
-and `[m41-stale]` prefix tags in test_milestone_window_focused.sh make regression
-bisection straightforward. Numbered case labels in test_finalize_commit_block_reason.sh
-(1.1, 2.1, 3.1…) are unambiguous.
+**Test Naming — PASS (both files)**
+Assert messages in `test_init_test_cmd_detection.sh` encode both scenario and expected
+outcome (e.g. `"package.json placeholder rejected"`, `"source is pyproject.toml not
+requirements.txt"`). Group banner lines in `test_milestone_acceptance_noop.sh` set
+clear context; individual pass/fail messages name the specific condition.
 
-**Scope Alignment — PASS (all three primary files)**
-Assertions reference lib/milestone_window.sh (`set_focused_milestone_block`,
-`_read_milestone_file`, `_extract_first_paragraph_and_acceptance`),
-stages/coder.sh (block-unavailable warn pair, hollow-run gates),
-lib/finalize_commit_sentinel.sh (`_final_check_reason_read`), and
-lib/finalize_commit.sh (`_hook_commit`) — exactly the files listed in the
-CODER_SUMMARY. No orphaned references to deleted or renamed functions.
+**Scope Alignment — PASS (both files)**
+All referenced functions (`_m42_test_cmd_fallback`, `_m42_test_cmd_fallback_source`,
+`check_milestone_acceptance`, `_is_noop_test_cmd`, `_record_tests_run_state`) exist
+in the implementation files listed in CODER_SUMMARY.md. No orphaned references.
 
-**Test Isolation — PASS (all three primary files)**
-All fixtures are created under `mktemp -d` and removed on EXIT. TEKHTON_DIR and
-PROJECT_DIR are redirected to the temp root. The `git` function is overridden in
-test_finalize_commit_block_reason.sh to prevent real commits. No test reads mutable
-pipeline artifacts (build reports, causal logs, pipeline state files, or config state).
-
-**Freshness Sample (Go files) — PASS**
-internal/config/sections_test.go, internal/runner/stage_env_uniformity_test.go, and
-internal/runner/tester_test.go were not modified by the m41 run. All three call real
-implementations via targeted fakes (fakePipeline, fakeHooks), have descriptive names,
-and reference only symbols verifiably present in the current Go codebase. No orphaned
-imports or scope misalignment detected. The prior-run finding about
-milestone_validate_test.go env-isolation gaps is unrelated to the files in this sample
-and is not repeated here.
+**Test Isolation — PASS (both files)**
+Both files create fixtures under `mktemp -d` with `trap 'rm -rf "$TEST_TMPDIR" EXIT`.
+`TEKHTON_DIR` is pointed at a per-scenario temp subdirectory for each `_reset` call.
+Neither file reads mutable project artifacts (build reports, causal logs, pipeline
+state, RUN_RESULT.json from the live repo).
