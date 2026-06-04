@@ -168,14 +168,16 @@ func newConfigDefaultsCmd() *cobra.Command {
 				return cfg.EmitShell(cmd.OutOrStdout())
 			case "json":
 				return cfg.EmitJSON(cmd.OutOrStdout(), true)
+			case "pipeline-conf":
+				return cfg.EmitPipelineConf(cmd.OutOrStdout())
 			default:
-				return errExitCode{code: exitUsage, err: fmt.Errorf("--emit must be shell|json (got %q)", emit)}
+				return errExitCode{code: exitUsage, err: fmt.Errorf("--emit must be shell|json|pipeline-conf (got %q)", emit)}
 			}
 		},
 	}
 	c.Flags().StringVar(&projectDir, "project-dir", "", "PROJECT_DIR for relative-path resolution.")
 	c.Flags().BoolVar(&milestoneMode, "milestone-mode", false, "Apply MILESTONE_* overrides.")
-	c.Flags().StringVar(&emit, "emit", "shell", "Output format: shell | json.")
+	c.Flags().StringVar(&emit, "emit", "shell", "Output format: shell | json | pipeline-conf.")
 	return c
 }
 

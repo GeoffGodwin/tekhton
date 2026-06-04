@@ -31,6 +31,64 @@ func (c *Config) EmitShell(w io.Writer) error {
 	return nil
 }
 
+// EmitPipelineConf writes a comprehensive, self-documenting pipeline.conf
+// reference. Every known key appears as a commented `# KEY="value"` line
+// with its default value, so an operator can find any setting by reading
+// the file once and uncomment the lines they want to override.
+//
+// This is the canonical output for templates/pipeline.conf.example and for
+// `tekhton --init`'s "full reference" footer. The user-curated section
+// (PROJECT_NAME, TEST_CMD, ANALYZE_CMD, etc.) lives above the reference
+// block in the init-generated file; this helper produces the reference
+// block alone.
+//
+// Format conventions:
+//   - One blank line precedes each key (visual separator).
+//   - Empty defaults render as `# KEY=""` so the variable form is still
+//     visible — operator can drop the leading `#` and fill in a value
+//     without re-deriving the syntax.
+//   - Values use double-quote rendering since pipeline.conf is bash-sourced
+//     and operators typically write `KEY="value"`. Embedded double quotes
+//     get backslash-escaped to keep the file parseable.
+//   - Keys are emitted in lexicographic order — matches EmitShell and is
+//     reproducible across runs.
+func (c *Config) EmitPipelineConf(w io.Writer) error {
+	header := `# =============================================================================
+# Tekhton pipeline.conf — Full Configuration Reference
+#
+# Every Tekhton-recognized variable is listed below as a commented line with
+# its default value. Uncomment any line to override the default for this
+# project. Custom values you add are preserved by ` + "`tekhton --reinit`" + `.
+#
+# Format: KEY="value" (no spaces around =, quote strings, no trailing comments
+# on the same line as a KEY=).
+#
+# This file is alphabetized for findability. The init generator produces a
+# curated header above this reference with the variables most projects need
+# to set first (PROJECT_NAME, TEST_CMD, ANALYZE_CMD, ARCHITECTURE_FILE).
+# =============================================================================
+`
+	if _, err := fmt.Fprint(w, header); err != nil {
+		return err
+	}
+	keys := make([]string, 0, len(c.Values))
+	for k := range c.Values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := c.Values[k]
+		// Escape backslash first, then double quote, so the result is
+		// safe to drop into bash's `KEY="value"` form unchanged.
+		escaped := strings.ReplaceAll(v, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		if _, err := fmt.Fprintf(w, "\n# %s=\"%s\"\n", k, escaped); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // EmitJSON writes the config as a JSON object. Includes the resolved values,
 // the set of operator-authored keys (`keys_set`), and CI metadata. Used by
 // `tekhton config show --json` for tooling and tests that need structured
