@@ -104,7 +104,9 @@ _generate_smart_config() {
         fi
     fi
 
-    # Write config file (Milestone 22: sectioned format, M83: source annotations)
+    # Write config file (Milestone 22: sectioned format, M83: source annotations).
+    # The sectioned generator produces the curated header that most users
+    # interact with (PROJECT_NAME, TEST_CMD, ANALYZE_CMD, models, turns).
     generate_sectioned_config "$project_name" \
         "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" \
         "$build_cmd" "$build_conf" "$coder_model" \
@@ -112,6 +114,25 @@ _generate_smart_config() {
         "$tester_turns" "$scout_turns" "$required_tools" \
         "$design_file" \
         "$test_source" "$analyze_source" "$build_source" > "$conf_file"
+
+    # Append the Full Configuration Reference — every Tekhton-known variable
+    # listed as a commented `# KEY="default"` line so operators can discover
+    # and uncomment any setting. Generated from internal/config/defaults.go
+    # via `tekhton config defaults --emit pipeline-conf`, so the reference is
+    # always in sync with the canonical defaults table. Failure is non-fatal:
+    # if the binary isn't on PATH (fresh clone, pre-build), the curated
+    # header still works and operators can run `tekhton --reinit` later to
+    # append the reference.
+    local _tk_bin="${TEKHTON_BIN:-tekhton}"
+    if command -v "$_tk_bin" >/dev/null 2>&1; then
+        {
+            echo ""
+            echo ""
+            "$_tk_bin" config defaults --emit pipeline-conf 2>/dev/null
+        } >> "$conf_file" || warn "init: failed to append pipeline-conf reference"
+    else
+        warn "init: ${_tk_bin} not on PATH — skipping Full Configuration Reference appendix"
+    fi
 }
 
 # _extract_ci_command — Extracts a specific command type from CI detection output.
