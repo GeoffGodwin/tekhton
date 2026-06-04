@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	architectstage "github.com/geoffgodwin/tekhton/internal/stages/architect"
 	"github.com/geoffgodwin/tekhton/internal/stages/cleanup"
 	"github.com/geoffgodwin/tekhton/internal/stages/docs"
 	securitystage "github.com/geoffgodwin/tekhton/internal/stages/security"
@@ -228,5 +229,16 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageDocs: {
 		Script: "stages/docs.sh",
 		GoImpl: docs.RunStage,
+	},
+	// m36.1: architect is the fourth Go-native stage. GoImpl takes the
+	// dispatch; Script and Helpers are dropped because the bash file
+	// (stages/architect.sh) is deleted in the same milestone. The
+	// pre-stage gate (drift threshold + --force-audit) stays in the bash
+	// dispatcher (tekhton-legacy.sh) — architect.RunStage assumes the
+	// dispatcher already decided. The four prompt templates
+	// (prompts/architect*.prompt.md) are untouched per the milestone
+	// Watch For block.
+	proto.StageArchitect: {
+		GoImpl: architectstage.RunStage,
 	},
 }

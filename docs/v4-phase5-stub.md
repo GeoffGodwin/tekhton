@@ -84,14 +84,20 @@ in-process dispatch. LOC delta counts bash deleted (stage + helpers + shim).
 | docs      | done — Go-native via `internal/stages/docs/RunStage`  | m34.1     | (see m34.1) |
 | cleanup   | done — Go-native via `internal/stages/cleanup/RunStage` | m34.2   | (see m34.2) |
 | **security** | **done — Go-native via `internal/stages/security/RunStage`; helpers in `internal/security/`; m35.3 ban + parity gate live** | **m35**   | **407** |
-| architect | in flight                                             | m36.1     | TBD         |
+| **architect** | **done — Go-native via `internal/stages/architect/RunStage`; plan parser + sr/jr router in package; m36.1 ban + parity gate live** | **m36.1**   | **414** |
 | intake    | in flight                                             | m36.3     | TBD         |
 | review    | in flight                                             | m37       | TBD         |
 | tester    | in flight                                             | m38       | TBD         |
 | coder     | in flight                                             | m39       | TBD         |
 
-The security row flipped to **done** at m35.3 close (v4.35.0). The Phase 5
-closeout retros and patch-bump tallies per milestone live in
+The security row flipped to **done** at m35.3 close (v4.35.0). The architect
+row flipped to **done** at m36.1 close (v4.43.0) — `stages/architect.sh`
+deleted, `internal/stages/architect/` ported with `RunStage`, plan parser,
+sr/jr remediation router, post-remediation build + expedited-review gates,
+drift integration via `internal/drift/` (M25). Six `tekhton drift ...`
+subprocess execs per audit replaced by in-process Go calls; the four
+prompt templates (`prompts/architect*.prompt.md`) are unchanged. The
+Phase 5 closeout retros and patch-bump tallies per milestone live in
 `docs/go-migration.md`.
 
 ## Candidate ordering

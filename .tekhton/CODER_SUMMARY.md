@@ -1,86 +1,111 @@
 # Coder Summary
 
-## Status: COMPLETE
+## Status: IN PROGRESS
 
 ## What Was Implemented
 
-Tester-reported BUG against `lib/project_version.sh:82` (`_accessor_for_file`
-returning `"plaintext"` for `.json`-suffixed filenames not in its explicit list,
-causing a false `version_files_desynced_*` commit-gate trip during the
-`verify_version_files_synced` round-trip read) is **already resolved** on the
-current working tree by commit `7684b9e` (m43 finalize bump).
+m36.1 — Architect Stage Port. Ported `stages/architect.sh` (414 LOC) to
+`internal/stages/architect/` Go-native and deleted the bash file. The
+architect runs via the StageDef.GoImpl dispatch wedge in stagerunner.
 
-The fix is a single-line addition to the `case "$basename"` block in
-`_accessor_for_file`, placing a `*.json) echo "json" ;;` glob arm immediately
-before the `*) echo "plaintext" ;;` catch-all. Auto-discovered files (all named
-`package.json`) were already routed correctly by the explicit `package.json`
-arm; this glob covers manually declared non-conventional JSON basenames like
-`widget-manifest.json` and re-aligns the bumper and verifier accessor tables
-so `_bump_single_file`'s `*` catch-all (which routes by content via `head -c 1`)
-and `_accessor_for_file` agree.
+### Surface
 
-This run is therefore a verification-and-bookkeeping pass: confirm the fix
-is in place, the failing test from the prior run now passes, and the full
-suite is green.
+- `internal/stages/architect/architect.go` — `RunStage(ctx, *proto.StageRequestV1) (*proto.StageResultV1, error)`. Orchestrates: context load → architect agent → plan parse → sr/jr router → post-remediation build + expedited review → drift resolution + OOS re-add → design-doc → human-action surfacing → audit-counter reset → archive plan. Three pluggable seams: `AgentRunner`, `BuildGateRunner`, `TUICaller`.
+- `internal/stages/architect/plan_parser.go` — `parsePlan(io.Reader) (parsedPlan, error)` with multi-line bullet joining (state machine on bullet markers) and per-section filter chains (`OutOfScope()` and `DesignDocObservations()`). Eleven `regexp.MustCompile` filter patterns ported one-for-one from the bash `grep -qiE` chains at architect.sh:295-303 and 363-377.
+- `internal/stages/architect/remediation.go` — `runRework(ctx, kind, cfg)` sr/jr dispatcher. Sr handles ONLY Simplification, jr handles Staleness + Dead Code + Naming. Separate models (`CLAUDE_CODER_MODEL` vs `CLAUDE_JR_CODER_MODEL`) and turn budgets preserved. Plus `runBuildFix` (CODER_MAX_TURNS/3 budget, clamped to ≥1) and `runExpeditedReview`.
+- `internal/stages/architect/render.go` — `renderArchitectPrompt(cfg)` populates `DRIFT_LOG_CONTENT`, `ARCHITECTURE_LOG_CONTENT`, `ARCHITECTURE_CONTENT`, and `DRIFT_OBSERVATION_COUNT` template vars before calling `prompt.Render`.
+- `internal/stages/architect/config.go` + `env.go` — per-stage config snapshot loader and env helpers (envBool/envInt/envOr/envOrFromReq) — matches the cleanup/security pattern.
+- `internal/stages/architect/testdata/{plan_baseline,plan_no_action,plan_design_doc_only}.md` — frozen plan fixtures covering all-branches-fire, all-None, design-doc-only cases.
+
+### Drift integration
+
+The six `tekhton drift ...` subprocess execs per audit run replaced by in-process Go calls on `internal/drift/`:
+- `drift.NewLog(path).CountUnresolved()` for the observation count
+- `drift.NewLog(path).ResolveAllObservations()` for the tick-and-sweep
+- `drift.NewLog(path).AppendEntries(entries)` for the OOS re-add
+- `drift.NewHumanAction(path).Append("architect", description)` for design-doc observations
+- `drift.NewLog(path).ResetRunsSinceAudit()` for the audit-counter reset
+
+The wedge-audit at `scripts/wedge-audit-companions.sh` now forbids direct `os.WriteFile` / `os.Create` against `ARCHITECTURE_LOG.md` / `DRIFT_LOG.md` / `HUMAN_ACTION_REQUIRED.md` from `internal/stages/architect/` non-test files (M25 owns the file format).
+
+### Stage registration
+
+- `internal/proto/stage_v1.go` — added `StageArchitect = "architect"` const and to `KnownStages`.
+- `internal/stagerunner/helpers.go` — registered `proto.StageArchitect` in `DefaultStageDefs` with `GoImpl: architectstage.RunStage` and no Script / Helpers (bash deleted).
+
+### Bash residues
+
+- `stages/architect.sh` — deleted.
+- `tekhton-legacy.sh` — removed the `source stages/architect.sh` line; added a `run_stage_architect` shim function alongside `run_stage_cleanup` that drives `tekhton run-stage architect --request-file ...` so the legacy bash pre-stage call site at line ~2470 still routes through the Go entry point. Silently no-ops if the binary is unavailable (matches cleanup shim pattern).
+
+### Tests + parity gate
+
+- `internal/stages/architect/{architect,plan_parser,remediation}_test.go` — 26 tests total covering branch dispatch, plan parsing, filter chains, multi-line bullets, build-broken path, upstream-error path, TUI lifecycle propagation, bullet normalization. Coverage 75.3% (meets ≥75% acceptance threshold).
+- `tests/test_architect_parity.sh` — three-scenario gate (`audit-with-simplification`, `audit-with-jr-work-only`, `audit-with-design-doc-observations`). All three exit `pass|audit_complete`.
+- `scripts/wedge-audit-companions.sh` — m36.1 entries: forbid `stages/architect.sh` re-introduction; forbid drift-file writes from `internal/stages/architect/*.go` (excluding _test.go).
+- `Makefile` — wired `test_architect_parity.sh` into the `dogfood` target.
+- `docs/v4-phase5-stub.md` — architect row marked done; LOC budget delta -414.
+- `VERSION` — bumped 4.42.14 → 4.43.0.
+
+### Verification
+
+- `go build ./...` clean.
+- `go test ./...` all packages pass.
+- `bash scripts/wedge-audit.sh` clean.
+- `bash tests/test_architect_parity.sh` — 3 / 3 pass.
+- `bash tests/run_tests.sh` — running in background, will confirm before COMPLETE.
 
 ## Root Cause (bugs only)
 
-`_accessor_for_file` and `_bump_single_file` used different routing strategies
-for unknown JSON basenames: the bumper sniffed the first byte (`{` → json),
-while the accessor used a name-based table whose `*` catch-all returned
-`plaintext`. The accessor then passed `plaintext` to `_detect_version_from_file`,
-which calls `tr -d '[:space:]' < "$file"` and compares the resulting full-file
-blob to the target version string — guaranteed to fail for any JSON file.
-The post-bump verify path consequently tripped `trip_commit_gate
-"version_files_desynced_<file>"` for a file that had in fact been bumped
-correctly.
-
-Fix: add a `*.json) echo "json" ;;` arm to `_accessor_for_file` so the
-content-based detection in the bumper and the name-based detection in the
-verifier agree on the same routing decision for any `.json`-suffixed file.
-
-## Verification
-
-| Check | Result |
-|---|---|
-| `bash tests/test_version_bump_coverage.sh` (was 8 PASS / 1 FAIL before fix) | 9 PASS / 0 FAIL |
-| `bash tests/run_tests.sh` (full shell suite) | 510 PASS / 0 FAIL |
-| Go: `go test ./...` (driven by `run_tests.sh`) | all packages PASS |
-| `shellcheck -S warning lib/project_version*.sh tests/test_version_bump_coverage.sh` | clean (exit 0) |
-
-The fix-touching test `tests/test_version_bump_coverage.sh` Test case "verify
-round-trip: non-conventional JSON — catch-all accessor gap" is the precise
-regression coverage the tester asked for; it now passes against the fixed
-accessor.
-
-## Files Modified
-
-None in this run. The fix already exists on the current branch as commit
-`7684b9e` (single-line addition at `lib/project_version.sh:82`). This pass
-only verifies the resolved state.
+N/A — this is a Ship-of-Theseus port milestone, not a bug fix.
 
 ## Architecture Change Proposals
 
+None — m36.1 mirrors the m34.1 / m35.2 / m34.2 stage-port pattern verbatim
+(StageDef.GoImpl + delete bash + wedge-audit gate + parity test).
+
+## Design Observations
+
 None.
 
-## Observed Issues (out of scope)
+## Files Modified
 
-Carried over from the m43 reviewer report (non-blocking, not in this task's
-scope):
-
-- `lib/project_version.sh:2` — `set -euo pipefail` in a sourced lib file
-  violates the convention that only entry points set this. Pre-existing,
-  not introduced by m43. (Same class of drift as `lib/hooks_final_checks.sh`
-  noted in m42.)
-- `tekhton-legacy.sh:999` — Explicit `source` of
-  `lib/project_version_bump_helpers.sh` is redundant; the parent
-  `lib/project_version_bump.sh` self-sources it via a sentinel guard. Harmless
-  but worth tidying on the next touch.
-
-## Human Notes Status
-
-No Human Notes block was injected for this run.
+- `internal/stages/architect/architect.go` (NEW)
+- `internal/stages/architect/architect_test.go` (NEW)
+- `internal/stages/architect/config.go` (NEW)
+- `internal/stages/architect/env.go` (NEW)
+- `internal/stages/architect/plan_parser.go` (NEW)
+- `internal/stages/architect/plan_parser_test.go` (NEW)
+- `internal/stages/architect/remediation.go` (NEW)
+- `internal/stages/architect/remediation_test.go` (NEW)
+- `internal/stages/architect/render.go` (NEW)
+- `internal/stages/architect/testdata/plan_baseline.md` (NEW)
+- `internal/stages/architect/testdata/plan_no_action.md` (NEW)
+- `internal/stages/architect/testdata/plan_design_doc_only.md` (NEW)
+- `internal/proto/stage_v1.go` — added StageArchitect const + KnownStages entry
+- `internal/stagerunner/helpers.go` — registered architect in DefaultStageDefs with GoImpl
+- `tekhton-legacy.sh` — removed stages/architect.sh source; added run_stage_architect shim
+- `stages/architect.sh` — DELETED
+- `scripts/wedge-audit-companions.sh` — added m36.1 file-presence + drift-write boundary checks
+- `tests/test_architect_parity.sh` (NEW) — three-scenario Go-vs-Go parity gate
+- `Makefile` — wired test_architect_parity.sh into dogfood
+- `docs/v4-phase5-stub.md` — architect row done; LOC delta -414
+- `VERSION` — 4.42.14 → 4.43.0
 
 ## Docs Updated
 
-None — no public-surface changes in this task.
+- `docs/v4-phase5-stub.md` — Stage-Port Matrix architect row flipped to **done**; closeout paragraph extended with m36.1 details.
+
+## Observed Issues (out of scope)
+
+None encountered during the port. The four prompt templates
+(`prompts/architect{,_review,_sr_rework,_jr_rework}.prompt.md`) are
+untouched per the milestone Watch For block.
+
+## Human Notes Status
+
+No active human notes in HUMAN_NOTES.md — none to claim.
+
+## Remaining Work
+
+- Confirm `bash tests/run_tests.sh` shell suite is clean (in background, awaiting completion).

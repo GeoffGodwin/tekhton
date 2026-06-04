@@ -157,6 +157,41 @@ if [[ -n "$_sec_fn_hits" ]]; then
 fi
 unset _sec_fns _sec_fn_hits
 
+# m36.1 (Phase 5, stage-port arc): stages/architect.sh ported to
+# internal/stages/architect/. Re-introducing the file silently forks the
+# architect-stage contract and breaks the StageDef.GoImpl dispatch
+# precedence. The drift integration (DRIFT_LOG.md / ARCHITECTURE_LOG.md /
+# HUMAN_ACTION_REQUIRED.md writes) is owned by internal/drift/ (m25) —
+# direct os.WriteFile against those paths from internal/stages/architect/
+# bypasses the file-format contract.
+if [[ -f stages/architect.sh ]]; then
+    printf 'wedge-audit: m36.1 violation — architect stage was ported in m36.1:\n' >&2
+    printf '  stages/architect.sh re-introduced\n' >&2
+    printf 'The architect stage lives in internal/stages/architect/. Bash callers reach\n' >&2
+    printf 'it via the StageDef.GoImpl dispatch wedge in internal/stagerunner/.\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+
+# m36.1 (Phase 5): the architect stage MUST route drift-owned writes
+# through internal/drift/ (M25 owns the file format). Direct os.WriteFile
+# / os.Create against DRIFT_LOG.md / ARCHITECTURE_LOG.md /
+# HUMAN_ACTION_REQUIRED.md from internal/stages/architect/ forks the
+# contract.
+if [[ -d internal/stages/architect ]]; then
+    # Skip _test.go — test fixtures legitimately seed DRIFT_LOG.md in temp
+    # dirs. The contract is about *production* writes from the package.
+    _arch_drift_hits=$(grep -rlE 'os\.(WriteFile|Create)' internal/stages/architect \
+        --include='*.go' --exclude='*_test.go' 2>/dev/null \
+        | xargs -r grep -lE 'ARCHITECTURE_LOG|DRIFT_LOG|HUMAN_ACTION_REQUIRED' 2>/dev/null || true)
+    if [[ -n "$_arch_drift_hits" ]]; then
+        printf 'wedge-audit: m36.1 violation — internal/stages/architect/ writes drift-owned files directly:\n' >&2
+        printf '%s\n' "$_arch_drift_hits" >&2
+        printf 'Use internal/drift/ entrypoints (M25 owns the file format).\n' >&2
+        companion_failures=$(( companion_failures + 1 ))
+    fi
+    unset _arch_drift_hits
+fi
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1

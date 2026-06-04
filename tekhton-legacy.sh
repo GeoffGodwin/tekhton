@@ -1006,11 +1006,10 @@ source "${TEKHTON_HOME}/lib/orchestrate.sh"
 source "${TEKHTON_HOME}/lib/intake_helpers.sh"
 source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
 source "${TEKHTON_HOME}/stages/intake.sh"
-source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
-# m34.1 + m35.2: the docs and security stages ported to Go (internal/stages/
-# docs/ and internal/stages/security/). Both run via the GoImpl dispatch in
-# stagerunner; there are no bash residues to source here.
+# m34.1 + m35.2 + m36.1: the docs, security, and architect stages ported to
+# Go (internal/stages/{docs,security,architect}/). All run via the GoImpl
+# dispatch in stagerunner; there are no bash residues to source here.
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
@@ -1034,6 +1033,38 @@ source "${TEKHTON_HOME}/stages/tester.sh"
 # entry point.
 should_run_cleanup() { return 1; }
 run_stage_cleanup() { return 0; }
+
+# m36.1: stages/architect.sh ported to internal/stages/architect/. The
+# Go-native architect runs via the StageDef.GoImpl dispatch in
+# stagerunner. This shim drives `tekhton run-stage architect` so the
+# legacy bash pre-stage gate at line ~2470 (drift-threshold-driven audit
+# trigger) still routes through the Go entry point — and silently
+# no-ops when the binary is unavailable (matches the cleanup shim
+# pattern verbatim).
+run_stage_architect() {
+    local bin="${TEKHTON_BIN:-tekhton}"
+    if ! command -v "$bin" >/dev/null 2>&1 && [[ ! -x "$bin" ]]; then
+        warn "[architect] $bin not on PATH — skipping audit (m36.1 Go-only path)."
+        return 0
+    fi
+    local req_file result_file
+    req_file=$(mktemp -t tekhton-architect-request-XXXXXX.json 2>/dev/null \
+        || mktemp 2>/dev/null) \
+        || { warn "[architect] mktemp failed — skipping audit."; return 0; }
+    result_file=$(mktemp -t tekhton-architect-result-XXXXXX.json 2>/dev/null \
+        || mktemp 2>/dev/null) \
+        || { rm -f "$req_file"; warn "[architect] mktemp failed — skipping audit."; return 0; }
+    cat >"$req_file" <<EOF
+{"proto":"tekhton.stage.request.v1","stage":"architect","task":"${TASK:-architect-audit}","result_file":"$result_file"}
+EOF
+    PROJECT_DIR="${PROJECT_DIR:-$PWD}" TEKHTON_HOME="${TEKHTON_HOME:-}" \
+        "$bin" run-stage architect \
+        --request-file "$req_file" \
+        --project-dir "${PROJECT_DIR:-$PWD}" \
+        --tekhton-home "${TEKHTON_HOME:-}" >/dev/null 2>&1 || true
+    rm -f "$req_file" "$result_file"
+    return 0
+}
 
 # m18: stage envelope wrapper. Wraps every run_stage_<name> with a tail block
 # that emits a tekhton.stage.result.v1 envelope to TEKHTON_STAGE_RESULT_FILE

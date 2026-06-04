@@ -21,13 +21,14 @@ const StageResultProtoV1 = "tekhton.stage.result.v1"
 
 // Stage names recognized by the runner.
 const (
-	StageIntake   = "intake"
-	StageCoder    = "coder"
-	StageSecurity = "security"
-	StageReview   = "review"
-	StageTester   = "tester"
-	StageCleanup  = "cleanup"
-	StageDocs     = "docs"
+	StageIntake    = "intake"
+	StageCoder     = "coder"
+	StageSecurity  = "security"
+	StageReview    = "review"
+	StageTester    = "tester"
+	StageCleanup   = "cleanup"
+	StageDocs      = "docs"
+	StageArchitect = "architect"
 )
 
 // Stage verdicts. The bash stage tail blocks emit one of these strings via
@@ -100,6 +101,7 @@ var KnownStages = []string{
 	StageTester,
 	StageCleanup,
 	StageDocs,
+	StageArchitect,
 }
 
 // IsKnownStage reports whether name matches one of the stage constants above.
