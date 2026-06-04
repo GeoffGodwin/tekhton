@@ -79,6 +79,7 @@ _accessor_for_file() {
         setup.cfg|gradle.properties) echo "cfg_version" ;;
         Chart.yaml|pubspec.yaml)    echo "yaml_version" ;;
         VERSION)                    echo "plaintext" ;;
+        *.json)                     echo "json" ;;
         *)                          echo "plaintext" ;;
     esac
 }
