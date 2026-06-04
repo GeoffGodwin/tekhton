@@ -63,30 +63,80 @@ func (c *Config) EmitPipelineConf(w io.Writer) error {
 # Format: KEY="value" (no spaces around =, quote strings, no trailing comments
 # on the same line as a KEY=).
 #
-# This file is alphabetized for findability. The init generator produces a
-# curated header above this reference with the variables most projects need
-# to set first (PROJECT_NAME, TEST_CMD, ANALYZE_CMD, ARCHITECTURE_FILE).
+# Variables are grouped into logical sections. Within each section, keys are
+# alphabetical for findability. The init generator produces a curated header
+# above this reference with the variables most projects need to set first
+# (PROJECT_NAME, TEST_CMD, ANALYZE_CMD, ARCHITECTURE_FILE).
 # =============================================================================
 `
 	if _, err := fmt.Fprint(w, header); err != nil {
 		return err
 	}
-	keys := make([]string, 0, len(c.Values))
+
+	// Bucket keys by section. Sections preserve their declared order;
+	// keys within a section are alphabetical.
+	buckets := make(map[string][]string, len(pipelineConfSections)+1)
 	for k := range c.Values {
-		keys = append(keys, k)
+		buckets[SectionFor(k)] = append(buckets[SectionFor(k)], k)
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := c.Values[k]
-		// Escape backslash first, then double quote, so the result is
-		// safe to drop into bash's `KEY="value"` form unchanged.
-		escaped := strings.ReplaceAll(v, `\`, `\\`)
-		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-		if _, err := fmt.Fprintf(w, "\n# %s=\"%s\"\n", k, escaped); err != nil {
+	for _, keys := range buckets {
+		sort.Strings(keys)
+	}
+
+	for _, section := range SectionsInOrder() {
+		keys, ok := buckets[section.Name]
+		if !ok || len(keys) == 0 {
+			continue
+		}
+		if err := writeSectionHeader(w, section.Name, section.Description, len(keys)); err != nil {
 			return err
+		}
+		for _, k := range keys {
+			v := c.Values[k]
+			// Escape backslash first, then double quote, so the result is
+			// safe to drop into bash's `KEY="value"` form unchanged.
+			escaped := strings.ReplaceAll(v, `\`, `\\`)
+			escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+			if _, err := fmt.Fprintf(w, "\n# %s=\"%s\"\n", k, escaped); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// writeSectionHeader writes a banner-style section header to w with a
+// short rule, the section name, a one-line description, and the count
+// of variables in the section.
+func writeSectionHeader(w io.Writer, name, description string, count int) string2err {
+	banner := "# " + strings.Repeat("=", 77) + "\n"
+	if _, err := fmt.Fprint(w, "\n"+banner); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# %s  (%d %s)\n", name, count, plural(count, "variable", "variables")); err != nil {
+		return err
+	}
+	if description != "" {
+		if _, err := fmt.Fprintf(w, "# %s\n", description); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprint(w, banner); err != nil {
+		return err
+	}
+	return nil
+}
+
+// string2err is a tiny alias to keep writeSectionHeader's return type
+// readable; Go has no exception type so we propagate io.Writer errors.
+type string2err = error
+
+// plural returns the singular form when n == 1, otherwise the plural.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // EmitJSON writes the config as a JSON object. Includes the resolved values,
