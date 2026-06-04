@@ -108,6 +108,31 @@ PY2="$(mkproj py-setup)"
 echo "from setuptools import setup; setup()" > "${PY2}/setup.py"
 assert_eq "$(_m42_test_cmd_fallback "$PY2")" "pytest" "setup.py inferred"
 
+echo "=== Python via requirements.txt only → pytest ==="
+PYREQ="$(mkproj py-requirements)"
+echo "pytest>=7.0" > "${PYREQ}/requirements.txt"
+assert_eq "$(_m42_test_cmd_fallback "$PYREQ")" "pytest" "requirements.txt-only inferred"
+assert_eq "$(_m42_test_cmd_fallback_source "$PYREQ")" "requirements.txt (m42 fallback)" "requirements.txt source"
+
+echo "=== Priority: pyproject.toml beats requirements.txt ==="
+PYREQ_MIX="$(mkproj py-mixed)"
+cat > "${PYREQ_MIX}/pyproject.toml" <<'EOF'
+[project]
+name = "demo"
+EOF
+echo "pytest>=7.0" > "${PYREQ_MIX}/requirements.txt"
+assert_eq "$(_m42_test_cmd_fallback "$PYREQ_MIX")" "pytest" "pyproject.toml wins over requirements.txt"
+assert_eq "$(_m42_test_cmd_fallback_source "$PYREQ_MIX")" "pyproject.toml (m42 fallback)" "source is pyproject.toml not requirements.txt"
+
+echo "=== requirements.txt does not fire for non-Python ecosystems (Cargo beats it) ==="
+CARGO_REQ="$(mkproj cargo-with-req)"
+cat > "${CARGO_REQ}/Cargo.toml" <<'EOF'
+[package]
+name = "demo"
+EOF
+echo "-r base.txt" > "${CARGO_REQ}/requirements.txt"
+assert_eq "$(_m42_test_cmd_fallback "$CARGO_REQ")" "cargo test" "Cargo.toml wins over requirements.txt"
+
 echo "=== Ruby with rspec → bundle exec rspec ==="
 RB="$(mkproj ruby-proj)"
 cat > "${RB}/Gemfile" <<'EOF'
