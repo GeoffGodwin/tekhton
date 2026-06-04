@@ -1,53 +1,60 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (tests/test_version_bump_coverage.sh), 9 test assertions
-Freshness sample reviewed: internal/stagerunner/parity_test.go, internal/stages/cleanup/helpers_test.go, internal/stages/docs/prepare_test.go (not modified this run)
-Verdict: CONCERNS
-
----
+Tests audited: 4 files, 23 test functions (9 bash assertions in test_version_bump_coverage.sh; 14 Go test functions in run_test.go and snapshot_test.go; 1 fuzz corpus in fuzz_test.go)
+Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Known-failing test left in suite without skip/xfail mechanism
-- File: tests/test_version_bump_coverage.sh:110-136
-- Issue: The section "verify round-trip: non-conventional JSON — catch-all accessor gap" asserts the correct expected behavior — that `verify_version_files_synced` does NOT trip the commit gate when a non-standard `.json` file (e.g. `widget-manifest.json`) has already been bumped to the target version and is therefore in sync. The assertion at line 131 is honest: it tests real code via real implementation sources. However, the test currently FAILS because of an unfixed bug in `_accessor_for_file` (lib/project_version.sh:82-83): the `*` wildcard case returns `"plaintext"` for any filename not in the explicit list, including `.json`-suffixed non-conventional files. The `plaintext` accessor in `_detect_version_from_file` reads the entire file through `tr -d '[:space:]'` and compares the resulting blob to the target version — they never match, so a `version_files_desynced_widget-manifest_json` gate trip is produced even when the file is correct. The bug is acknowledged in TESTER_REPORT.md ("Passed: 8 Failed: 1 (this file)") but no fix was applied and no skip guard was added. The test suite therefore exits with "1 failed", which would block CI.
-- Severity: HIGH
-- Action: Fix `_accessor_for_file` in lib/project_version.sh (around line 82-83) by adding a `*.json)` case that returns `"json"` before the `*` wildcard arm, so non-conventional `.json` files use the JSON accessor on the read-back path — matching what `_bump_single_file`'s catch-all already does on the write path. The test at line 131 will then pass. Do NOT add a skip or xfail guard; the test correctly asserts a real invariant that belongs in the suite.
+#### NAMING: Section comment and inline label describe pre-fix bug state as current
+- File: tests/test_version_bump_coverage.sh:107-108, 128-131
+- Issue: The section header at line 107 says "This test documents the bug: a manually declared non-conventional JSON version file triggers a false desync after a successful bump." The test is not documenting the bug — it is a regression guard that verifies the bug introduced before commit 7684b9e is fixed. Additionally, the inline comment at line 128 labels pre-fix behavior as "CURRENT behavior" (`_accessor_for_file returns 'plaintext' for widget-manifest.json`) when the current behavior is in fact the correct one (returns `json` via the `*.json` arm at lib/project_version.sh:82). A future maintainer reading this section cold could conclude the assertion at line 131 should be inverted — expecting the gate to trip — which would be wrong.
+- Severity: LOW
+- Action: Change the section header from "This test documents the bug" to "This test guards against regression of the fix applied in commit 7684b9e." Replace "CURRENT behavior:" at line 128 with "PRE-FIX behavior (bug):" so the label is historically accurate. No assertion logic changes needed.
 
 ---
 
-### Passing Rubric Points
+### Detailed Rubric Assessment
 
-**Assertion Honesty — PASS**
-All 9 assertions test real implementation behavior with meaningful inputs. No hard-coded values appear that don't derive from the implementation logic. The `trip_commit_gate` stub records calls to a temp file so assertions inspect side-effected state rather than return values — a correct and honest pattern. The HUMAN_ACTION checks at lines 163, 170, 177, 220, and 227 all derive expected values from the actual desc-string format and CLI argument order in `lib/project_version_verify.sh`.
+**1. Assertion Honesty — PASS**
+All 9 assertions derive from actual function call results.
+- Gap 1a: `_bump_single_file "$JFILE" "1.2.3" "1.2.4"` on a real temp file; `grep '"version": "1.2.4"'` checks the side effect. The version strings are the parameters, not magic constants.
+- Gap 1b: Same function on a `version=1.2.3` plaintext file; asserts unchanged because `head -c 1` returns `v` (not `{`), causing the catch-all to no-op — verified against lib/project_version_bump_helpers.sh:126-129.
+- Gap 1c: `verify_version_files_synced "1.2.4"` on a temp `widget-manifest.json` already at 1.2.4. With fix at lib/project_version.sh:82, `_accessor_for_file` returns `json`; `_detect_version_from_file` extracts `1.2.4` via `grep -oE`; comparison succeeds; gate NOT tripped; `! -s "$_TRIP_REASONS_FILE"` passes.
+- Gaps 2a/2b: HUMAN_ACTION checks assert arg content derived from the implementation's `desc` string construction in lib/project_version_verify.sh:80 (`target=${target}` substring) and the CLI flag order at line 94 (`--source project_version_bump`).
 
-**Edge Case Coverage — PASS**
-Four distinct scenarios are covered across the new code paths:
-- Happy path: `_bump_single_file` catch-all correctly handles a non-standard `.json` basename (1a, 2 assertions)
-- Negative path: catch-all leaves a non-JSON unknown-extension file unchanged when first char is not `{` (1b, 1 assertion)
-- Bug-documentation path: verify round-trip false gate trip for non-conventional `.json` (1c, 1 assertion — currently FAIL; see finding above)
-- Both HUMAN_ACTION branches: bash-function path (2a, 3 assertions) and CLI fallback path (2b, 2 assertions)
+**2. Edge Case Coverage — PASS**
+Covers: JSON bump happy path (1a), catch-all no-op for non-JSON unknown extension (1b), regression guard against false-desync on a synced non-conventional JSON file (1c), desync-triggers-HUMAN_ACTION, and both dispatch branches of the HUMAN_ACTION path (bash function available at 2a; CLI fallback at 2b).
 
-**Implementation Exercise — PASS**
-All four implementation files are sourced directly: `lib/project_version.sh`, `lib/project_version_bump.sh`, `lib/project_version_bump_helpers.sh`, `lib/project_version_verify.sh`. Stubs are limited to infrastructure logging helpers (`log`, `warn`, `error`, `success`, `header`, `log_verbose`) and `trip_commit_gate` — exactly the functions whose side effects are not observable within a test context but whose call signatures matter. The real logic under test (`_bump_single_file`, `_bump_json_version`, `verify_version_files_synced`) is exercised directly without mocking.
+**3. Implementation Exercise — PASS**
+All four lib files sourced directly. Stubs are limited to infrastructure logging helpers (`log`, `warn`, `error`, `success`, `header`, `log_verbose`) and `trip_commit_gate` (recorded to a temp file so assertions can inspect whether the gate was tripped). The real logic under test (`_bump_single_file`, `_bump_json_version`, `verify_version_files_synced`, `_accessor_for_file` indirectly) is never bypassed.
 
-**Test Weakening — N/A**
-This is an entirely new file; no existing test assertions were modified.
+**4. Test Weakening — PASS**
+No existing assertions were removed or broadened. All 9 assertion calls are additions. The modification added gap 1c (the regression guard) and gaps 2a/2b (HUMAN_ACTION dispatch coverage) on top of the pre-existing catch-all tests.
 
-**Test Naming — PASS**
-Section banners (`echo "=== ... ==="`) and per-assertion messages encode both the scenario and the expected outcome. Examples: "catch-all: non-JSON file (first char 'v') left unchanged", "HUMAN_ACTION branch A: _append_human_action_entry called with correct source", "HUMAN_ACTION branch B: --source project_version_bump in CLI invocation". Names are descriptive and sufficient.
+**5. Test Naming — PASS (LOW finding above)**
+Pass/fail message strings encode both scenario and expected outcome. The assertion-level labels are clear. The only issue is at the section-comment level (see finding above).
 
-**Scope Alignment — PASS**
-All tested functions (`_bump_single_file`, `_bump_json_version`, `verify_version_files_synced`, `_append_human_action_entry` integration, TEKHTON_BIN CLI path) exist in implementation files changed this run (CODER_SUMMARY.md). No references to renamed, moved, or deleted code. The catch-all branch of `_bump_single_file` (lib/project_version_bump_helpers.sh:122-130) is exactly what 1a and 1b exercise.
+**6. Scope Alignment — PASS**
+All sourced files exist and all referenced functions are present:
+- `lib/project_version.sh` — `_accessor_for_file` (line 72), `_detect_version_from_file` (line 29); fix at line 82 is in place ✓
+- `lib/project_version_bump.sh` — exists; self-sources helpers via sentinel guard ✓
+- `lib/project_version_bump_helpers.sh` — `_bump_single_file` (line 80), `_bump_json_version` (line 60) ✓
+- `lib/project_version_verify.sh` — `verify_version_files_synced` (line 21) ✓
+No orphaned, stale, renamed, or dead references.
 
-**Test Isolation — PASS**
-All fixtures are created inside `$TEST_TMPDIR` (a `mktemp -d` directory cleaned on EXIT). No mutable project files, pipeline logs, build artifacts, or config state files are read. The `_TRIP_REASONS_FILE` temp file is created with `mktemp`, explicitly zeroed between sub-tests with `: > "$_TRIP_REASONS_FILE"` at lines 112, 136, and 185, and removed in the EXIT trap. The fake TEKHTON_BIN binary at lines 204-213 writes to a temp-dir log file whose path is hardcoded during heredoc creation — not inherited from ambient pipeline state.
+**7. Test Isolation — PASS**
+All fixture files written to `$TEST_TMPDIR` (mktemp -d, cleaned on EXIT). `_TRIP_REASONS_FILE` is a separate mktemp file, explicitly zeroed with `: > "$_TRIP_REASONS_FILE"` before each sub-test that inspects it (lines 112, 136, 147, 185, 198). The fake TEKHTON_BIN binary at lines 204-213 logs to a temp-dir file. No reads of live build reports, pipeline logs, causal logs, `.claude/logs/*`, or other mutable project-state files.
 
 ---
 
-### Freshness Sample Notes (not modified this run — reviewed for regression risk only)
+### Freshness Sample Assessment (not modified this run)
 
-**internal/stagerunner/parity_test.go** reads `tekhton-legacy.sh` as a source-of-truth fixture (a read-only committed file, not a mutable pipeline artifact) and skips cleanly when the file or go.mod root is absent. This is an appropriate shim-boundary integration test; the CODER_SUMMARY confirms `DefaultLibHelpers` in `internal/stagerunner/helpers.go` was updated to include the two new lib files, which this test will verify on the next `go test` run. No issues.
+**internal/stages/security/run_test.go** — No issues
+Unrelated to the version-bump change. 14 test functions covering the security stage runner via `fakeAgent`/`fakeBuildGate` seams; all fixtures created in `t.TempDir()`; env vars controlled via `t.Setenv()`. No scope misalignment.
 
-**internal/stages/cleanup/helpers_test.go** and **internal/stages/docs/prepare_test.go**: all fixtures created via `t.TempDir()`; env vars controlled via `t.Setenv()`. Both are well-isolated; no mutable project files read. No issues.
+**internal/state/fuzz_test.go** — No issues
+Fuzz test for the state `Read` path. Seed corpus and `ErrLegacyFormat` invariant are consistent with the m10 cutover documented in the comments. No scope misalignment.
+
+**internal/state/snapshot_test.go** — No issues
+Unit tests for state Read/Write/Update/Clear paths covering round-trip parity, concurrent serialization, atomic-write no-truncation, legacy-format detection, and error-type routing. All assertions derive from real implementations. No scope misalignment.
