@@ -3,7 +3,7 @@
   "stage": "intake",
   "verdict": "pass",
   "exit_reason": "exit=0",
-  "agent_calls": 1,
-  "duration_sec": 108,
+  "agent_calls": 0,
+  "duration_sec": 1,
   "human_action_required": false
 }
