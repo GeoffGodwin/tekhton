@@ -62,6 +62,20 @@ dag_id_to_number() { echo "${1#m}" | sed 's/^0*\([0-9]\)/\1/; s/\.0*\([0-9]\)/.\
 
 dag_number_to_id() {
     local num="$1" main_num suffix i
+    # Idempotent: m-prefixed input passes through unchanged. Without this
+    # branch, callers handing an already-prefixed id (e.g. "m36.1" from the
+    # Go runner's auto-advance loop) hit the printf path below with
+    # main_num="m36", which prints "printf: m36: invalid number" + "m00.1"
+    # garbage + rc=1. The set_focused_milestone_block caller then captures
+    # both that garbage AND its `|| echo "$_CURRENT_MILESTONE"` fallback as
+    # one string, MILESTONE_BLOCK fails to populate, and the milestone
+    # silently null-runs (the m36.1 false-completion on 2026-06-04).
+    if [[ "$num" == m* ]]; then
+        echo "$num"
+        return 0
+    fi
+    # Empty input has no valid resolution; return failure cleanly.
+    [[ -n "$num" ]] || return 1
     for ((i=0; i<${#_DAG_IDS[@]}; i++)); do
         [[ "$(dag_id_to_number "${_DAG_IDS[$i]}")" == "$num" ]] && { echo "${_DAG_IDS[$i]}"; return 0; }
     done
