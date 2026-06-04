@@ -3,9 +3,9 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 190
+- Runs since audit: 191
 =======
-- Runs since audit: 190
+- Runs since audit: 191
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -54,6 +54,8 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-04 | "unknown"] `internal/preflight/test_cmd.go:95` â `appendHumanActionForNoopTestCmd` appends a `HUMAN_ACTION_REQUIRED.md` entry unconditionally on every preflight invocation. Multi-milestone runs with a persistent no-op `TEST_CMD` accumulate duplicate action items for the same issue. Other preflight checks in the orchestrator share this pattern (no dedup at the write layer), so this is a systemic rather than m42-specific gap, but worth tracking.
+- [x] [2026-06-04 | "unknown"] `lib/init_config_test_cmd.sh:73` â `_m42_test_cmd_fallback_source` does not apply the `scripts.test` / placeholder guard that `_m42_test_cmd_fallback` applies for `package.json`. The two functions are logically coupled (source is only meaningful when command is non-empty) and the caller in `init_config.sh` guards correctly with `if [[ -n "$_fallback" ]]; then`. The pairing is fragile if `_m42_test_cmd_fallback_source` is ever called independently.
 - [x] [2026-06-04 | "unknown"] `stages/coder.sh:1202` â The file has ballooned well past the 300-line ceiling through accumulated sub-stage sourcing and feature accretion. The scout / build-fix sub-stages have their own files (`coder_prerun.sh`, `coder_buildfix.sh`) but `run_stage_coder` itself has not been split. A dedicated refactor milestone to extract `_run_coder_milestone_setup`, `_run_coder_main`, and `_run_coder_gates` into companion files would bring this back under control.
 - [x] [2026-06-04 | "unknown"] `lib/finalize_commit.sh:_run_commit_bookkeeping` â execs a `tekhton commit-bookkeeping` subcommand that is not listed in the Architecture Map's Cobra subcommand inventory. If this was added after m21, the architecture map entry should be updated to document it.
 - [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses a single-quoted delimiter (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` on the last instruction line is a literal string in the rendered prompt rather than the resolved filename. Pre-existing behavior moved verbatim from `milestone_window.sh`; agents that read the instruction literally will look for a file named `${CODER_SUMMARY_FILE}`. Worth a follow-up fix (change delimiter to unquoted, or replace with the literal `CODER_SUMMARY.md`).
