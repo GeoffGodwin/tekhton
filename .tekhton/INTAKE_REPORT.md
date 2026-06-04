@@ -2,16 +2,14 @@
 PASS
 
 ## Confidence
-92
+93
 
 ## Reasoning
-- Scope is tightly defined: three discrete goals with clear boundaries, all in service of one root-cause bug
-- Root cause is fully documented with exact file paths, line numbers, and a concrete reproducer (sdivi-rust, milestone 49.2)
-- Files to modify are explicitly enumerated, including a new test file
-- Acceptance criteria are specific and machine-testable: resolver returns 0, run commits vs blocks based on CODER_SUMMARY presence, diagnostic message format named explicitly
-- Implementation guidance is concrete: line numbers in `stages/coder.sh` (251-259, 803, 1154), the bold-label form (`**Watch For:**`) explicitly called out, the fix location pinned to `lib/milestone_window.sh` rather than per-caller
-- Watch For section explicitly protects the one important invariant (do not weaken anti-rubber-stamp gates), which is the main risk vector for this change
-- No user-facing config changes, no new keys, no format changes — no Migration Impact section needed
-- Existing regression test (`tests/test_milestone_window_focused.sh`) named as a must-not-break target; new test file (`tests/test_finalize_commit_block_reason.sh`) explicitly scoped
-- Seeds Forward note scopes the recovery subcommand OUT of this milestone cleanly
-- UI testability: N/A (no UI components)
+- Scope is precisely defined: three bash files to delete, five Go files to create, explicit LOC targets, and a numbered sequencing order (1→6) with a warning that reversing steps breaks the pipeline
+- Acceptance criteria are highly testable — each criterion includes the exact `grep`, `test`, or `go test` command needed to verify it, with expected output specified
+- The "Watch For" section proactively covers the three highest-risk areas: delete-order sequencing, the `_INTAKE_PASS_EMIT` asymmetry between PASS and early-exit paths, and the `INTAKE_CLARITY_THRESHOLD` prompt-only contract
+- The known regression (`--add-milestone` create mode) is explicitly called out, handled with a deferred-stub error in `tekhton-legacy.sh`, and tracked in `docs/v4-phase5-stub.md` — no silent breakage
+- Dependencies on prior-arc packages (`internal/intake/`, `internal/causal/`, `internal/health/`, `internal/notes/`, `internal/index/`) are all established by M36.2 and earlier milestones; the milestone correctly treats them as in-process Go imports, not subprocess shims
+- The parity gate enumerates all eight scenarios with concrete assertions (byte-identity on CLARIFICATIONS.md, absence of `_INTAKE_PASS_EMIT` on HUMAN_MODE path, no agent invoked on cached-run branch)
+- No new user-facing config keys are introduced; no Migration Impact section is needed
+- No UI components are involved; UI testability criterion is not applicable
