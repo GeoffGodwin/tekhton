@@ -1,93 +1,53 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, ~37 assertions
-Verdict: PASS
+Tests audited: 1 file (tests/test_version_bump_coverage.sh), 9 test assertions
+Freshness sample reviewed: internal/stagerunner/parity_test.go, internal/stages/cleanup/helpers_test.go, internal/stages/docs/prepare_test.go (not modified this run)
+Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### INTEGRITY: Group 5 always-passes regardless of outcome
-- File: tests/test_milestone_acceptance_noop.sh:236-241
-- Issue: The `if _run_op_was_called; then ... else ... fi` block calls `pass` in
-  both branches, making it a vacuous assertion. The comment on the else branch says
-  "Acceptable: `true` exits 0 so the acceptance still passes; no crash" — but the
-  behavior when `_is_noop_test_cmd` is absent is fully deterministic, not ambiguous.
-  When `_is_noop_test_cmd` is undefined, `declare -f _is_noop_test_cmd &>/dev/null`
-  at `milestone_acceptance.sh:37` returns non-zero, the `&&` short-circuits, and the
-  normal path executes `run_op "Running acceptance tests" bash -c "true"`. The
-  sentinel file is created inside the `$(...)` subshell (filesystem writes persist
-  from subshells), so `_run_op_was_called` will be true. The expected outcome is
-  determined; the test should assert only that outcome.
-  Fix:
-  ```bash
-  if _run_op_was_called; then
-      pass "run_op called when _is_noop_test_cmd absent (falls through to normal path)"
-  else
-      fail "run_op NOT called when _is_noop_test_cmd absent — normal path should have run bash -c 'true'"
-  fi
-  ```
-- Severity: MEDIUM
-- Action: Replace the always-pass if/else with the above definite assertion. The
-  fixed test would catch any future regression where the `declare -f` guard is
-  inverted or the normal path is accidentally gated on the helper's presence.
+#### COVERAGE: Known-failing test left in suite without skip/xfail mechanism
+- File: tests/test_version_bump_coverage.sh:110-136
+- Issue: The section "verify round-trip: non-conventional JSON — catch-all accessor gap" asserts the correct expected behavior — that `verify_version_files_synced` does NOT trip the commit gate when a non-standard `.json` file (e.g. `widget-manifest.json`) has already been bumped to the target version and is therefore in sync. The assertion at line 131 is honest: it tests real code via real implementation sources. However, the test currently FAILS because of an unfixed bug in `_accessor_for_file` (lib/project_version.sh:82-83): the `*` wildcard case returns `"plaintext"` for any filename not in the explicit list, including `.json`-suffixed non-conventional files. The `plaintext` accessor in `_detect_version_from_file` reads the entire file through `tr -d '[:space:]'` and compares the resulting blob to the target version — they never match, so a `version_files_desynced_widget-manifest_json` gate trip is produced even when the file is correct. The bug is acknowledged in TESTER_REPORT.md ("Passed: 8 Failed: 1 (this file)") but no fix was applied and no skip guard was added. The test suite therefore exits with "1 failed", which would block CI.
+- Severity: HIGH
+- Action: Fix `_accessor_for_file` in lib/project_version.sh (around line 82-83) by adding a `*.json)` case that returns `"json"` before the `*` wildcard arm, so non-conventional `.json` files use the JSON accessor on the read-back path — matching what `_bump_single_file`'s catch-all already does on the write path. The test at line 131 will then pass. Do NOT add a skip or xfail guard; the test correctly asserts a real invariant that belongs in the suite.
 
-#### COVERAGE: No-op loop omits /usr/bin/true variant
-- File: tests/test_milestone_acceptance_noop.sh:116
-- Issue: The Group 1 loop `for noop in "true" ":" "/bin/true"` exercises 3 of the 5
-  recognized no-op values. `_is_noop_test_cmd` at `hooks_final_checks_helpers.sh:23`
-  also matches `"/usr/bin/true"` and `""` (empty). The empty case is separately tested
-  at line 145-158, but `/usr/bin/true` has no coverage in this integration path. This
-  is LOW because `_is_noop_test_cmd` itself is exercised with all five variants in
-  `tests/test_preflight_noop_test_cmd.sh` (per CODER_SUMMARY.md); the gap here affects
-  only the `check_milestone_acceptance` integration path.
-- Severity: LOW
-- Action: Add `"/usr/bin/true"` to the loop:
-  `for noop in "true" ":" "/bin/true" "/usr/bin/true"`. One additional iteration,
-  no setup required.
+---
 
-### Rubric Scorecard
+### Passing Rubric Points
 
-**Assertion Honesty — PASS (test_init_test_cmd_detection.sh); MEDIUM concern
-(test_milestone_acceptance_noop.sh Group 5)**
-All 22 assertions in `test_init_test_cmd_detection.sh` call `_m42_test_cmd_fallback`
-or `_m42_test_cmd_fallback_source` with controlled fixture files; expected values
-(`"cargo test"`, `"go test ./..."`, `"npm test"`, `"pytest"`, etc.) are string
-literals returned by the implementation. For `test_milestone_acceptance_noop.sh`,
-14 of 15 distinct assertion sites are honest; the Group 5 if/else described above
-is the exception.
+**Assertion Honesty — PASS**
+All 9 assertions test real implementation behavior with meaningful inputs. No hard-coded values appear that don't derive from the implementation logic. The `trip_commit_gate` stub records calls to a temp file so assertions inspect side-effected state rather than return values — a correct and honest pattern. The HUMAN_ACTION checks at lines 163, 170, 177, 220, and 227 all derive expected values from the actual desc-string format and CLI argument order in `lib/project_version_verify.sh`.
 
-**Edge Case Coverage — PASS (both files)**
-`test_init_test_cmd_detection.sh` covers: npm placeholder rejection, Gemfile without
-rspec, no-manifest (empty), requirements.txt-only Python path (tester addition), all
-tested priority pairings (Cargo > Node, Cargo > requirements.txt, Go > Python,
-pyproject.toml > requirements.txt). `test_milestone_acceptance_noop.sh` covers: three
-no-op forms, empty TEST_CMD, real TEST_CMD (happy path), failing TEST_CMD, and the
-`_is_noop_test_cmd`-absent graceful-degradation path.
+**Edge Case Coverage — PASS**
+Four distinct scenarios are covered across the new code paths:
+- Happy path: `_bump_single_file` catch-all correctly handles a non-standard `.json` basename (1a, 2 assertions)
+- Negative path: catch-all leaves a non-JSON unknown-extension file unchanged when first char is not `{` (1b, 1 assertion)
+- Bug-documentation path: verify round-trip false gate trip for non-conventional `.json` (1c, 1 assertion — currently FAIL; see finding above)
+- Both HUMAN_ACTION branches: bash-function path (2a, 3 assertions) and CLI fallback path (2b, 2 assertions)
 
-**Implementation Exercise — PASS (both files)**
-Both files source the real implementation files (`lib/init_config_test_cmd.sh`,
-`lib/hooks_final_checks_helpers.sh`, `lib/milestone_acceptance.sh`). Stubs are
-limited to infrastructure dependencies not under test (`parse_milestones`,
-`run_build_gate`, `emit_event`, `save_acceptance_test_output`). The `run_op` stub
-executes the real command (`"$@"`) so exit code propagation is preserved.
+**Implementation Exercise — PASS**
+All four implementation files are sourced directly: `lib/project_version.sh`, `lib/project_version_bump.sh`, `lib/project_version_bump_helpers.sh`, `lib/project_version_verify.sh`. Stubs are limited to infrastructure logging helpers (`log`, `warn`, `error`, `success`, `header`, `log_verbose`) and `trip_commit_gate` — exactly the functions whose side effects are not observable within a test context but whose call signatures matter. The real logic under test (`_bump_single_file`, `_bump_json_version`, `verify_version_files_synced`) is exercised directly without mocking.
 
 **Test Weakening — N/A**
-The TESTER_REPORT states both files were new or had additions only. No pre-existing
-assertions were modified.
+This is an entirely new file; no existing test assertions were modified.
 
-**Test Naming — PASS (both files)**
-Assert messages in `test_init_test_cmd_detection.sh` encode both scenario and expected
-outcome (e.g. `"package.json placeholder rejected"`, `"source is pyproject.toml not
-requirements.txt"`). Group banner lines in `test_milestone_acceptance_noop.sh` set
-clear context; individual pass/fail messages name the specific condition.
+**Test Naming — PASS**
+Section banners (`echo "=== ... ==="`) and per-assertion messages encode both the scenario and the expected outcome. Examples: "catch-all: non-JSON file (first char 'v') left unchanged", "HUMAN_ACTION branch A: _append_human_action_entry called with correct source", "HUMAN_ACTION branch B: --source project_version_bump in CLI invocation". Names are descriptive and sufficient.
 
-**Scope Alignment — PASS (both files)**
-All referenced functions (`_m42_test_cmd_fallback`, `_m42_test_cmd_fallback_source`,
-`check_milestone_acceptance`, `_is_noop_test_cmd`, `_record_tests_run_state`) exist
-in the implementation files listed in CODER_SUMMARY.md. No orphaned references.
+**Scope Alignment — PASS**
+All tested functions (`_bump_single_file`, `_bump_json_version`, `verify_version_files_synced`, `_append_human_action_entry` integration, TEKHTON_BIN CLI path) exist in implementation files changed this run (CODER_SUMMARY.md). No references to renamed, moved, or deleted code. The catch-all branch of `_bump_single_file` (lib/project_version_bump_helpers.sh:122-130) is exactly what 1a and 1b exercise.
 
-**Test Isolation — PASS (both files)**
-Both files create fixtures under `mktemp -d` with `trap 'rm -rf "$TEST_TMPDIR" EXIT`.
-`TEKHTON_DIR` is pointed at a per-scenario temp subdirectory for each `_reset` call.
-Neither file reads mutable project artifacts (build reports, causal logs, pipeline
-state, RUN_RESULT.json from the live repo).
+**Test Isolation — PASS**
+All fixtures are created inside `$TEST_TMPDIR` (a `mktemp -d` directory cleaned on EXIT). No mutable project files, pipeline logs, build artifacts, or config state files are read. The `_TRIP_REASONS_FILE` temp file is created with `mktemp`, explicitly zeroed between sub-tests with `: > "$_TRIP_REASONS_FILE"` at lines 112, 136, and 185, and removed in the EXIT trap. The fake TEKHTON_BIN binary at lines 204-213 writes to a temp-dir log file whose path is hardcoded during heredoc creation — not inherited from ambient pipeline state.
+
+---
+
+### Freshness Sample Notes (not modified this run — reviewed for regression risk only)
+
+**internal/stagerunner/parity_test.go** reads `tekhton-legacy.sh` as a source-of-truth fixture (a read-only committed file, not a mutable pipeline artifact) and skips cleanly when the file or go.mod root is absent. This is an appropriate shim-boundary integration test; the CODER_SUMMARY confirms `DefaultLibHelpers` in `internal/stagerunner/helpers.go` was updated to include the two new lib files, which this test will verify on the next `go test` run. No issues.
+
+**internal/stages/cleanup/helpers_test.go** and **internal/stages/docs/prepare_test.go**: all fixtures created via `t.TempDir()`; env vars controlled via `t.Setenv()`. Both are well-isolated; no mutable project files read. No issues.
