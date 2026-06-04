@@ -1,4 +1,4 @@
-# Reviewer Report — m42
+# Reviewer Report — m43 (Version-bump completeness)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,13 +10,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `internal/preflight/orchestrator_test.go:39` — `TestNewOrchestrator_BuildsAllFiveChecks` function name and its inline comment ("production constructor registers exactly five checks") are stale; the check count is now 7. A future contributor landing another check will read the name as a test contract and be confused.
-- `lib/hooks_final_checks.sh:3` — pre-existing `set -euo pipefail` in a sourced library; CLAUDE.md Rule 2 specifies sourced files in `lib/` do **not** set this (they inherit from the entry point). This predates m42 and is not introduced here, but it crossed the 300-line extraction trip and is worth noting for the next cleanup pass.
+- `lib/project_version_bump_helpers.sh:79–131` — `_bump_single_file`'s `*` catch-all uses `head -c 1` JSON detection to route through `_bump_json_version`, but `_accessor_for_file` (used by `verify_version_files_synced`) returns `plaintext` for the same filename. A user who manually declares a non-conventional JSON filename in VERSION_FILES (e.g. `widget-manifest.json:.version`) would get the file bumped correctly but the post-bump verify would read it back as a raw text blob, compare it to the target version string, and falsely trip the commit gate with `version_files_desynced_*`. All auto-discovered files are named `package.json` and are unaffected. Consider removing the unreachable catch-all (auto-discovery only yields `package.json` files, already handled by the explicit branch) or extending `_accessor_for_file`'s `*` case to return `json` for `.json`-suffixed files.
+- `lib/project_version.sh:2` — `set -euo pipefail` is present; the convention for sourced `lib/` files in this codebase is to inherit pipefail from the entry point, not re-set it. Pre-existing violation, not introduced by this PR. Log for cleanup.
+- `tekhton-legacy.sh:999` — Explicit `source .../project_version_bump_helpers.sh` is redundant because `project_version_bump.sh` already self-sources it via the sentinel guard at lines 24–28. The double-source is harmless (idempotent) but can be removed for clarity on the next touch.
 
 ## Coverage Gaps
-- `tests/test_init_test_cmd_detection.sh` does not cover the `requirements.txt`-only Python project path. The function returns `pytest` for `requirements.txt` presence, but the test exercises only `pyproject.toml` and `setup.py`. Edge-case false-positives (a `requirements.txt` in a non-test project) are uncaught.
-- `lib/milestone_acceptance.sh` changes (the no-op short-circuit at lines 37–108) have no corresponding integration test. `test_preflight_noop_test_cmd.sh` exercises the helpers in isolation; the acceptance path that calls them is not exercised end-to-end.
+- `_bump_single_file` `*` catch-all (JSON detection via `head -c 1`) has no test. Add a fixture with a non-conventional-basename JSON file (e.g. `widget-manifest.json`) to confirm both the bump and the round-trip read succeed without a false commit-gate trip.
+- `verify_version_files_synced` HUMAN_ACTION fallback paths (`_append_human_action_entry` branch and `tekhton drift human-action append` branch) are not exercised by the new tests. A targeted test that stubs `trip_commit_gate` as a no-op and captures the human-action call would verify the fallback warning path on desync.
 
 ## Drift Observations
-- `internal/preflight/test_cmd.go:95` — `appendHumanActionForNoopTestCmd` appends a `HUMAN_ACTION_REQUIRED.md` entry unconditionally on every preflight invocation. Multi-milestone runs with a persistent no-op `TEST_CMD` accumulate duplicate action items for the same issue. Other preflight checks in the orchestrator share this pattern (no dedup at the write layer), so this is a systemic rather than m42-specific gap, but worth tracking.
-- `lib/init_config_test_cmd.sh:73` — `_m42_test_cmd_fallback_source` does not apply the `scripts.test` / placeholder guard that `_m42_test_cmd_fallback` applies for `package.json`. The two functions are logically coupled (source is only meaningful when command is non-empty) and the caller in `init_config.sh` guards correctly with `if [[ -n "$_fallback" ]]; then`. The pairing is fragile if `_m42_test_cmd_fallback_source` is ever called independently.
+- `lib/project_version.sh:2` — `set -euo pipefail` in a sourced lib file. Convention in this repo: only standalone entry points set this; lib files inherit from the entry point. (Also noted in m42 report for `lib/hooks_final_checks.sh` — same class of pre-existing violation.)
