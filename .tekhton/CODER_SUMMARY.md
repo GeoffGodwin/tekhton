@@ -4,211 +4,224 @@
 
 ## What Was Implemented
 
-m42 — Preflight: guard against the no-op `TEST_CMD="true"` default. All three
-goals and all five acceptance criteria are implemented.
+m43 — Version-bump completeness: sync all version files and validate after
+bump. All three goals and all five acceptance criteria are implemented.
 
-### Goal 1 — Preflight warning for a no-op TEST_CMD
+### Goal 1 — Multi-file + JSON-aware detection and bump
 
-New Go check `TestCmdCheck` in `internal/preflight/test_cmd.go`. Registered in
-the orchestrator (`internal/preflight/orchestrator.go::checkOrder` + the
-`goNativeChecks` factory map) between `claude_env` and `services_infer`.
+**New file `lib/project_version_bump_helpers.sh`** holds the per-file
+write logic + multi-file parsing seam, extracted from
+`lib/project_version_bump.sh` (which was at 301 lines and needed breathing
+room for new logic per the 300-line bash ceiling).
 
-Behavior:
-- Skips when `MILESTONE_MODE` is unset / empty / not "true" — warnings on
-  plain `--task` runs would be noise.
-- When `MILESTONE_MODE=true` AND `TEST_CMD` matches the no-op set (after
-  trimming: `""`, `"true"`, `":"`, `"/bin/true"`, `"/usr/bin/true"`):
-  - Default: emits `StatusWarn` with detail "TEST_CMD is a no-op (<value>)
-    — milestone acceptance will pass WITHOUT running tests. Set a real
-    TEST_CMD in pipeline.conf (e.g. `cargo test`, `npm test`,
-    `go test ./...`)."
-  - With `REQUIRE_REAL_TEST_CMD=true`: escalates to `StatusFail`, which
-    drives `Orchestrator.HasBlockers()=true` and aborts the run.
-- Appends one `HUMAN_ACTION_REQUIRED.md` entry per trip via
-  `drift.HumanAction.Append("preflight", detail)` so the post-run banner
-  surfaces the issue.
+- `_parse_version_files_list LIST [OUT_VAR]` — splits the VERSION_FILES
+  config value into per-entry `path:selector` strings. Accepts `;` and
+  newline separators (or a mix), trims surrounding whitespace, skips
+  empties. Optional nameref output (`out_var=...`) so callers can
+  `readarray`-style consume without forking a subshell.
+- `_bump_json_version FILE OLD NEW` — format-preserving JSON `"version"`
+  field replacement. Uses `sed` against the single matched line, never
+  reserialises the file. Preserves key order, indentation, trailing
+  whitespace. Safe across single-line (`{"version":"X"}`) and indented
+  multi-line shapes. **Replaces the previous `python3 json.dump(...,
+  indent=2)` path** that reordered keys and rewrote whitespace — the bug
+  the milestone's gap section calls out.
+- `_bump_single_file` (moved from `project_version_bump.sh`) — routes
+  `package.json` / `composer.json` through `_bump_json_version`; the
+  other ecosystem branches (`Cargo.toml`, `pyproject.toml`, `setup.py`,
+  `setup.cfg`, `gradle.properties`, `Chart.yaml`, `pubspec.yaml`,
+  `VERSION`) are unchanged. A catch-all branch routes JSON-looking files
+  (first non-space char is `{`) through the JSON bumper too, so an
+  auto-discovered `bindings/foo/package.json` at a non-conventional
+  basename pattern still bumps correctly.
 
-The "no-op" recognition is exported as `IsNoopCommand` so the bash side
-(see Goal 2) and the Go side share one source of truth.
+**`bump_version_files`** (in `lib/project_version_bump.sh`) now parses
+VERSION_FILES via `_parse_version_files_list` (so multi-line config
+values work) and, after the per-file write pass, invokes
+`verify_version_files_synced` if the function is present. The
+`command -v` guard means the verify module is optional — installations
+that haven't sourced it (e.g. tests that only need the compute helpers)
+keep working.
 
-### Goal 2 — Honest summary line + `tests_run` flag
+**Auto-discovery** (`lib/project_version.sh::_discover_package_json_files`
++ wiring in `detect_project_version_files`): walks tracked
+`package.json` files via `git ls-files -- '*package.json'` when in a git
+repo, falls back to `find` with `node_modules` / `.git` / `dist` /
+`build` / `.tekhton` pruned. Filters to files that actually declare a
+`"version"` field (so empty workspace-member manifests don't pollute the
+list). The root `package.json` is excluded (it's already caught by the
+main ecosystem loop) and duplicate paths are skipped. Each discovered
+file is added to VERSION_FILES with `:.version` selector. This catches
+the milestone's motivating case (`bindings/sdivi-wasm/pkg-template/
+package.json`) and any analogous workspace / template manifests.
 
-Two new bash helpers in the new file `lib/hooks_final_checks_helpers.sh`
-(extracted to keep `hooks_final_checks.sh` under the 300-line bash ceiling):
+### Goal 2 — Post-bump consistency self-check
 
-1. `_is_noop_test_cmd "$TEST_CMD"` — pure-bash port of `IsNoopCommand`.
-   Trims surrounding whitespace via parameter expansion (no sed fork);
-   recognises the same set of no-op forms as Go.
-2. `_record_tests_run_state "true"|"false"` — writes two artifacts:
-   - `${TEKHTON_DIR}/.tests_run_state` (sentinel file, single-line)
-   - splices `"tests_run": <bool>` into `RUN_RESULT.json` via `jq`
-     (best-effort: missing `jq` / file / dir fall through silently).
+**New file `lib/project_version_verify.sh`** —
+`verify_version_files_synced TARGET_VERSION ENTRY [ENTRY ...]` reads
+every declared/detected version file back via
+`_detect_version_from_file` + `_accessor_for_file` and asserts the
+on-disk version matches the bump target. On divergence:
 
-Wired into both code paths the milestone names:
+- Calls `trip_commit_gate "version_files_desynced_<sanitised_path>"` —
+  the existing `.final_check_result` sentinel mechanism that `_hook_commit`
+  reads. The desynced bump never reaches the commit step regardless of
+  TEST_CMD (the m42 no-op-TEST_CMD path would have masked this otherwise).
+- Emits a `HUMAN_ACTION_REQUIRED.md` entry via
+  `tekhton drift human-action append --source project_version_bump`,
+  falling back to `_append_human_action_entry` if a future port exposes
+  it as a bash function. Best-effort — missing CLI or write failure
+  fails open so the bump itself isn't broken.
 
-- `lib/hooks_final_checks.sh::run_final_checks` — when TEST_CMD is a no-op,
-  prints `tests: skipped (no-op TEST_CMD: '<value>') — set TEST_CMD in
-  pipeline.conf to actually run tests.` instead of the misleading
-  `[✓] true: all passing` and records `false`. Existing success / failure
-  branches now also record `true` so a successful real-test run leaves
-  `tests_run=true` in `RUN_RESULT.json`.
-- `lib/milestone_acceptance.sh::check_milestone_acceptance` — same
-  short-circuit, ensuring milestones don't tick green via `bash -c "true"`
-  inside the acceptance gate either.
+Missing declared files are intentionally non-blocking: operator templates
+may legitimately declare files that don't materialise on every branch
+(e.g. a binding only built on certain platforms), so a missing path
+doesn't trip the gate. The post-bump verify still catches the real
+desync case — file present, version doesn't match target.
 
-`RunResultV1` gained a `TestsRun *bool` field
-(`internal/proto/run_v1.go`) — pointer for tri-state so legacy snapshots
-that omit the field are distinguishable from explicit `false`. Field is
-`omitempty` so untouched RUN_RESULT.json files stay byte-identical.
+### Goal 3 — Document VERSION_FILES syntax
 
-### Goal 3 — Better init TEST_CMD detection
+`docs/reference/configuration.md` gains a new "Project Versioning"
+section (placed before "Other Settings") covering:
 
-New file `lib/init_config_test_cmd.sh` with two helpers:
+- Auto-detection ecosystems + non-root `package.json` walk
+- `VERSION_FILES` syntax (path:selector entries, `;` or newline
+  separators) with TOML / JSON / plaintext selector vocabulary
+- The full Cargo + non-root JSON example from the milestone gap
+- Post-bump consistency self-check + commit-gate trip semantics
+- The six PROJECT_VERSION_* config keys with defaults
 
-- `_m42_test_cmd_fallback PROJECT_DIR` — Cargo.toml → `cargo test`,
-  go.mod → `go test ./...`, package.json with real `scripts.test` (not
-  the npm-init `"no test specified"` placeholder) → `npm test`,
-  pyproject.toml / setup.py / requirements.txt → `pytest`,
-  Gemfile-with-rspec → `bundle exec rspec`, mix.exs → `mix test`,
-  pubspec.yaml → `flutter test` / `dart test`.
-- `_m42_test_cmd_fallback_source` — sibling that names the manifest that
-  drove the inference, so the source annotation in the emitted
-  pipeline.conf points at the right file.
+## Acceptance Criteria — predicate-by-predicate
 
-Wired into `lib/init_config.sh::_generate_smart_config` immediately after
-the upstream detect pipeline and before the CI override block. Only fires
-when the upstream `test_cmd` is empty (the common case the milestone fixes
-is: detect pipeline silently returned nothing → `TEST_CMD="true"` fallback
-fires → milestones tick green).
+- ✅ **AC1.** A `VERSION_FILES` with both a Cargo TOML selector and a
+  `package.json` JSON selector bumps both to the same version:
+  `tests/test_version_bump_multifile.sh::"multi-file bump: Cargo + package.json"`
+  drives `Cargo.toml:.workspace.package.version;bindings/wasm/
+  pkg-template/package.json:.version` and asserts both files reach
+  `0.4.3` from `0.4.2`.
+- ✅ **AC2.** Auto-discovery catches a `package.json` with a `version`
+  at a non-root path even if unlisted:
+  `tests/test_version_bump_json.sh::"_discover_package_json_files: non-root scan"`
+  + `"detect_project_version_files: auto-discovered binding listed in
+  VERSION_FILES"`. Asserts the non-root binding is found, `node_modules`
+  is excluded, version-less `package.json` entries are skipped, and the
+  config doesn't contain duplicate root entries.
+- ✅ **AC3.** After a bump, if any declared/detected version file
+  diverges, the commit gate trips with `version_files_desynced_*` + a
+  HUMAN_ACTION entry: `tests/test_version_bump_multifile.sh::
+  "desync detection"` asserts the gate is tripped with a
+  `version_files_desynced_<file>` reason when the second file's old
+  version doesn't match the bumper's expectation.
+- ✅ **AC4.** JSON bump preserves file formatting (no whole-file
+  reserialization / key reordering): four assertions in
+  `tests/test_version_bump_json.sh::"_bump_json_version: format
+  preservation"` cover (i) only the version line changes (diff isolation
+  check), (ii) key order preserved, (iii) 4-space indent preserved,
+  (iv) trailing newline preserved.
+- ✅ **AC5.** Existing single-file `VERSION_FILES` projects keep
+  working unchanged: every assertion in
+  `tests/test_project_version_bump.sh` (34 / 34) still passes;
+  `tests/test_project_version_detect.sh` (18 / 18) still passes;
+  `tests/test_version_bump_multifile.sh::"single-file backward compat"`
+  asserts the single-entry `VERSION:.` config still bumps cleanly with
+  no commit gate trip.
 
-The Go detect engine (`internal/detect/commands.go`,
-`internal/detect/commands_pkg.go`) already covers these ecosystems with
-high confidence. The bash fallback is a defense-in-depth net for the
-cases the Go side can't see (binary not on PATH during init bootstrap,
-`jq` missing, manifest present but predicate didn't match).
+## Watch For — predicate-by-predicate
+
+- ✅ "JSON editing must be format-preserving — naive `jq` reserialization
+  reorders keys and rewrites whitespace, producing noisy diffs":
+  `_bump_json_version` uses `sed` against the single matched
+  `"version"\s*:\s*"X"` line, escaping regex special characters in the
+  old version. No `jq` / no `json.dump`. Verified by the four
+  format-preservation assertions in `test_version_bump_json.sh` against
+  a 4-space-indented multi-line file with custom key order.
+- ✅ "The self-check runs on the post-bump tree before commit; it must
+  not itself require the project's full (possibly no-op, see m42)
+  `TEST_CMD`": `verify_version_files_synced` reads version files
+  directly via `_detect_version_from_file` (the same accessor table the
+  detector and bumper use) and trips the commit gate via the existing
+  `.final_check_result` sentinel mechanism. No invocation of TEST_CMD or
+  any project-defined command.
+- ✅ "Keep the no-op-bump short-circuit
+  (`PROJECT_VERSION_ENABLED` / no-changes gate) intact": the
+  `PROJECT_VERSION_ENABLED != true` short-circuit at the top of both
+  `bump_version_files` and `verify_version_files_synced` is preserved;
+  `_hook_project_version_bump` continues to short-circuit on
+  `git status --porcelain` empty.
 
 ## Verification
 
 | Test | Result |
 |---|---|
-| `tests/test_preflight_noop_test_cmd.sh` | 20 PASS / 0 FAIL |
-| `tests/test_init_test_cmd_detection.sh` | 17 PASS / 0 FAIL |
-| `internal/preflight/test_cmd_test.go` (8 cases, full Go-side coverage) | PASS |
-| `bash tests/run_tests.sh` (full suite) | 506 shell PASS / 0 FAIL + Go PASS |
-| `shellcheck` modified bash files (warning+) | clean |
-
-## Acceptance Criteria — predicate-by-predicate
-
-- ✅ **AC1.** A project with `TEST_CMD="true"` in `MILESTONE_MODE` produces
-  a preflight warning and a `HUMAN_ACTION_REQUIRED` entry:
-  `TestTestCmdCheck_Warn_NoopInMilestoneMode` (asserts both the
-  `StatusWarn` finding and the `HUMAN_ACTION_REQUIRED.md` line containing
-  `TEST_CMD is a no-op` and `Source: preflight`).
-- ✅ **AC2.** The Run Summary distinguishes "tests skipped (no-op)" from
-  "tests passed": `lib/hooks_final_checks.sh:107-113` now emits the
-  `tests: skipped (no-op TEST_CMD: '<value>')` warn line; the previous
-  `success "${TEST_CMD:-true}: all passing"` only fires when a real
-  command exited 0.
-- ✅ **AC3.** `RUN_RESULT.json` / tester result carries `tests_run=false`
-  for a no-op gate: `_record_tests_run_state "false"` splices
-  `"tests_run": false` via jq. `internal/proto.RunResultV1.TestsRun` is
-  the typed envelope side.
-- ✅ **AC4.** Init on a Cargo/Node/Go project emits a real `TEST_CMD`,
-  not "true": `tests/test_init_test_cmd_detection.sh` covers Cargo.toml,
-  go.mod, package.json (with both real-scripts.test and npm-init
-  placeholder cases), pyproject.toml, setup.py, Gemfile-rspec, mix.exs,
-  pubspec.yaml (flutter + dart variants), priority ordering, and the
-  no-manifest case (17 assertions).
-- ✅ **AC5.** `REQUIRE_REAL_TEST_CMD=true` turns the warning into a
-  preflight hard-fail; default stays warn:
-  `TestTestCmdCheck_Fail_RequireRealTestCmd` (StatusFail when
-  REQUIRE_REAL_TEST_CMD=true), `TestTestCmdCheck_Warn_NoopInMilestoneMode`
-  (StatusWarn at default).
-
-## Watch For — predicate-by-predicate
-
-- ✅ "Do not hard-break existing projects that intentionally run with
-  `TEST_CMD="true"`": default is `StatusWarn`; hard-fail requires opt-in
-  via `REQUIRE_REAL_TEST_CMD=true`. Both
-  `TestTestCmdCheck_Warn_NoopInMilestoneMode` and the corresponding
-  Skipped tests cover the no-break path.
-- ✅ "The acceptance stage already logs `${TEST_CMD:-true}` — align the
-  no-op detection so the warning and the runner agree on what counts as
-  no-op": `IsNoopCommand` (Go) and `_is_noop_test_cmd` (bash) recognise
-  the identical set (`""`, `"true"`, `":"`, `"/bin/true"`,
-  `"/usr/bin/true"` after trim). The "" case in particular mirrors bash's
-  `${TEST_CMD:-true}` substitution: an unset value operationally runs
-  `true`, so both gates classify it the same.
+| `tests/test_version_bump_multifile.sh` (NEW) | 14 PASS / 0 FAIL |
+| `tests/test_version_bump_json.sh` (NEW) | 13 PASS / 0 FAIL |
+| `tests/test_project_version_bump.sh` (existing) | 34 PASS / 0 FAIL |
+| `tests/test_project_version_detect.sh` (existing) | 18 PASS / 0 FAIL |
+| `tests/test_project_version_hint.sh` (existing) | 6 PASS / 0 FAIL |
+| `bash tests/run_tests.sh` full suite | 509 shell PASS / 0 FAIL + Go PASS |
+| `shellcheck -S warning` on modified .sh files | clean |
+| File-length ceiling (300 lines on lib/, soft on tests/) | all lib files ≤ 268 lines |
 
 ## Files Modified
 
-- `internal/preflight/test_cmd.go` (NEW) — `TestCmdCheck`,
-  `IsNoopCommand`, `resolveHumanActionPath`.
-- `internal/preflight/test_cmd_test.go` (NEW) — 8 Go cases covering the
-  recognition set, milestone-mode gating, default-warn behavior,
-  REQUIRE_REAL_TEST_CMD hard-fail, the unset-counts-as-noop path, and
-  the path-resolution helpers.
-- `internal/preflight/orchestrator.go` — registered `test_cmd` in
-  `checkOrder` and `goNativeChecks`.
-- `internal/preflight/orchestrator_test.go` — updated
-  `TestCheckOrder_MatchesRegistration` expected list,
-  `TestNewOrchestrator_BuildsAllFiveChecks` expected count (6→7), and
-  `TestOrchestratorRun_NoApplicableChecks_NoReport` env scrub set.
-- `internal/proto/run_v1.go` — added `RunResultV1.TestsRun *bool` field.
-- `lib/hooks_final_checks.sh` — replaced inline helpers with a sourced
-  shim; new no-op short-circuit in `run_final_checks` plus
-  `_record_tests_run_state "true"` calls on the three real-test exit
-  paths. File is back under the 300-line bash ceiling (268 lines).
-- `lib/hooks_final_checks_helpers.sh` (NEW) — `_is_noop_test_cmd`,
-  `_record_tests_run_state`.
-- `lib/milestone_acceptance.sh` — short-circuits the TEST_CMD branch when
-  `_is_noop_test_cmd` returns 0; logs the same honest warn line and
-  records the false state.
-- `lib/init_config.sh` — wires the m42 fallback into
-  `_generate_smart_config` immediately after the upstream detect pipeline
-  and before the CI override block.
-- `lib/init_config_test_cmd.sh` (NEW) — `_m42_test_cmd_fallback` and
-  `_m42_test_cmd_fallback_source` for the seven ecosystems the milestone
-  enumerates.
-- `cmd/tekhton/preflight_test.go` —
-  `TestPreflightCmd_EmptyProjectExitsZero` env scrub set extended to
-  include `MILESTONE_MODE` / `REQUIRE_REAL_TEST_CMD`.
-- `tests/test_preflight_noop_test_cmd.sh` (NEW) — 20 bash assertions
-  covering `_is_noop_test_cmd` recognition / rejection, the sentinel
-  writer's happy path, the RUN_RESULT.json jq splice, and the three
-  best-effort no-artifact branches.
-- `tests/test_init_test_cmd_detection.sh` (NEW) — 17 bash assertions
-  covering every ecosystem branch plus priority ordering and the
-  no-manifest case.
-- `CLAUDE.md` — added `init_config_test_cmd.sh` to the repo-layout tree
-  and `REQUIRE_REAL_TEST_CMD` to the Template Variables table.
+- `lib/project_version_bump.sh` — extracted `_bump_single_file` into the
+  new helpers file; replaced `IFS=';' read -ra` with
+  `_parse_version_files_list` (now supports newline-separated values);
+  wired in the post-bump `verify_version_files_synced` call;
+  self-sources the helpers file via a sentinel-guarded `source` so the
+  bump shim is callable from any context. 264 lines (was 301).
+- `lib/project_version_bump_helpers.sh` (NEW) —
+  `_parse_version_files_list`, `_bump_json_version`, `_bump_single_file`.
+  132 lines.
+- `lib/project_version_verify.sh` (NEW) — `verify_version_files_synced`
+  with `trip_commit_gate` + `drift human-action append` integration.
+  107 lines.
+- `lib/project_version.sh` — added `_discover_package_json_files`
+  (git-aware bounded walk, falls back to find with prunes); wired into
+  `detect_project_version_files` to merge auto-discovered non-root
+  `package.json` entries into VERSION_FILES. 268 lines.
+- `tekhton-legacy.sh` — source the two new lib files immediately after
+  `lib/project_version_bump.sh` (before `lib/finalize.sh`).
+- `internal/stagerunner/helpers.go` — added the two new lib files to
+  `DefaultLibHelpers` to keep the bash↔Go parity test
+  (`TestDefaultLibHelpersParityWithLegacy`) green.
+- `tests/test_version_bump_multifile.sh` (NEW) — 14 assertions covering
+  `_parse_version_files_list` semantics, the Cargo+package.json synced
+  bump, desync → commit-gate trip, single-file backward compat, and the
+  missing-file non-blocking branch of verify. 237 lines.
+- `tests/test_version_bump_json.sh` (NEW) — 13 assertions covering
+  format-preservation under `_bump_json_version`, the package.json
+  routing through `_bump_single_file`, and the `_discover_package_json_files`
+  non-root scan including node_modules exclusion + version-less skip
+  + no-duplicate guarantee. 221 lines.
+- `docs/reference/configuration.md` — new "Project Versioning" section
+  with VERSION_FILES syntax, JSON / TOML selector vocabulary, the Cargo
+  + non-root JSON example, post-bump self-check semantics, and the
+  PROJECT_VERSION_* config-key table.
+- `CLAUDE.md` — added the two new `lib/` files to the repository
+  layout tree.
 
 ## Architecture Change Proposals
 
-None. The new preflight check is a sibling of existing five
-(`foundation` / `ui_audit` / `env` / `claude_env` / `services_infer` /
-`services`); the registration mechanism, the per-finding shape, and the
-HUMAN_ACTION_REQUIRED writer were all already in place. The
-`RunResultV1.TestsRun` field is an additive `omitempty` pointer — legacy
-RUN_RESULT.json files keep their existing shape, and the bash side
-mutates the file via jq rather than the runner re-marshalling.
+None. The new `lib/project_version_bump_helpers.sh` follows the
+established pattern (`common.sh` → `common_box.sh` / `common_timing.sh`,
+`state.sh` → `state_helpers.sh`, `tui.sh` → `tui_helpers.sh`) of a
+library self-sourcing its helpers when the parent is sourced. The new
+`lib/project_version_verify.sh` is a sibling module deliberately *not*
+self-sourced by the bump library — it's an optional concern (the
+post-bump check) called via `command -v` so the bump library remains
+usable in test contexts that don't want the gate-tripping side effect.
+
+`trip_commit_gate` and `drift human-action append` are the existing
+post-pipeline drift integration seams (used by `stages/coder_buildfix.sh`
+and `stages/architect.sh` already); no new contract.
 
 ## Observed Issues (out of scope)
 
-- `lib/finalize_commit.sh` is still at 287 lines (carried over from the
-  prior reviewer's non-blocking note). Untouched by m42 but still on the
-  edge of the ceiling. A single future addition will breach it; the
-  reviewer's recommendation to extract `_do_git_commit` or the
-  bookkeeping helpers stands.
-- `stages/coder.sh` is still at 1202 lines (carried over). Same story —
-  the prior reviewer flagged a dedicated refactor milestone; m42 left it
-  alone deliberately.
-- `lib/init_config_sections.sh` carries a duplicate of the same
-  `TEST_CMD="true"` fallback at line 57 that `_emit_section_essential`
-  uses. m42 fixes the upstream by populating `test_cmd` before the
-  sectioned generator runs, so the fallback never fires in practice;
-  but the two-code-paths situation is a code-smell that a future cleanup
-  milestone could collapse.
+- `lib/finalize_commit.sh` and `stages/coder.sh` size ceilings — both
+  carried over from m42's summary. Untouched by m43.
+- `lib/init_config_sections.sh` duplicate `TEST_CMD="true"` fallback —
+  carried over from m42. Untouched by m43.
 
 ## Human Notes Status
 
@@ -216,7 +229,11 @@ No Human Notes block was injected for this run.
 
 ## Docs Updated
 
-- `CLAUDE.md` — added the new `lib/init_config_test_cmd.sh` to the
-  repository layout tree and `REQUIRE_REAL_TEST_CMD` to the Template
-  Variables config-key table. The new `RunResultV1.TestsRun` field is
-  documented in its struct comment in `internal/proto/run_v1.go`.
+- `docs/reference/configuration.md` — new "Project Versioning" section
+  documenting the VERSION_FILES multi-file / JSON / pointer syntax with
+  the Cargo + non-root JSON example, plus the post-bump self-check
+  semantics and the PROJECT_VERSION_* config-key table. This is the
+  public-surface change the milestone asks for under Goal 3.
+- `CLAUDE.md` — added the two new lib files
+  (`project_version_bump_helpers.sh`, `project_version_verify.sh`) to
+  the repository layout tree so the architecture map stays in sync.

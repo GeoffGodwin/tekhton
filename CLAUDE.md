@@ -46,6 +46,8 @@ tekhton/
 │   ├── finalize_version.sh # Project version bump finalize hooks
 │   ├── project_version.sh  # Target-project version file detection
 │   ├── project_version_bump.sh # Version bump logic + file writes
+│   ├── project_version_bump_helpers.sh # m43 per-file write helpers + multi-file VERSION_FILES parser + format-preserving JSON bumper
+│   ├── project_version_verify.sh # m43 post-bump consistency self-check (trip_commit_gate on desync)
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # m15 wedge shim — execs `tekhton prompt render`
 │   ├── prompts_io.sh       # m15 — file-content helpers (_safe_read_file, _wrap_file_content)

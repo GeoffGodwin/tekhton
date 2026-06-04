@@ -450,6 +450,67 @@ for the outcome vocabulary and progress-gate semantics.
 | `DOC_QUALITY_ASSESSMENT_ENABLED` | `true` | Enable doc quality assessment |
 | `WORKSPACE_ENUM_LIMIT` | `50` | Max sub-projects to enumerate |
 
+## Project Versioning
+
+Tekhton bumps the target project's version after every successful run. The
+detected version files live in `.claude/project_version.cfg` under
+`VERSION_FILES`. Auto-detection finds the conventional manifests (`Cargo.toml`,
+`pyproject.toml`, `package.json`, `setup.py`, `setup.cfg`, `gradle.properties`,
+`Chart.yaml`, `composer.json`, `pubspec.yaml`, `VERSION`) at the project root,
+and additionally walks tracked `package.json` files at non-root paths so
+workspace / template manifests (e.g. `bindings/foo-wasm/pkg-template/package.json`)
+are kept in sync with the root one.
+
+### `VERSION_FILES` syntax
+
+Each entry is `path:selector`. Multiple entries may be joined with `;`
+(semicolons) or split across lines. Whitespace around entries is trimmed.
+
+Selectors:
+
+- **TOML dotted path** — e.g. `.package.version` (Cargo) or
+  `.project.version` (pyproject). The bumper writes back to the
+  `version = "X"` line under the conventional table; the selector is
+  retained for compatibility and future structured-edit accessors.
+- **JSON pointer / dotted path** — `.version` or `#/version`. JSON bumps
+  are line-based and format-preserving — they touch only the matched
+  `"version": "X"` line and never reserialise the file (key order,
+  indentation, and trailing whitespace are left alone).
+- **`.` (root)** — for plaintext `VERSION` files.
+
+Example (Rust workspace with a WASM binding template):
+
+```ini
+VERSION_FILES=Cargo.toml:.workspace.package.version;bindings/sdivi-wasm/pkg-template/package.json:.version
+```
+
+Or, equivalently, one entry per line in the config cache file:
+
+```ini
+VERSION_FILES=Cargo.toml:.workspace.package.version
+bindings/sdivi-wasm/pkg-template/package.json:.version
+```
+
+### Post-bump consistency self-check
+
+After every bump, Tekhton reads every declared/detected file back and
+asserts the on-disk version matches the bump target. If any file diverges,
+the commit gate is tripped with `version_files_desynced_<file>` and a
+`HUMAN_ACTION_REQUIRED.md` entry is emitted. The self-check runs
+independently of `TEST_CMD` — so a desynced bump fails the commit gate
+even in projects whose test command is the no-op default.
+
+### Config keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `PROJECT_VERSION_ENABLED` | `true` | Toggle project version bumping |
+| `PROJECT_VERSION_STRATEGY` | `semver` | Version strategy: `semver`, `calver`, `datestamp`, `milestone`, `none` |
+| `PROJECT_VERSION_DEFAULT_BUMP` | `patch` | Fallback bump type when no rule matches |
+| `PROJECT_VERSION_AUTO_DETECT` | `true` | Auto-detect version files on first run |
+| `PROJECT_VERSION_CONFIG` | `.claude/project_version.cfg` | Path to version config cache |
+| `PROJECT_VERSION_TAG_ON_BUMP` | `false` | Create git tag `vX.Y.Z` on bump |
+
 ## Other Settings
 
 | Key | Default | Description |

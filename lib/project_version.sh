@@ -83,6 +83,53 @@ _accessor_for_file() {
     esac
 }
 
+# _discover_package_json_files PROJECT_DIR
+#   Emit project-dir-relative paths of every `package.json` under
+#   PROJECT_DIR that has a `"version"` field, one per line. Bounded to:
+#   `git ls-files` output when the project is a git repo (cheapest, also
+#   the milestone's "bounded to tracked files" guidance), with a `find`
+#   fallback that prunes `node_modules`, `.git`, `dist`, `build`, and
+#   `.tekhton`. Caller is responsible for skipping the root package.json
+#   and de-duplicating entries.
+_discover_package_json_files() {
+    local project_dir="$1"
+    [[ -z "$project_dir" || ! -d "$project_dir" ]] && return 0
+
+    local -a candidates=()
+    if command -v git &>/dev/null && \
+       git -C "$project_dir" rev-parse --is-inside-work-tree &>/dev/null; then
+        local line
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            candidates+=("$line")
+        done < <(git -C "$project_dir" ls-files -- '*package.json' 2>/dev/null || true)
+    else
+        local line
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            candidates+=("${line#"${project_dir}/"}")
+        done < <(find "$project_dir" \
+            \( -path '*/node_modules' -o -path '*/.git' \
+               -o -path '*/dist' -o -path '*/build' \
+               -o -path '*/.tekhton' \) -prune -o \
+            -type f -name 'package.json' -print 2>/dev/null || true)
+    fi
+
+    local rel
+    for rel in "${candidates[@]}"; do
+        # Filter out paths that obviously fell through (find's -print
+        # emits the pruned directory line first when a prune matches).
+        [[ "$rel" == */node_modules/* ]] && continue
+        [[ "$rel" == .git/* ]] && continue
+        local abs="${project_dir}/${rel}"
+        [[ -f "$abs" ]] || continue
+        # Cheap content check — must declare a `"version"` field. Avoids
+        # spurious npm workspace member manifests that don't carry one.
+        grep -qE '"version"[[:space:]]*:[[:space:]]*"' -- "$abs" 2>/dev/null || continue
+        printf '%s\n' "$rel"
+    done
+}
+
 # detect_project_version_files
 #   Scans $PROJECT_DIR for known version files. Writes the list +
 #   current version to $PROJECT_VERSION_CONFIG. Idempotent — skips if
@@ -133,6 +180,29 @@ detect_project_version_files() {
         current_version="${current_version:-$ver}"
         detected=true
     done
+
+    # m43 auto-discovery: pick up non-root package.json files that declare a
+    # `version` field (template/bindings manifests like
+    # bindings/sdivi-wasm/pkg-template/package.json) so a workspace bump
+    # syncs every JSON version, not just the root one.
+    local extra_pkg
+    while IFS= read -r extra_pkg; do
+        [[ -z "$extra_pkg" ]] && continue
+        # Skip the root package.json — already covered by the ecosystems
+        # loop above (and listed once is enough).
+        [[ "$extra_pkg" == "package.json" ]] && continue
+        # Skip if already listed (no duplicates).
+        case ";${version_files};" in
+            *";${extra_pkg}:.version;"*) continue ;;
+            *";${extra_pkg}:"*) continue ;;
+        esac
+        local extra_ver
+        extra_ver=$(_detect_version_from_file "${project_dir}/${extra_pkg}" "json" 2>/dev/null) || continue
+        [[ -z "$extra_ver" ]] && continue
+        version_files="${version_files:+${version_files};}${extra_pkg}:.version"
+        current_version="${current_version:-$extra_ver}"
+        detected=true
+    done < <(_discover_package_json_files "$project_dir")
 
     # If none found, create VERSION file as source of truth
     if [[ "$detected" != true ]]; then

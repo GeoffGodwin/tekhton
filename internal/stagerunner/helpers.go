@@ -166,6 +166,8 @@ var DefaultLibHelpers = []string{
 	"lib/express_persist.sh",
 	"lib/project_version.sh",
 	"lib/project_version_bump.sh",
+	"lib/project_version_bump_helpers.sh",
+	"lib/project_version_verify.sh",
 	"lib/finalize.sh",
 	"lib/milestone_metadata.sh",
 	"lib/orchestrate.sh",

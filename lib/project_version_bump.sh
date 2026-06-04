@@ -1,17 +1,31 @@
 #!/usr/bin/env bash
-set -euo pipefail
 # =============================================================================
 # project_version_bump.sh — Version bump logic and file writes
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: lib/project_version.sh sourced first.
+# Self-sources lib/project_version_bump_helpers.sh (per-file write helpers
+# + multi-file VERSION_FILES parser) so bump_version_files is callable from
+# any context that has the bump shim sourced.
+# Post-bump verify lives in lib/project_version_verify.sh and is sourced
+# separately at the top-level (call site detects it via command -v).
 # Provides:
 #   compute_next_version  — pure function: current + strategy + bump → next
 #   get_version_bump_hint — read CODER_SUMMARY.md for disposition hints
-#   bump_version_files    — write bumped version to all detected files
+#   bump_version_files    — write bumped version to all detected files,
+#                           then run the post-bump consistency self-check
 #   _max_done_milestone_in_manifest — highest numeric milestone with
 #                                     status=done in MANIFEST.cfg (#45)
 # =============================================================================
+
+# Self-source the per-file write helpers + multi-file parser. Idempotent —
+# guarded by a sentinel so multiple sources (e.g. tekhton-legacy.sh + a
+# direct test source) don't re-execute the body.
+if [[ -z "${_PROJECT_VERSION_BUMP_HELPERS_SOURCED:-}" ]]; then
+    # shellcheck source=./project_version_bump_helpers.sh
+    source "$(dirname -- "${BASH_SOURCE[0]}")/project_version_bump_helpers.sh"
+    _PROJECT_VERSION_BUMP_HELPERS_SOURCED=1
+fi
 
 # _max_done_milestone_in_manifest [PROJECT_DIR]
 # Returns the highest numeric milestone ID with status=done in
@@ -218,10 +232,13 @@ bump_version_files() {
 
     [[ "$next_version" == "$cached_version" ]] && return 0
 
-    # Bump each detected version file
-    IFS=';' read -ra entries <<< "$version_files_str"
+    # Bump each declared version file (m43: multi-entry parser handles both
+    # `;`- and newline-separated VERSION_FILES values).
+    local -a entries=()
+    _parse_version_files_list "$version_files_str" entries
+    local entry file
     for entry in "${entries[@]}"; do
-        local file="${entry%%:*}"
+        file="${entry%%:*}"
         _bump_single_file "${project_dir}/${file}" "$cached_version" "$next_version"
     done
 
@@ -237,65 +254,11 @@ bump_version_files() {
     if command -v log &>/dev/null; then
         log "Bumped project version: ${cached_version} → ${next_version} (${bump_type})"
     fi
-}
 
-# _bump_single_file FILE OLD_VERSION NEW_VERSION
-#   Write the new version into a single version file.
-_bump_single_file() {
-    local file="$1"
-    local old_version="$2"
-    local new_version="$3"
-
-    [[ ! -f "$file" ]] && return 0
-
-    local basename
-    basename=$(basename "$file")
-
-    # Escape dots in old_version for sed regex
-    local escaped_old
-    escaped_old=$(printf '%s' "$old_version" | sed 's/\./\\./g')
-
-    case "$basename" in
-        package.json|composer.json)
-            python3 -c "
-import json, sys
-with open(sys.argv[1], 'r') as f:
-    d = json.load(f)
-if d.get('version') == sys.argv[2]:
-    d['version'] = sys.argv[3]
-    with open(sys.argv[1], 'w') as f:
-        json.dump(d, f, indent=2)
-        f.write('\n')
-" "$file" "$old_version" "$new_version" 2>/dev/null || true
-            ;;
-        pyproject.toml|Cargo.toml)
-            # Two patterns: one for single-quoted, one for double-quoted,
-            # so the replacement preserves the original quote style.
-            sed -i.bak \
-                -e "s|^\\(version\\s*=\\s*'\\)${escaped_old}'|\1${new_version}'|" \
-                -e "s|^\\(version\\s*=\\s*\"\\)${escaped_old}\"|\1${new_version}\"|" \
-                "$file"
-            rm -f "${file}.bak"
-            ;;
-        setup.py)
-            # Two patterns: one for single-quoted, one for double-quoted,
-            # so the replacement preserves the original quote style.
-            sed -i.bak \
-                -e "s|\\(version\\s*=\\s*'\\)${escaped_old}'|\\1${new_version}'|" \
-                -e "s|\\(version\\s*=\\s*\"\\)${escaped_old}\"|\\1${new_version}\"|" \
-                "$file"
-            rm -f "${file}.bak"
-            ;;
-        setup.cfg|gradle.properties)
-            sed -i.bak "s|^\\(version\\s*=\\s*\\)${escaped_old}|\\1${new_version}|" "$file"
-            rm -f "${file}.bak"
-            ;;
-        Chart.yaml|pubspec.yaml)
-            sed -i.bak "s|^\\(version:\\s*\\)${escaped_old}|\\1${new_version}|" "$file"
-            rm -f "${file}.bak"
-            ;;
-        VERSION)
-            echo "$new_version" > "$file"
-            ;;
-    esac
+    # m43 Goal 2: post-bump consistency self-check. Read every declared
+    # file back; trip the commit gate + emit a HUMAN_ACTION entry on any
+    # divergence so a desynced bump never reaches the commit stage.
+    if command -v verify_version_files_synced &>/dev/null; then
+        verify_version_files_synced "$next_version" "${entries[@]}" || true
+    fi
 }
