@@ -87,6 +87,19 @@ func newRunCmd() *cobra.Command {
 			// req.DryRun, but no dispatch branch consumes it yet — every path
 			// below invokes agents for real. Wiring the flag to a preview-only
 			// pipeline path is deferred to Phase 5 / a later milestone.
+			// For milestone-mode runs, derive a non-empty Task string from
+			// the manifest entry's title. The bash stage subprocesses read
+			// TASK to set up the coder prompt; without this, coder agents
+			// see an empty `BEGIN USER TASK / END USER TASK` block and
+			// self-report "nothing to implement" even when the milestone
+			// has real work to do. The MILESTONE_BLOCK env var separately
+			// carries the full milestone file content for the bash side's
+			// set_focused_milestone_block helper, but the agent's prompt
+			// also renders {{TASK}} above the block, and an empty TASK is
+			// what triggers the null-run pattern that cascaded through
+			// m36.1, m36.2, m41, m42, m43 on the 2026-06-03 auto-advance.
+			deriveMilestoneTask(req)
+
 			switch {
 			case resumeFlag:
 				res, runErr = r.Resume(ctx)
@@ -461,6 +474,46 @@ func buildEnvBuilder(req *proto.RunRequestV1) *runner.EnvBuilder {
 //   - just-finished milestone is not actually marked done (finalize failed
 //     to update the manifest — re-running would loop forever)
 //   - any iteration fails or completes with non-success disposition
+// deriveMilestoneTask populates req.Task with a derived "Implement
+// Milestone <ID>: <Title>" string when:
+//   - req is in milestone mode (req.Mode == RunModeMilestone), AND
+//   - req.Task is empty (no explicit override), AND
+//   - the manifest can be loaded and the milestone id resolves.
+//
+// Mirrors the bash convention from stages/coder.sh::_switch_to_sub_milestone
+// (`TASK="Implement Milestone ${_first_sub}: ${_first_title}"`) so the coder
+// prompt's {{TASK}} block always has a non-empty descriptor on milestone-
+// mode runs. Without this, the Go runner emits TASK="" into the stage
+// subprocess env, the coder reads an empty `BEGIN USER TASK` block, and
+// self-reports nothing-to-implement — the null-run cascade.
+//
+// Best-effort: any failure (manifest unreadable, id not in manifest,
+// missing PROJECT_DIR) leaves req.Task as-is. The bash stage's
+// MILESTONE_BLOCK helper still carries the full milestone file content
+// independently — this helper is the upper-level TASK descriptor, not
+// the design payload.
+func deriveMilestoneTask(req *proto.RunRequestV1) {
+	if req == nil || req.Mode != proto.RunModeMilestone || req.Task != "" {
+		return
+	}
+	if req.Milestone == "" || req.ProjectDir == "" {
+		return
+	}
+	manifestPath := os.Getenv("MILESTONE_MANIFEST_FILE")
+	if manifestPath == "" {
+		manifestPath = filepath.Join(req.ProjectDir, ".claude", "milestones", "MANIFEST.cfg")
+	}
+	m, err := manifest.Load(manifestPath)
+	if err != nil {
+		return
+	}
+	entry, ok := m.Get(req.Milestone)
+	if !ok {
+		return
+	}
+	req.Task = fmt.Sprintf("Implement Milestone %s: %s", entry.ID, entry.Title)
+}
+
 func runAutoAdvanceLoop(
 	ctx context.Context,
 	cmd *cobra.Command,
@@ -559,6 +612,7 @@ func runAutoAdvanceLoop(
 			Proto:            proto.RunRequestProtoV1,
 			Mode:             proto.RunModeMilestone,
 			Milestone:        next.ID,
+			Task:             fmt.Sprintf("Implement Milestone %s: %s", next.ID, next.Title),
 			ProjectDir:       initialReq.ProjectDir,
 			TekhtonHome:      initialReq.TekhtonHome,
 			NoTUI:            initialReq.NoTUI,
