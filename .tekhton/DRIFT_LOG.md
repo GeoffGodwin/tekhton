@@ -3,9 +3,9 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 189
+- Runs since audit: 190
 =======
-- Runs since audit: 189
+- Runs since audit: 190
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -54,6 +54,8 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-04 | "unknown"] `stages/coder.sh:1202` â The file has ballooned well past the 300-line ceiling through accumulated sub-stage sourcing and feature accretion. The scout / build-fix sub-stages have their own files (`coder_prerun.sh`, `coder_buildfix.sh`) but `run_stage_coder` itself has not been split. A dedicated refactor milestone to extract `_run_coder_milestone_setup`, `_run_coder_main`, and `_run_coder_gates` into companion files would bring this back under control.
+- [x] [2026-06-04 | "unknown"] `lib/finalize_commit.sh:_run_commit_bookkeeping` â execs a `tekhton commit-bookkeeping` subcommand that is not listed in the Architecture Map's Cobra subcommand inventory. If this was added after m21, the architecture map entry should be updated to document it.
 - [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses a single-quoted delimiter (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` on the last instruction line is a literal string in the rendered prompt rather than the resolved filename. Pre-existing behavior moved verbatim from `milestone_window.sh`; agents that read the instruction literally will look for a file named `${CODER_SUMMARY_FILE}`. Worth a follow-up fix (change delimiter to unquoted, or replace with the literal `CODER_SUMMARY.md`).
 - [x] [2026-06-03 | "unknown"] `set -euo pipefail` appears at the top of both new sourced lib files (`milestone_window_build.sh:25`, `finalize_commit_sentinel.sh:16`), consistent with pre-existing convention in `milestone_window.sh:23` and `finalize_commit.sh:21` but inconsistent with the reviewer-checklist rule that sourced lib files should inherit rather than re-declare pipefail. ~20+ existing files carry this â drift pre-dates m41 and harmonisation is its own cleanup ticket.
 - [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses single-quoted form (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` inside it is a literal string rather than the resolved path. Pre-existing behavior moved verbatim from `milestone_window.sh`; worth a follow-up fix or comment if agents are confused by the unexpanded variable in the prompt.
