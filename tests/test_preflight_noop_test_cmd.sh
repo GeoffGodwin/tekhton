@@ -24,6 +24,11 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 TEST_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
+# Test isolation: the pipeline runner exports TEKHTON_RUN_RESULT_FILE pointing
+# at the real run-result. Clear it so _record_tests_run_state falls back to
+# ${TEKHTON_DIR}/RUN_RESULT.json — the path the test prepares per scenario.
+unset TEKHTON_RUN_RESULT_FILE
+
 # Stub the common.sh log/warn family so the helpers can be sourced standalone.
 log()     { :; }
 warn()    { :; }
