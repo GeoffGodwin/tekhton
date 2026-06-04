@@ -84,6 +84,24 @@ _generate_smart_config() {
         fi
     fi
 
+    # m42: Final-stage ecosystem probe for TEST_CMD when nothing was detected.
+    # The Go detect engine already maps Cargo.toml/go.mod/package.json to real
+    # test commands, but it returns empty when (a) the binary isn't on PATH yet
+    # during init bootstrap, (b) a manifest exists but its detector predicate
+    # doesn't match (package.json without scripts.test), or (c) jq is missing.
+    # Without this fallback the user gets TEST_CMD="true" and milestones tick
+    # green without running tests — the failure mode m42 was filed to fix.
+    if [[ -z "$test_cmd" ]]; then
+        local _fallback _fallback_src
+        _fallback=$(_m42_test_cmd_fallback "$project_dir")
+        if [[ -n "$_fallback" ]]; then
+            _fallback_src=$(_m42_test_cmd_fallback_source "$project_dir")
+            test_cmd="$_fallback"
+            test_conf="medium"
+            test_source="${_fallback_src:-manifest probe (m42 fallback)}"
+        fi
+    fi
+
     # Milestone 12: CI-detected command override
     if [[ -n "${_INIT_CI_CONFIG:-}" ]]; then
         local ci_test ci_build ci_lint
@@ -267,3 +285,7 @@ _merge_preserved_values() {
 # --- Config file section emitters (extracted to init_config_emitters.sh) ------
 # shellcheck source=lib/init_config_emitters.sh
 source "${_INIT_CONFIG_DIR}/init_config_emitters.sh"
+
+# --- m42: Ecosystem TEST_CMD fallback (extracted to init_config_test_cmd.sh) --
+# shellcheck source=lib/init_config_test_cmd.sh
+source "${_INIT_CONFIG_DIR}/init_config_test_cmd.sh"

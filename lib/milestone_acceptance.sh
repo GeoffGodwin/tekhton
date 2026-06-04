@@ -30,6 +30,16 @@ check_milestone_acceptance() {
 
     # --- Automatable check 1: Test command passes ---
     if [[ -n "${TEST_CMD:-}" ]]; then
+        # m42: short-circuit when TEST_CMD is a recognized no-op so milestone
+        # acceptance does not silently tick green on `bash -c "true"`. Surfaces
+        # the same honest "tests: skipped" line run_final_checks emits, and
+        # records the false state so RUN_RESULT.json reflects the gap.
+        if declare -f _is_noop_test_cmd &>/dev/null && _is_noop_test_cmd "${TEST_CMD:-}"; then
+            warn "tests: skipped (no-op TEST_CMD: '${TEST_CMD:-}') — milestone acceptance is not exercising the project's tests."
+            if declare -f _record_tests_run_state &>/dev/null; then
+                _record_tests_run_state "false"
+            fi
+        else
         log "Running test command: ${TEST_CMD:-true}"
         local test_output=""
         local test_exit=0
@@ -95,6 +105,7 @@ check_milestone_acceptance() {
                     ;;
             esac
         fi
+        fi  # /m42 noop short-circuit
     else
         log "No TEST_CMD configured — skipping test check"
     fi

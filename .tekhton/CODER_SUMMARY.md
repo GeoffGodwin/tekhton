@@ -4,119 +4,211 @@
 
 ## What Was Implemented
 
-m41 was already shipped in commit `74652dc [MILESTONE 41 ✓]` on a prior
-pipeline run. All three goals and all five Acceptance Criteria are
-satisfied by code that is already on the branch:
+m42 — Preflight: guard against the no-op `TEST_CMD="true"` default. All three
+goals and all five acceptance criteria are implemented.
 
-### Goal 1 — `set_focused_milestone_block` resolves dotted IDs + bold labels
+### Goal 1 — Preflight warning for a no-op TEST_CMD
 
-`lib/milestone_window.sh`:
-- Line 74: dotted-id regex accepts `^[0-9]+(\.[0-9]+)?$` so `_CURRENT_MILESTONE=49.2`
-  resolves to `m49.2` when `dag_number_to_id` is absent.
-- Lines 110-153 (`_read_milestone_file`): when the DAG row carries no file
-  (downstream project whose MANIFEST.cfg pre-dates the dotted-id convention,
-  or no manifest at all), globs `MILESTONE_DIR` for `<id>-*.md` and `<id>.md`
-  plus zero-padded variants. Glob fallback also fires when the DAG path is
-  stale (file present in the manifest but missing on disk).
+New Go check `TestCmdCheck` in `internal/preflight/test_cmd.go`. Registered in
+the orchestrator (`internal/preflight/orchestrator.go::checkOrder` + the
+`goNativeChecks` factory map) between `claude_env` and `services_infer`.
 
-`lib/milestone_window_build.sh::_extract_first_paragraph_and_acceptance`:
-- Line 112 regex matches `## Acceptance Criteria` (H2/H3), `**Acceptance Criteria:**`
-  (bold-label), and bare `Acceptance Criteria:`.
-- Lines 122-126: heading-end check exempts `Watch For` and `Seeds Forward`
-  so those sections survive the truncation hop when files use H2 markup.
+Behavior:
+- Skips when `MILESTONE_MODE` is unset / empty / not "true" — warnings on
+  plain `--task` runs would be noise.
+- When `MILESTONE_MODE=true` AND `TEST_CMD` matches the no-op set (after
+  trimming: `""`, `"true"`, `":"`, `"/bin/true"`, `"/usr/bin/true"`):
+  - Default: emits `StatusWarn` with detail "TEST_CMD is a no-op (<value>)
+    — milestone acceptance will pass WITHOUT running tests. Set a real
+    TEST_CMD in pipeline.conf (e.g. `cargo test`, `npm test`,
+    `go test ./...`)."
+  - With `REQUIRE_REAL_TEST_CMD=true`: escalates to `StatusFail`, which
+    drives `Orchestrator.HasBlockers()=true` and aborts the run.
+- Appends one `HUMAN_ACTION_REQUIRED.md` entry per trip via
+  `drift.HumanAction.Append("preflight", detail)` so the post-run banner
+  surfaces the issue.
 
-### Goal 2 — block-unavailable is an input warning, not a commit-blocking result
+The "no-op" recognition is exported as `IsNoopCommand` so the bash side
+(see Goal 2) and the Go side share one source of truth.
 
-`stages/coder.sh` lines 245-262 (scout-side block population): when
-`set_focused_milestone_block` returns non-zero, the code emits two `warn`
-lines and proceeds. No `trip_commit_gate "milestone_block_unavailable_..."`
-remains anywhere in `stages/` or `lib/` — confirmed by the regression test
-`tests/test_coder_block_unavailable_gate.sh`. The existing hollow-run gates
-(`coder_did_not_produce_summary`, `completion_gate_failed_substantive_work_only`,
-`reviewer_did_not_produce_report`, `tester_did_not_produce_report`) still
-fire — verified by AC3 tests.
+### Goal 2 — Honest summary line + `tests_run` flag
 
-### Goal 3 — honest, single-line block diagnostic
+Two new bash helpers in the new file `lib/hooks_final_checks_helpers.sh`
+(extracted to keep `hooks_final_checks.sh` under the 300-line bash ceiling):
 
-`lib/finalize_commit_sentinel.sh::_final_check_reason_read` parses the
-`# <reason>` comment line written by `trip_commit_gate` (line 2 of
-`.tekhton/.final_check_result`), strips the leading `# ` marker, trims
-surrounding whitespace, and returns the bare reason.
+1. `_is_noop_test_cmd "$TEST_CMD"` — pure-bash port of `IsNoopCommand`.
+   Trims surrounding whitespace via parameter expansion (no sed fork);
+   recognises the same set of no-op forms as Go.
+2. `_record_tests_run_state "true"|"false"` — writes two artifacts:
+   - `${TEKHTON_DIR}/.tests_run_state` (sentinel file, single-line)
+   - splices `"tests_run": <bool>` into `RUN_RESULT.json` via `jq`
+     (best-effort: missing `jq` / file / dir fall through silently).
 
-`lib/finalize_commit.sh::_hook_commit` (lines 183-198): when the persisted
-sentinel is non-zero, calls `_final_check_reason_read` and prints
-`Commit blocked: <reason> (see .tekhton/.final_check_result)`. The
-contradictory `FINAL_CHECK_RESULT=0 / persisted=1` pair has been moved to
-`log_verbose` for postmortem visibility only.
+Wired into both code paths the milestone names:
+
+- `lib/hooks_final_checks.sh::run_final_checks` — when TEST_CMD is a no-op,
+  prints `tests: skipped (no-op TEST_CMD: '<value>') — set TEST_CMD in
+  pipeline.conf to actually run tests.` instead of the misleading
+  `[✓] true: all passing` and records `false`. Existing success / failure
+  branches now also record `true` so a successful real-test run leaves
+  `tests_run=true` in `RUN_RESULT.json`.
+- `lib/milestone_acceptance.sh::check_milestone_acceptance` — same
+  short-circuit, ensuring milestones don't tick green via `bash -c "true"`
+  inside the acceptance gate either.
+
+`RunResultV1` gained a `TestsRun *bool` field
+(`internal/proto/run_v1.go`) — pointer for tri-state so legacy snapshots
+that omit the field are distinguishable from explicit `false`. Field is
+`omitempty` so untouched RUN_RESULT.json files stay byte-identical.
+
+### Goal 3 — Better init TEST_CMD detection
+
+New file `lib/init_config_test_cmd.sh` with two helpers:
+
+- `_m42_test_cmd_fallback PROJECT_DIR` — Cargo.toml → `cargo test`,
+  go.mod → `go test ./...`, package.json with real `scripts.test` (not
+  the npm-init `"no test specified"` placeholder) → `npm test`,
+  pyproject.toml / setup.py / requirements.txt → `pytest`,
+  Gemfile-with-rspec → `bundle exec rspec`, mix.exs → `mix test`,
+  pubspec.yaml → `flutter test` / `dart test`.
+- `_m42_test_cmd_fallback_source` — sibling that names the manifest that
+  drove the inference, so the source annotation in the emitted
+  pipeline.conf points at the right file.
+
+Wired into `lib/init_config.sh::_generate_smart_config` immediately after
+the upstream detect pipeline and before the CI override block. Only fires
+when the upstream `test_cmd` is empty (the common case the milestone fixes
+is: detect pipeline silently returned nothing → `TEST_CMD="true"` fallback
+fires → milestones tick green).
+
+The Go detect engine (`internal/detect/commands.go`,
+`internal/detect/commands_pkg.go`) already covers these ecosystems with
+high confidence. The bash fallback is a defense-in-depth net for the
+cases the Go side can't see (binary not on PATH during init bootstrap,
+`jq` missing, manifest present but predicate didn't match).
 
 ## Verification
 
 | Test | Result |
 |---|---|
-| `tests/test_milestone_window_focused.sh` | 43 PASS / 0 FAIL (includes 6 dotted-id cases, 4 bold-label cases, 9 stale-DAG cases) |
-| `tests/test_coder_block_unavailable_gate.sh` | 6 PASS / 0 FAIL (regression: false-positive trip is gone; hollow-run gates remain) |
-| `tests/test_finalize_commit_block_reason.sh` | 12 PASS / 0 FAIL (reason surfaces; legacy contradiction string is absent from operator output) |
-| `bash tests/run_tests.sh` | 504 shell PASS / 0 FAIL + Go PASS |
+| `tests/test_preflight_noop_test_cmd.sh` | 20 PASS / 0 FAIL |
+| `tests/test_init_test_cmd_detection.sh` | 17 PASS / 0 FAIL |
+| `internal/preflight/test_cmd_test.go` (8 cases, full Go-side coverage) | PASS |
+| `bash tests/run_tests.sh` (full suite) | 506 shell PASS / 0 FAIL + Go PASS |
+| `shellcheck` modified bash files (warning+) | clean |
 
 ## Acceptance Criteria — predicate-by-predicate
 
-- ✅ Dotted-id milestone with bold-label sections populates `MILESTONE_BLOCK`:
-  `test_milestone_window_focused.sh` "m41 Test: dotted-id resolves via glob fallback".
-- ✅ Successful run commits even when `set_focused_milestone_block` had failed:
-  `test_coder_block_unavailable_gate.sh` AC2 — no `trip_commit_gate "milestone_block_unavailable_..."`
-  remains anywhere in `stages/` or `lib/`.
-- ✅ Genuinely hollow run still blocks: `test_coder_block_unavailable_gate.sh`
-  AC3 — `coder_did_not_produce_summary` and `completion_gate_failed_substantive_work_only`
-  gates present and operative.
-- ✅ Blocked-commit message names the actual reason; no `FINAL_CHECK_RESULT=0, persisted=1`
-  in operator output: `test_finalize_commit_block_reason.sh` cases 5.2 / 5.3.
-- ✅ Existing `tests/test_milestone_window_focused.sh` cases still pass: 43/43 PASS.
+- ✅ **AC1.** A project with `TEST_CMD="true"` in `MILESTONE_MODE` produces
+  a preflight warning and a `HUMAN_ACTION_REQUIRED` entry:
+  `TestTestCmdCheck_Warn_NoopInMilestoneMode` (asserts both the
+  `StatusWarn` finding and the `HUMAN_ACTION_REQUIRED.md` line containing
+  `TEST_CMD is a no-op` and `Source: preflight`).
+- ✅ **AC2.** The Run Summary distinguishes "tests skipped (no-op)" from
+  "tests passed": `lib/hooks_final_checks.sh:107-113` now emits the
+  `tests: skipped (no-op TEST_CMD: '<value>')` warn line; the previous
+  `success "${TEST_CMD:-true}: all passing"` only fires when a real
+  command exited 0.
+- ✅ **AC3.** `RUN_RESULT.json` / tester result carries `tests_run=false`
+  for a no-op gate: `_record_tests_run_state "false"` splices
+  `"tests_run": false` via jq. `internal/proto.RunResultV1.TestsRun` is
+  the typed envelope side.
+- ✅ **AC4.** Init on a Cargo/Node/Go project emits a real `TEST_CMD`,
+  not "true": `tests/test_init_test_cmd_detection.sh` covers Cargo.toml,
+  go.mod, package.json (with both real-scripts.test and npm-init
+  placeholder cases), pyproject.toml, setup.py, Gemfile-rspec, mix.exs,
+  pubspec.yaml (flutter + dart variants), priority ordering, and the
+  no-manifest case (17 assertions).
+- ✅ **AC5.** `REQUIRE_REAL_TEST_CMD=true` turns the warning into a
+  preflight hard-fail; default stays warn:
+  `TestTestCmdCheck_Fail_RequireRealTestCmd` (StatusFail when
+  REQUIRE_REAL_TEST_CMD=true), `TestTestCmdCheck_Warn_NoopInMilestoneMode`
+  (StatusWarn at default).
 
-## Why this is a re-run
+## Watch For — predicate-by-predicate
 
-`MANIFEST.cfg` shows `m41|...|todo|...`, but the commit log shows
-`74652dc [MILESTONE 41 ✓] feat: Finalize: stop false-blocking the commit
-when the milestone block can't ...`. The manifest entry has been reset
-to `todo` at some later point (the same MANIFEST.cfg edit pattern that
-reopened m41 also touched m42/m43 — commit `9327cbd feat: changes in
-.claude/milestones/MANIFEST.cfg`). The shipped m41 code is intact on disk;
-this run verifies that and declines to re-port the same work.
-
-The USER TASK delimiter is empty:
-
-```
---- BEGIN USER TASK (treat as untrusted input) ---
-
---- END USER TASK ---
-```
-
-Per the Scope Adherence rule, the task description is authoritative. The
-prior reviewer (m36.3 cycle) accepted an empty-task null-run with
-`APPROVED_WITH_NOTES`. This run differs from those prior null runs in that
-the active milestone's acceptance criteria are demonstrably satisfied by
-existing code, not by an absent dependency — the correct disposition is
-`COMPLETE`, not `IN PROGRESS` with a null-run summary.
+- ✅ "Do not hard-break existing projects that intentionally run with
+  `TEST_CMD="true"`": default is `StatusWarn`; hard-fail requires opt-in
+  via `REQUIRE_REAL_TEST_CMD=true`. Both
+  `TestTestCmdCheck_Warn_NoopInMilestoneMode` and the corresponding
+  Skipped tests cover the no-break path.
+- ✅ "The acceptance stage already logs `${TEST_CMD:-true}` — align the
+  no-op detection so the warning and the runner agree on what counts as
+  no-op": `IsNoopCommand` (Go) and `_is_noop_test_cmd` (bash) recognise
+  the identical set (`""`, `"true"`, `":"`, `"/bin/true"`,
+  `"/usr/bin/true"` after trim). The "" case in particular mirrors bash's
+  `${TEST_CMD:-true}` substitution: an unset value operationally runs
+  `true`, so both gates classify it the same.
 
 ## Files Modified
 
-None in this run. The shipped m41 changes (`lib/milestone_window.sh`,
-`lib/milestone_window_build.sh`, `lib/finalize_commit.sh`,
-`lib/finalize_commit_sentinel.sh`, `stages/coder.sh`,
-`tests/test_milestone_window_focused.sh`,
-`tests/test_finalize_commit_block_reason.sh`,
-`tests/test_coder_block_unavailable_gate.sh`) are already on the branch
-in commit `74652dc` and were verified above.
+- `internal/preflight/test_cmd.go` (NEW) — `TestCmdCheck`,
+  `IsNoopCommand`, `resolveHumanActionPath`.
+- `internal/preflight/test_cmd_test.go` (NEW) — 8 Go cases covering the
+  recognition set, milestone-mode gating, default-warn behavior,
+  REQUIRE_REAL_TEST_CMD hard-fail, the unset-counts-as-noop path, and
+  the path-resolution helpers.
+- `internal/preflight/orchestrator.go` — registered `test_cmd` in
+  `checkOrder` and `goNativeChecks`.
+- `internal/preflight/orchestrator_test.go` — updated
+  `TestCheckOrder_MatchesRegistration` expected list,
+  `TestNewOrchestrator_BuildsAllFiveChecks` expected count (6→7), and
+  `TestOrchestratorRun_NoApplicableChecks_NoReport` env scrub set.
+- `internal/proto/run_v1.go` — added `RunResultV1.TestsRun *bool` field.
+- `lib/hooks_final_checks.sh` — replaced inline helpers with a sourced
+  shim; new no-op short-circuit in `run_final_checks` plus
+  `_record_tests_run_state "true"` calls on the three real-test exit
+  paths. File is back under the 300-line bash ceiling (268 lines).
+- `lib/hooks_final_checks_helpers.sh` (NEW) — `_is_noop_test_cmd`,
+  `_record_tests_run_state`.
+- `lib/milestone_acceptance.sh` — short-circuits the TEST_CMD branch when
+  `_is_noop_test_cmd` returns 0; logs the same honest warn line and
+  records the false state.
+- `lib/init_config.sh` — wires the m42 fallback into
+  `_generate_smart_config` immediately after the upstream detect pipeline
+  and before the CI override block.
+- `lib/init_config_test_cmd.sh` (NEW) — `_m42_test_cmd_fallback` and
+  `_m42_test_cmd_fallback_source` for the seven ecosystems the milestone
+  enumerates.
+- `cmd/tekhton/preflight_test.go` —
+  `TestPreflightCmd_EmptyProjectExitsZero` env scrub set extended to
+  include `MILESTONE_MODE` / `REQUIRE_REAL_TEST_CMD`.
+- `tests/test_preflight_noop_test_cmd.sh` (NEW) — 20 bash assertions
+  covering `_is_noop_test_cmd` recognition / rejection, the sentinel
+  writer's happy path, the RUN_RESULT.json jq splice, and the three
+  best-effort no-artifact branches.
+- `tests/test_init_test_cmd_detection.sh` (NEW) — 17 bash assertions
+  covering every ecosystem branch plus priority ordering and the
+  no-manifest case.
+- `CLAUDE.md` — added `init_config_test_cmd.sh` to the repo-layout tree
+  and `REQUIRE_REAL_TEST_CMD` to the Template Variables table.
+
+## Architecture Change Proposals
+
+None. The new preflight check is a sibling of existing five
+(`foundation` / `ui_audit` / `env` / `claude_env` / `services_infer` /
+`services`); the registration mechanism, the per-finding shape, and the
+HUMAN_ACTION_REQUIRED writer were all already in place. The
+`RunResultV1.TestsRun` field is an additive `omitempty` pointer — legacy
+RUN_RESULT.json files keep their existing shape, and the bash side
+mutates the file via jq rather than the runner re-marshalling.
 
 ## Observed Issues (out of scope)
 
-- **m41/m42/m43 manifest reopen.** A later commit (`9327cbd`) flipped m41,
-  m42, m43 from `done` back to `todo` in MANIFEST.cfg without reverting
-  their code changes. The reopen has no associated milestone file rewrite
-  and no `dag advance` audit trail. If the intent was to re-run them on
-  the new V4 path, the manifest reopen needs a paired audit note in
-  `.tekhton/DRIFT_LOG.md`; if it was accidental, the manifest should be
-  fast-forwarded back to `done` via `tekhton dag advance m41 done` (and
-  similarly for m42/m43). This is a manifest-hygiene issue, not an m41 fix.
+- `lib/finalize_commit.sh` is still at 287 lines (carried over from the
+  prior reviewer's non-blocking note). Untouched by m42 but still on the
+  edge of the ceiling. A single future addition will breach it; the
+  reviewer's recommendation to extract `_do_git_commit` or the
+  bookkeeping helpers stands.
+- `stages/coder.sh` is still at 1202 lines (carried over). Same story —
+  the prior reviewer flagged a dedicated refactor milestone; m42 left it
+  alone deliberately.
+- `lib/init_config_sections.sh` carries a duplicate of the same
+  `TEST_CMD="true"` fallback at line 57 that `_emit_section_essential`
+  uses. m42 fixes the upstream by populating `test_cmd` before the
+  sectioned generator runs, so the fallback never fires in practice;
+  but the two-code-paths situation is a code-smell that a future cleanup
+  milestone could collapse.
 
 ## Human Notes Status
 
@@ -124,8 +216,7 @@ No Human Notes block was injected for this run.
 
 ## Docs Updated
 
-None — no public-surface changes in this task; the m41 docs (the inline
-header comments in `lib/milestone_window.sh`, `lib/finalize_commit.sh`,
-and `lib/finalize_commit_sentinel.sh`, plus the ARCHITECTURE.md entries
-already describing the m41 widening) were written in the original m41
-ship and are unchanged.
+- `CLAUDE.md` — added the new `lib/init_config_test_cmd.sh` to the
+  repository layout tree and `REQUIRE_REAL_TEST_CMD` to the Template
+  Variables config-key table. The new `RunResultV1.TestsRun` field is
+  documented in its struct comment in `internal/proto/run_v1.go`.

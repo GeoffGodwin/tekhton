@@ -110,6 +110,14 @@ type RunResultV1 struct {
 	// Resume hints — populated on save_exit dispositions.
 	ResumeStartAt string `json:"resume_start_at,omitempty"`
 	ResumeFlags   string `json:"resume_flags,omitempty"`
+
+	// TestsRun records whether the run's TEST_CMD actually executed during
+	// final checks / acceptance. Pointer so absent-vs-false is observable
+	// (legacy snapshots from before m42 omit the field entirely; new
+	// snapshots set it to true on success and false on a no-op TEST_CMD
+	// short-circuit). A false value with Disposition=success is the signal
+	// that milestones marked green without the project's tests being run.
+	TestsRun *bool `json:"tests_run,omitempty"`
 }
 
 // ErrInvalidRunRequest is returned by Validate when the envelope is malformed.

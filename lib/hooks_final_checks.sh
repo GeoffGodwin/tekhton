@@ -7,7 +7,12 @@ set -euo pipefail
 # Expects: ANALYZE_CMD, TEST_CMD, LOG_FILE, render_prompt(), run_agent(),
 #          print_run_summary() from caller/libs.
 # Provides: run_final_checks()
+# Re-exports from hooks_final_checks_helpers.sh: _is_noop_test_cmd(),
+# _record_tests_run_state()
 # =============================================================================
+
+# shellcheck source=lib/hooks_final_checks_helpers.sh disable=SC1091
+source "${BASH_SOURCE[0]%/*}/hooks_final_checks_helpers.sh"
 
 # --- Final checks (analyze + test) -------------------------------------------
 #
@@ -101,6 +106,14 @@ run_final_checks() {
 
     if [[ -z "${TEST_CMD:-}" ]]; then
         log "Final checks: no TEST_CMD configured — skipping test pass."
+        _record_tests_run_state "false"
+        return "$final_result"
+    fi
+
+    if _is_noop_test_cmd "${TEST_CMD:-}"; then
+        echo
+        warn "tests: skipped (no-op TEST_CMD: '${TEST_CMD:-}') — set TEST_CMD in pipeline.conf to actually run tests."
+        _record_tests_run_state "false"
         return "$final_result"
     fi
 
@@ -130,6 +143,7 @@ run_final_checks() {
     if [ $test_exit -eq 0 ]; then
         print_run_summary
         success "${TEST_CMD:-true}: all passing"
+        _record_tests_run_state "true"
     elif [[ "${FINAL_FIX_ENABLED:-true}" = "true" ]]; then
         # --- Auto-fix loop for test failures ---
         local max_fix_attempts="${FINAL_FIX_MAX_ATTEMPTS:-2}"
@@ -236,14 +250,17 @@ run_final_checks() {
         if [ $test_exit -eq 0 ]; then
             print_run_summary
             success "${TEST_CMD:-true}: all passing after ${fix_attempt} fix attempt(s)."
+            _record_tests_run_state "true"
         else
             print_run_summary
             error "${TEST_CMD:-true}: failures remain after ${fix_attempt} fix attempt(s)."
+            _record_tests_run_state "true"
             final_result=1
         fi
     else
         print_run_summary
         error "${TEST_CMD:-true}: failures detected (see output above)."
+        _record_tests_run_state "true"
         final_result=1
     fi
 

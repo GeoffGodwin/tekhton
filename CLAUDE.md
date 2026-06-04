@@ -136,6 +136,7 @@ tekhton/
 │   ├── init_config.sh      # Init config generation
 │   ├── init_config_emitters.sh # Init config section emitters
 │   ├── init_config_sections.sh # Init config section builders
+│   ├── init_config_test_cmd.sh # m42 ecosystem TEST_CMD fallback (Cargo/Node/Go/etc.)
 │   ├── init_config_workspace.sh # Init config workspace/service section emitter
 │   ├── init_helpers.sh     # Init helper functions
 │   ├── init_report.sh      # Init report generation
@@ -528,6 +529,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PREFLIGHT_UI_CONFIG_AUTO_FIX` | Auto-patch Playwright html reporter config (default: true, falls back to `PREFLIGHT_AUTO_FIX` when unset) |
 | `PREFLIGHT_BAK_DIR` | Directory for backups of patched config files (default: ${PROJECT_DIR}/.claude/preflight_bak) |
 | `PREFLIGHT_BAK_RETAIN_COUNT` | M136. Maximum number of backup files to keep in PREFLIGHT_BAK_DIR; 0 = keep all (default: 10) |
+| `REQUIRE_REAL_TEST_CMD` | m42. When `true`, the preflight no-op TEST_CMD check escalates from warn to fail (and the run aborts). Default is `false` so existing intentional-no-op projects keep working. Only consulted when MILESTONE_MODE=true. (default: false) |
 | `DOCS_AGENT_ENABLED` | Toggle optional docs agent stage (default: false) |
 | `DOCS_AGENT_MODEL` | Model for docs agent (default: claude-haiku-4-5-20251001) |
 | `DOCS_AGENT_MAX_TURNS` | Turn budget for docs agent (default: 10) |

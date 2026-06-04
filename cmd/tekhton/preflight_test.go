@@ -29,7 +29,12 @@ func TestPreflightCmd_HelpExitsZero(t *testing.T) {
 // — no applicable checks → no report → exit 0.
 func TestPreflightCmd_EmptyProjectExitsZero(t *testing.T) {
 	// Clear pipeline-config envs to avoid leakage from the dev shell.
-	for _, k := range []string{"ANALYZE_CMD", "BUILD_CHECK_CMD", "TEST_CMD", "UI_TEST_CMD"} {
+	// MILESTONE_MODE is m42: the no-op TEST_CMD check triggers on it, so
+	// a parent milestone run would otherwise produce a warning here.
+	for _, k := range []string{
+		"ANALYZE_CMD", "BUILD_CHECK_CMD", "TEST_CMD", "UI_TEST_CMD",
+		"MILESTONE_MODE", "REQUIRE_REAL_TEST_CMD",
+	} {
 		t.Setenv(k, "")
 	}
 	tmp := t.TempDir()

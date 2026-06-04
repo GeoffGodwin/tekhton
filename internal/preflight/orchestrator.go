@@ -143,6 +143,7 @@ var checkOrder = []string{
 	"ui_audit",
 	"env",
 	"claude_env",
+	"test_cmd",
 	"services_infer",
 	"services",
 }
@@ -163,6 +164,7 @@ var goNativeChecks = map[string]func() Check{
 	"ui_audit":       func() Check { return &UIConfigCheck{} },
 	"env":            func() Check { return &EnvCheck{} },
 	"claude_env":     func() Check { return &ClaudeEnvCheck{} },
+	"test_cmd":       func() Check { return &TestCmdCheck{} },
 	"services_infer": func() Check { return &ServicesInferCheck{} },
 	"services":       func() Check { return &ServicesCheck{} },
 }

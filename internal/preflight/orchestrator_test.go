@@ -19,6 +19,7 @@ func TestCheckOrder_MatchesRegistration(t *testing.T) {
 		"ui_audit",
 		"env",
 		"claude_env",
+		"test_cmd",
 		"services_infer",
 		"services",
 	}
@@ -37,8 +38,8 @@ func TestCheckOrder_MatchesRegistration(t *testing.T) {
 // constructor registers exactly five checks in checkOrder.
 func TestNewOrchestrator_BuildsAllFiveChecks(t *testing.T) {
 	o := NewOrchestrator("/tmp/tekhton", "/tmp/project")
-	if len(o.Checks) != 6 {
-		t.Errorf("NewOrchestrator must register 6 checks; got %d", len(o.Checks))
+	if len(o.Checks) != 7 {
+		t.Errorf("NewOrchestrator must register 7 checks; got %d", len(o.Checks))
 	}
 	for i, name := range CheckOrder() {
 		if o.Checks[i].Name() != name {
@@ -54,7 +55,12 @@ func TestNewOrchestrator_BuildsAllFiveChecks(t *testing.T) {
 func TestOrchestratorRun_NoApplicableChecks_NoReport(t *testing.T) {
 	proj := t.TempDir()
 	// Clear pipeline-config envs that could leak from the dev shell.
-	for _, k := range []string{"ANALYZE_CMD", "BUILD_CHECK_CMD", "TEST_CMD", "UI_TEST_CMD"} {
+	// MILESTONE_MODE is m42: TestCmdCheck triggers on it so any parent
+	// shell with milestone mode active would otherwise produce a finding.
+	for _, k := range []string{
+		"ANALYZE_CMD", "BUILD_CHECK_CMD", "TEST_CMD", "UI_TEST_CMD",
+		"MILESTONE_MODE", "REQUIRE_REAL_TEST_CMD",
+	} {
 		t.Setenv(k, "")
 	}
 	o := NewOrchestrator("/tmp/tekhton", proj)
