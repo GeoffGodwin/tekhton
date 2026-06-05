@@ -31,7 +31,7 @@
 # -----------------------------------------
 # To validate this test catches what it claims to catch, temporarily revert
 # one `${VAR:-default}` guard in a sourced lib file (e.g.
-# `lib/intake_helpers.sh:29` — `"${TEKHTON_SESSION_DIR:-}"` → `"${TEKHTON_SESSION_DIR}"`),
+# `lib/hooks_final_checks.sh` — pick any `${VAR:-default}` read and strip the default),
 # rerun this test, and verify it exits 1 with the offending file in the
 # error message. Restore the guard before committing. The m27.3 milestone's
 # acceptance criteria document this check; it is intentionally not
@@ -85,12 +85,12 @@ export FAKE_AGENT_MODE=happy
 
 # defaultStageOrder() in internal/runner/single.go, restricted to the
 # stages whose adapter is still the BashAdapter. Go-native stages (docs
-# m34.1, cleanup m34.2, security m35.2) bypass the bash source chain so
-# the env-dump signal would never fire for them — they belong in the Go
-# stage-port test suites, not here. Keep in sync — the milestone Watch
-# For warns about silent coverage gaps if a stage isn't exercised here
-# but still has a bash adapter.
-STAGES=(intake coder review tester)
+# m34.1, cleanup m34.2, security m35.2, architect m36.1, intake m36.3)
+# bypass the bash source chain so the env-dump signal would never fire
+# for them — they belong in the Go stage-port test suites, not here.
+# Keep in sync — the milestone Watch For warns about silent coverage
+# gaps if a stage isn't exercised here but still has a bash adapter.
+STAGES=(coder review tester)
 RUN_STDERR="${WORKDIR}/all_stderr.log"
 : > "$RUN_STDERR"
 

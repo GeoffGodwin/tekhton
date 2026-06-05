@@ -105,4 +105,6 @@ dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep + s
 	@bash tests/test_security_parity.sh
 	@printf '[dogfood] tests/test_architect_parity.sh (m36.1 architect parity gate)\n'
 	@bash tests/test_architect_parity.sh
+	@printf '[dogfood] tests/test_intake_parity.sh (m36.3 intake parity gate)\n'
+	@bash tests/test_intake_parity.sh
 	@printf '[dogfood] all gates green\n'

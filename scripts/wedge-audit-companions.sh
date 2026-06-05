@@ -192,6 +192,49 @@ if [[ -d internal/stages/architect ]]; then
     unset _arch_drift_hits
 fi
 
+# m36.3 (Phase 5, stage-port arc): stages/intake.sh + lib/intake_helpers.sh +
+# lib/intake_verdict_handlers.sh ported to internal/stages/intake/ +
+# internal/intake/ across m36.2 and m36.3. Re-introducing any of the three
+# bash files silently forks the intake-stage contract and breaks the
+# StageDef.GoImpl dispatch precedence. The verdict-handler operator strings
+# and the helper API surface live in internal/intake/{helpers,verdict}.go;
+# the stage entry lives in internal/stages/intake/intake.go.
+for _intake_bash in stages/intake.sh lib/intake_helpers.sh lib/intake_verdict_handlers.sh; do
+    if [[ -f "$_intake_bash" ]]; then
+        printf 'wedge-audit: m36.3 violation — %s was ported in m36.2/m36.3:\n' "$_intake_bash" >&2
+        printf '  %s re-introduced\n' "$_intake_bash" >&2
+        printf 'The intake stage lives in internal/stages/intake/; helpers in\n' >&2
+        printf 'internal/intake/. Bash callers reach it via the StageDef.GoImpl\n' >&2
+        printf 'dispatch wedge in internal/stagerunner/.\n' >&2
+        companion_failures=$(( companion_failures + 1 ))
+    fi
+done
+unset _intake_bash
+
+# m36.3 (Phase 5): assert StageIntake carries GoImpl and NOT Helpers. A
+# Helpers entry would cause a 127 exit if any fallback path ever reaches
+# bash (the three bash helpers are deleted).
+if grep -nE 'StageIntake' internal/stagerunner/helpers.go | grep -E 'Script:|Helpers:' >/dev/null 2>&1; then
+    printf 'wedge-audit: m36.3 violation — DefaultStageDefs[StageIntake] still lists Script or Helpers.\n' >&2
+    printf '  Intake is Go-native — drop both fields; GoImpl is the only valid entry.\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+
+# m36.3 (Phase 5): INTAKE_CLARITY_THRESHOLD must NOT be enforced by
+# Go-side gate logic — the threshold goes into the prompt template only.
+# A `<` or `>=` comparison would double-gate and break the agent contract.
+if [[ -d internal/stages/intake ]] || [[ -d internal/intake ]]; then
+    _intake_threshold_hits=$(grep -rEl 'INTAKE_CLARITY_THRESHOLD' internal/stages/intake internal/intake 2>/dev/null || true)
+    if [[ -n "$_intake_threshold_hits" ]]; then
+        printf 'wedge-audit: m36.3 violation — INTAKE_CLARITY_THRESHOLD referenced in Go intake code:\n' >&2
+        printf '%s\n' "$_intake_threshold_hits" >&2
+        printf 'The threshold belongs in the intake_scan prompt template only;\n' >&2
+        printf 'Go-side gate enforcement would double-gate the agent contract.\n' >&2
+        companion_failures=$(( companion_failures + 1 ))
+    fi
+    unset _intake_threshold_hits
+fi
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1

@@ -1003,13 +1003,13 @@ source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
 
 # Stage helpers and implementations
-source "${TEKHTON_HOME}/lib/intake_helpers.sh"
-source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
-source "${TEKHTON_HOME}/stages/intake.sh"
+# m36.3: stages/intake.sh, lib/intake_helpers.sh, lib/intake_verdict_handlers.sh
+# deleted. Intake stage runs entirely via the GoImpl dispatch in stagerunner.
 source "${TEKHTON_HOME}/stages/coder.sh"
-# m34.1 + m35.2 + m36.1: the docs, security, and architect stages ported to
-# Go (internal/stages/{docs,security,architect}/). All run via the GoImpl
-# dispatch in stagerunner; there are no bash residues to source here.
+# m34.1 + m35.2 + m36.1 + m36.3: the docs, security, architect, and intake
+# stages ported to Go (internal/stages/{docs,security,architect,intake}/).
+# All run via the GoImpl dispatch in stagerunner; there are no bash residues
+# to source here.
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
@@ -1063,6 +1063,51 @@ EOF
         --project-dir "${PROJECT_DIR:-$PWD}" \
         --tekhton-home "${TEKHTON_HOME:-}" >/dev/null 2>&1 || true
     rm -f "$req_file" "$result_file"
+    return 0
+}
+
+# m36.3: stages/intake.sh ported to internal/stages/intake/. This shim
+# drives `tekhton run-stage intake` so legacy bash callers (the pre-stage
+# gate at line ~2470 and lib/dry_run.sh) still route through the Go entry
+# point. Streams stderr so operator-visible log lines from the Go stage
+# (header, verdict line, skip reasons) appear in the bash session output.
+# Reads INTAKE_VERDICT / INTAKE_CONFIDENCE / _INTAKE_PASS_EMIT exports
+# back from the subprocess via a sourceable env-dump sidecar.
+run_stage_intake() {
+    local bin="${TEKHTON_BIN:-tekhton}"
+    if ! command -v "$bin" >/dev/null 2>&1 && [[ ! -x "$bin" ]]; then
+        warn "[intake] $bin not on PATH — skipping intake (m36.3 Go-only path)."
+        export INTAKE_VERDICT="PASS"
+        export INTAKE_CONFIDENCE="100"
+        return 0
+    fi
+    local req_file result_file env_file
+    req_file=$(mktemp -t tekhton-intake-request-XXXXXX.json 2>/dev/null \
+        || mktemp 2>/dev/null) \
+        || { warn "[intake] mktemp failed — skipping intake."; return 0; }
+    result_file=$(mktemp -t tekhton-intake-result-XXXXXX.json 2>/dev/null \
+        || mktemp 2>/dev/null) \
+        || { rm -f "$req_file"; warn "[intake] mktemp failed — skipping intake."; return 0; }
+    env_file=$(mktemp -t tekhton-intake-env-XXXXXX.sh 2>/dev/null \
+        || mktemp 2>/dev/null) \
+        || { rm -f "$req_file" "$result_file"; warn "[intake] mktemp failed — skipping intake."; return 0; }
+    cat >"$req_file" <<EOF
+{"proto":"tekhton.stage.request.v1","stage":"intake","task":"${TASK:-}","milestone":"${_CURRENT_MILESTONE:-}","result_file":"$result_file"}
+EOF
+    # shellcheck disable=SC2097,SC2098  # prefix env propagates to the forked subprocess via exec.Command.Env inheritance
+    TEKHTON_INTAKE_ENV_OUT="$env_file" \
+        PROJECT_DIR="${PROJECT_DIR:-$PWD}" TEKHTON_HOME="${TEKHTON_HOME:-}" \
+        "$bin" run-stage intake \
+        --request-file "$req_file" \
+        --project-dir "${PROJECT_DIR:-$PWD}" \
+        --tekhton-home "${TEKHTON_HOME:-}" >/dev/null 2>&1 || true
+    # Pull verdict + emit-flag exports back so the post-stage caller can
+    # branch on INTAKE_VERDICT / _INTAKE_PASS_EMIT exactly as it did pre-m36.3.
+    if [[ -s "$env_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$env_file"
+    fi
+    rm -f "$req_file" "$result_file" "$env_file"
     return 0
 }
 
@@ -1589,7 +1634,15 @@ EOF
             warn "--migrate-dag is deprecated. Use: tekhton --migrate --dag"
             MIGRATE_DAG=true; shift ;;
         --add-milestone)
-            warn "--add-milestone is deprecated. Use --draft-milestones for the new interactive flow."
+            # m36.3: the legacy create-mode (run_intake_create) lived in
+            # the deleted stages/intake.sh; the --draft-milestones flow has
+            # since replaced it. The agent-driven create flow is
+            # temporarily unavailable post-m36.3 until a follow-up
+            # milestone ports run_intake_create to cmd/tekhton/milestone.go.
+            # In the meantime, route operators through --draft-milestones,
+            # which provides equivalent functionality.
+            warn "--add-milestone is temporarily unavailable post-m36.3 in agent-driven create mode."
+            warn "Using --draft-milestones for the interactive flow (see docs/v4-phase5-stub.md)."
             shift
             local_seed="${1:-}"
             [[ -n "$local_seed" ]] && shift

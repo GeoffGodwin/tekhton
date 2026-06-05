@@ -21,7 +21,15 @@ import (
 func newAdapter(home, proj string) *BashAdapter {
 	stages := make(map[string]StageDef, len(DefaultStageDefs))
 	for k, v := range DefaultStageDefs {
-		stages[k] = StageDef{Script: v.Script}
+		script := v.Script
+		// m36.3 cleanup: stages ported to Go (docs/cleanup/security/architect/
+		// intake) have no bash Script in DefaultStageDefs. The adapter tests
+		// stage-harness writes stages/<name>.sh; default the override path
+		// so those tests can drive the bash dispatch path against the stub.
+		if script == "" {
+			script = "stages/" + k + ".sh"
+		}
+		stages[k] = StageDef{Script: script}
 	}
 	return &BashAdapter{
 		TekhtonHome: home,

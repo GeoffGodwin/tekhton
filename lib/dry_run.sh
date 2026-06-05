@@ -12,7 +12,7 @@ set -euo pipefail
 # Expects: log(), warn(), success(), header(), error() from common.sh
 # Expects: run_agent() from agent.sh
 # Expects: render_prompt() from prompts.sh
-# Expects: run_stage_intake() from stages/intake.sh
+# Expects: intake stage routing — m36.3: implemented in internal/stages/intake/
 # =============================================================================
 
 # --- Cache directory and metadata -------------------------------------------

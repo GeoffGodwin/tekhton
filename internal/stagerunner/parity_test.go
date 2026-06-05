@@ -1,7 +1,6 @@
 package stagerunner
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -163,7 +162,10 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 	// lines 961-983.  Each entry is the relative path as it would appear in
 	// StageDef.Helpers.  Stage script lines (stages/X.sh) are excluded.
 	wantHelpers := map[string][]string{
-		proto.StageIntake: {"lib/intake_helpers.sh", "lib/intake_verdict_handlers.sh"},
+		// m36.3: intake stage ported to internal/stages/intake/;
+		// lib/intake_helpers.sh + lib/intake_verdict_handlers.sh deleted
+		// alongside it. No bash helper sourced.
+		proto.StageIntake: {},
 		proto.StageCoder:  {},
 		// m35.2: security stage ported to internal/stages/security/;
 		// lib/security_helpers.sh deleted alongside it. No bash helper sourced.
@@ -204,85 +206,8 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 	}
 }
 
-// TestBashAdapterRealHelperIntegration runs the BashAdapter with the real
-// tekhton repository's common.sh and lib/intake_helpers.sh — not the minimal
-// stubs used in other tests.  This exercises the primary observable behavior
-// the M20 fix was meant to deliver: a stage that calls a function defined in
-// a real helper file completes successfully, producing a valid envelope.
-//
-// The test is distinct from TestBashAdapterPerStageHelperSourced (which uses a
-// hand-written stub helper) in that it proves the production files are
-// sourceable and callable in a real subprocess environment.
-func TestBashAdapterRealHelperIntegration(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	if repoRoot == "" {
-		t.Skip("repository root not found; skipping real-helper integration test")
-	}
-
-	// Confirm required files are present before spawning a subprocess.
-	for _, rel := range []string{"lib/common.sh", "lib/stage_envelope.sh", "lib/intake_helpers.sh"} {
-		if _, err := os.Stat(filepath.Join(repoRoot, rel)); err != nil {
-			t.Skipf("required file %s not found: %v", rel, err)
-		}
-	}
-	// m36.2: lib/intake_helpers.sh is now a wedge shim that execs the Go
-	// binary. Skip when bin/tekhton isn't built so contributors who haven't
-	// run `make build` don't see a spurious failure.
-	tekhtonBin := filepath.Join(repoRoot, "bin", "tekhton")
-	if _, err := os.Stat(tekhtonBin); err != nil {
-		t.Skipf("tekhton binary not found at %s (m36.2 — run `make build`): %v", tekhtonBin, err)
-	}
-
-	proj := t.TempDir()
-
-	// Stage script that calls _intake_content_hash — post-m36.2 this execs
-	// `tekhton intake helpers content-hash` via the shim; the returned hash
-	// is still a 64-char SHA-256 hex digest, so the assertion below stands.
-	stageDir := t.TempDir()
-	stageScript := filepath.Join(stageDir, "intake.sh")
-	const canaryInput = "real-helper-canary"
-	stageBody := `run_stage_intake() {
-    local result
-    result=$(_intake_content_hash "` + canaryInput + `")
-    printf '{"proto":"tekhton.stage.result.v1","stage":"intake","verdict":"pass","exit_reason":"%s","agent_calls":0,"duration_sec":0,"human_action_required":false}\n' "$result" > "$TEKHTON_STAGE_RESULT_FILE"
-}
-`
-	if err := os.WriteFile(stageScript, []byte(stageBody), 0o755); err != nil {
-		t.Fatalf("write stage script: %v", err)
-	}
-
-	a := &BashAdapter{
-		TekhtonHome: repoRoot,
-		ProjectDir:  proj,
-		TekhtonBin:  tekhtonBin, // m36.2: shim execs TEKHTON_BIN to compute the hash.
-		// LibHelpers is empty: only common.sh is sourced (hardcoded by
-		// buildBashScript) plus the per-stage intake_helpers.sh below.
-		// This avoids sourcing all 109 DefaultLibHelpers files in a unit test
-		// while still proving real files are sourceable.
-		LibHelpers: []string{},
-		Stages: map[string]StageDef{
-			proto.StageIntake: {
-				Script:  stageScript, // absolute path — not joined with TekhtonHome
-				Helpers: []string{"lib/intake_helpers.sh"},
-			},
-		},
-	}
-	req := &proto.StageRequestV1{
-		Proto:      proto.StageRequestProtoV1,
-		Stage:      proto.StageIntake,
-		ResultFile: filepath.Join(proj, "result.json"),
-	}
-
-	res, err := a.Run(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Run with real helper: %v", err)
-	}
-	if res.Verdict != proto.VerdictPass {
-		t.Fatalf("verdict: got %q want pass", res.Verdict)
-	}
-	// _intake_content_hash returns a 64-character SHA-256 hex digest.
-	if len(res.ExitReason) != 64 {
-		t.Fatalf("expected 64-char SHA-256 hex in exit_reason, got %q (len=%d)",
-			res.ExitReason, len(res.ExitReason))
-	}
-}
+// TestBashAdapterRealHelperIntegration — removed in m36.3 alongside the
+// deletion of lib/intake_helpers.sh. The bash-adapter per-stage helper
+// sourcing path is still covered by TestBashAdapterPerStageHelperSourced
+// (which writes its own stub helper) and the cross-stage parity at the
+// review / tester boundaries.

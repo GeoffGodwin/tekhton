@@ -7,6 +7,7 @@ import (
 	architectstage "github.com/geoffgodwin/tekhton/internal/stages/architect"
 	"github.com/geoffgodwin/tekhton/internal/stages/cleanup"
 	"github.com/geoffgodwin/tekhton/internal/stages/docs"
+	intakestage "github.com/geoffgodwin/tekhton/internal/stages/intake"
 	securitystage "github.com/geoffgodwin/tekhton/internal/stages/security"
 )
 
@@ -182,12 +183,14 @@ var DefaultLibHelpers = []string{
 // subprocess will exit 127 if they are not sourced. Stages with empty
 // Helpers (coder, review, cleanup) run entirely off DefaultLibHelpers.
 var DefaultStageDefs = map[string]StageDef{
+	// m36.3: intake is the fifth Go-native stage. GoImpl takes the
+	// dispatch; Script and Helpers are dropped because the bash files
+	// (stages/intake.sh + lib/intake_helpers.sh + lib/intake_verdict_handlers.sh)
+	// are deleted in the same milestone. The verdict-handler dependencies
+	// (clarify, manifest split) reach back into bash via the operator CLI
+	// when invoked; a follow-up milestone may replace those seams in-process.
 	proto.StageIntake: {
-		Script: "stages/intake.sh",
-		Helpers: []string{
-			"lib/intake_helpers.sh",
-			"lib/intake_verdict_handlers.sh",
-		},
+		GoImpl: intakestage.RunStage,
 	},
 	proto.StageCoder: {
 		Script: "stages/coder.sh",

@@ -5,12 +5,12 @@
 #
 # Asserts that the env produced by internal/runner.EnvBuilder.AsKV is
 # sufficient for the bash files that historically crashed under `set -u`
-# (intake_helpers.sh, hooks_final_checks.sh, finalize_shim.sh) to run
-# cleanly WITHOUT relying on per-line `${VAR:-default}` defensive guards.
+# (hooks_final_checks.sh, finalize_shim.sh, …) to run cleanly WITHOUT
+# relying on per-line `${VAR:-default}` defensive guards. m36.3 deleted
+# the original intake_helpers.sh smoking-gun; hooks_final_checks.sh now
+# stands in as the canonical reference.
 #
 # The smoking guns from the m26 design doc's retrospective:
-#   - lib/intake_helpers.sh:191 reading $MILESTONE_MODE
-#   - lib/intake_helpers.sh:224 reading $TASK
 #   - lib/hooks_final_checks.sh:23 reading $ANALYZE_CMD
 #
 # Today those reads carry `:-default` guards — a reactive patch from
@@ -103,10 +103,11 @@ fi
 
 # ---------------------------------------------------------------------------
 # Test 2: a representative lib/*.sh file sources cleanly under set -u
-# with only the m26 env exported. The intake_helpers.sh smoking-gun
-# functions are the canonical reference.
+# with only the m26 env exported. lib/hooks_final_checks.sh is the canonical
+# reference post-m36.3 (the previous lib/intake_helpers.sh smoking-gun was
+# deleted when the intake stage ported to Go).
 # ---------------------------------------------------------------------------
-echo "=== Test 2: lib/intake_helpers.sh smoking-gun functions ==="
+echo "=== Test 2: lib/hooks_final_checks.sh sources cleanly ==="
 
 probe_out=$(
     env -i HOME="$HOME" PATH="$PATH" bash -c '
@@ -120,27 +121,19 @@ probe_out=$(
         export TEKHTON_HOME="'"$TEKHTON_HOME"'"
         export MILESTONE_DIR="'"$TEKHTON_HOME"'/.claude/milestones"
         # Source common.sh first — it defines log/warn/error helpers
-        # intake_helpers.sh depends on.
+        # the remaining lib/*.sh files depend on.
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/common.sh"
         # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/intake_helpers.sh"
-        # Smoke: call the documented smoking-gun reads. If MILESTONE_MODE
-        # or TASK were unbound, set -u would trip here.
-        out=$(_intake_get_milestone_content 2>&1) || rc=$?
-        : "${rc:=0}"
-        if [ "$rc" -ne 0 ]; then
-            echo "FAIL: _intake_get_milestone_content rc=$rc out=$out"
-            exit 1
-        fi
+        source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
         echo "ok"
     ' 2>&1
 ) && probe_rc=0 || probe_rc=$?
 
 if [ "$probe_rc" -ne 0 ]; then
-    fail "intake_helpers.sh tripped under m26 env: $probe_out"
+    fail "hooks_final_checks.sh tripped under m26 env: $probe_out"
 else
-    pass "intake_helpers.sh smoking-gun functions run cleanly under m26 env"
+    pass "hooks_final_checks.sh sources cleanly under m26 env"
 fi
 
 # ---------------------------------------------------------------------------

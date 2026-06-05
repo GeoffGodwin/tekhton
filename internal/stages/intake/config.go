@@ -1,0 +1,158 @@
+package intake
+
+import (
+	"os"
+	"path/filepath"
+
+	pkgintake "github.com/geoffgodwin/tekhton/internal/intake"
+	"github.com/geoffgodwin/tekhton/internal/proto"
+)
+
+// config holds the resolved intake-stage configuration for a single RunStage
+// invocation. Field names mirror the bash env vars. Each value resolves once
+// at stage entry so the stage body works against a stable snapshot.
+type config struct {
+	ProjectDir       string
+	TekhtonHome      string
+	TekhtonDir       string
+	PromptsDir       string
+	SessionDir       string
+	LogFile          string
+	Task             string
+	CurrentMilestone string
+
+	AgentEnabled     bool
+	HumanMode        bool
+	MilestoneMode    bool
+	Cached           bool
+	CompleteMode     bool
+	HealthEnabled    bool
+	CausalLogEnabled bool
+
+	ReportFile         string
+	RoleFile           string
+	HumanNotesFile     string
+	ProjectIndexFile   string
+	ProjectRulesFile   string
+	MilestoneDir       string
+	ClarificationsFile string
+
+	Model    string
+	MaxTurns int
+
+	AutoSplit       bool
+	ConfirmTweaks   bool
+	TweakMinSizePct int
+
+	UIProjectDetected string
+	UIFramework       string
+
+	// DagEnabled mirrors MILESTONE_DAG_ENABLED.
+	DagEnabled bool
+}
+
+// loadConfig resolves the per-stage configuration. Mirrors the env-read
+// pattern in stages/intake.sh and lib/intake_helpers.sh, preserving every
+// ${VAR:-DEFAULT} form per the m27 env contract.
+func loadConfig(req *proto.StageRequestV1) config {
+	projectDir := resolveProjectDir(req)
+	tekhtonHome := envOrFromReq(req, "TEKHTON_HOME", "")
+	tekhtonDir := envOrFromReq(req, "TEKHTON_DIR", ".tekhton")
+
+	cfg := config{
+		ProjectDir:       projectDir,
+		TekhtonHome:      tekhtonHome,
+		TekhtonDir:       tekhtonDir,
+		PromptsDir:       resolvePromptsDir(req),
+		SessionDir:       envOrFromReq(req, "TEKHTON_SESSION_DIR", ""),
+		LogFile:          req.LogFile,
+		Task:             envOrFromReq(req, "TASK", req.Task),
+		CurrentMilestone: envOrFromReq(req, "_CURRENT_MILESTONE", req.Milestone),
+
+		AgentEnabled:     envBool("INTAKE_AGENT_ENABLED", true),
+		HumanMode:        envBool("HUMAN_MODE", false),
+		MilestoneMode:    envBool("MILESTONE_MODE", false),
+		Cached:           envBool("INTAKE_CACHED", false),
+		CompleteMode:     envBool("COMPLETE_MODE", false),
+		HealthEnabled:    envBool("HEALTH_ENABLED", true),
+		CausalLogEnabled: envBool("CAUSAL_LOG_ENABLED", true),
+
+		ReportFile: resolveProjectRelative(projectDir,
+			envOr("INTAKE_REPORT_FILE", filepath.Join(tekhtonDir, "INTAKE_REPORT.md"))),
+		RoleFile:           envOr("INTAKE_ROLE_FILE", ".claude/agents/intake.md"),
+		HumanNotesFile:     envOr("HUMAN_NOTES_FILE", filepath.Join(tekhtonDir, "HUMAN_NOTES.md")),
+		ProjectIndexFile:   envOr("PROJECT_INDEX_FILE", filepath.Join(tekhtonDir, "PROJECT_INDEX.md")),
+		ProjectRulesFile:   envOr("PROJECT_RULES_FILE", "CLAUDE.md"),
+		MilestoneDir:       envOr("MILESTONE_DIR", ".claude/milestones"),
+		ClarificationsFile: envOr("CLARIFICATIONS_FILE", filepath.Join(tekhtonDir, "CLARIFICATIONS.md")),
+
+		Model:    envOr("CLAUDE_INTAKE_MODEL", "claude-sonnet-4-6"),
+		MaxTurns: envInt("INTAKE_MAX_TURNS", 10),
+
+		AutoSplit:       envBool("INTAKE_AUTO_SPLIT", false),
+		ConfirmTweaks:   envBool("INTAKE_CONFIRM_TWEAKS", false),
+		TweakMinSizePct: envInt("INTAKE_TWEAK_MIN_SIZE_PCT", 50),
+
+		UIProjectDetected: envOr("UI_PROJECT_DETECTED", "false"),
+		UIFramework:       envOr("UI_FRAMEWORK", ""),
+
+		DagEnabled: envBool("MILESTONE_DAG_ENABLED", true),
+	}
+
+	return cfg
+}
+
+// newHelpers builds an intake.Helpers populated from the stage config. Used
+// for content-hash / report-parsing / tweak-application calls.
+func newHelpers(cfg config) *pkgintake.Helpers {
+	return &pkgintake.Helpers{
+		ProjectDir:         cfg.ProjectDir,
+		SessionDir:         cfg.SessionDir,
+		MilestoneDir:       resolveProjectRelative(cfg.ProjectDir, cfg.MilestoneDir),
+		ProjectRulesFile:   resolveProjectRelative(cfg.ProjectDir, cfg.ProjectRulesFile),
+		ClarificationsFile: cfg.ClarificationsFile,
+		DagEnabled:         cfg.DagEnabled,
+	}
+}
+
+func resolveProjectDir(req *proto.StageRequestV1) string {
+	if v := envOrFromReq(req, "PROJECT_DIR", ""); v != "" {
+		return v
+	}
+	wd, _ := os.Getwd()
+	return wd
+}
+
+func resolvePromptsDir(req *proto.StageRequestV1) string {
+	if v := envOrFromReq(req, "TEKHTON_HOME", ""); v != "" {
+		return filepath.Join(v, "prompts")
+	}
+	return "prompts"
+}
+
+// resolveProjectRelative joins relative paths under projectDir.
+func resolveProjectRelative(projectDir, path string) string {
+	if path == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(projectDir, path)
+}
+
+// resolveTekhtonBin mirrors the architect/security stage helpers.
+func resolveTekhtonBin() string {
+	if v := os.Getenv("TEKHTON_BIN"); v != "" {
+		if _, err := os.Stat(v); err == nil {
+			return v
+		}
+	}
+	if home := os.Getenv("TEKHTON_HOME"); home != "" {
+		cand := filepath.Join(home, "bin", "tekhton")
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return ""
+}

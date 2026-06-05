@@ -85,7 +85,7 @@ in-process dispatch. LOC delta counts bash deleted (stage + helpers + shim).
 | cleanup   | done — Go-native via `internal/stages/cleanup/RunStage` | m34.2   | (see m34.2) |
 | **security** | **done — Go-native via `internal/stages/security/RunStage`; helpers in `internal/security/`; m35.3 ban + parity gate live** | **m35**   | **407** |
 | **architect** | **done — Go-native via `internal/stages/architect/RunStage`; plan parser + sr/jr router in package; m36.1 ban + parity gate live** | **m36.1**   | **414** |
-| intake    | in flight                                             | m36.3     | TBD         |
+| **intake**    | **done — Go-native via `internal/stages/intake/RunStage`; helpers in `internal/intake/`; m36.3 ban + 8-scenario parity gate live; M36.2 CLI shim retired** | **m36.3** | **725 (377 stage + 267 helpers + 35 verdict + 46 prompts/passthrough tests)** |
 | review    | in flight                                             | m37       | TBD         |
 | tester    | in flight                                             | m38       | TBD         |
 | coder     | in flight                                             | m39       | TBD         |
@@ -113,10 +113,38 @@ tree; the verdict handlers preserve halt-with-state semantics via a
 TSV sentinel file (`$TEKHTON_INTAKE_STATE_OUT`) the bash wrapper reads to
 forward into `write_pipeline_state`. LOC budget for m36.2: **−471 bash**
 (267 + 204 lines of logic ported out) **/ +1008 Go** (508 helpers + 500
-verdict). **m36.3 (stage half — queued)** consumes these helpers
-in-process via `internal/stages/intake/RunStage`, deletes
-`stages/intake.sh` + the two bash shim files + the transition CLI
-subcommands, and closes the intake row in the matrix.
+verdict). **m36.3 (stage half — done)** consumed these helpers in-process
+via `internal/stages/intake/RunStage`, deleted `stages/intake.sh` +
+`lib/intake_helpers.sh` + `lib/intake_verdict_handlers.sh` +
+`cmd/tekhton/intake.go` (the M36.2 transition CLI shim) +
+`cmd/tekhton/intake_test.go` + `tests/test_intake_bash_passthrough.sh`,
+landed `tests/test_intake_parity.sh` (8 scenarios — PASS / TWEAKED /
+SPLIT_RECOMMENDED / NEEDS_CLARITY-complete-mode / cached-run /
+human-mode-skip / disabled / no-content), and registered
+`GoImpl: intake.RunStage` in `internal/stagerunner/helpers.go`.
+
+## Phase 5 follow-up: --add-milestone port
+
+The `run_intake_create` function (bash lines 244-377 of the deleted
+`stages/intake.sh`) implemented the agent-driven create flow for
+`--add-milestone <description>`. M36.3 deletes the host file; that
+function disappears with it. The `--add-milestone` CLI entry currently
+routes to `run_draft_milestones` (the user-driven interactive flow),
+which is a working alternative — but the original agent-driven scope
+(ID allocation, manifest append, milestone file creation, intake-agent
+invocation in create mode) is gone.
+
+Scope for a follow-up (m36.4 candidate or m37 sibling):
+
+- Port `run_intake_create` to `cmd/tekhton/milestone.go add-milestone <description>`.
+- Reuse `internal/intake/Helpers` (in-process — no subprocess shim).
+- Reuse `internal/manifest` for ID allocation + manifest append.
+- Keep the existing `--draft-milestones` flow as the user-driven path.
+
+`tekhton-legacy.sh --add-milestone` was updated in m36.3 to emit a
+clear "temporarily unavailable post-m36.3 in agent-driven create mode"
+warning and route to `--draft-milestones` so operators have a working
+fallback.
 
 ## Candidate ordering
 

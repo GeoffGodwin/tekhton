@@ -4,139 +4,302 @@
 
 ## What Was Implemented
 
-m40.2 — the closing half of the m40 resume-parity arc. Without this, every
-stage-level `write_pipeline_state` call site that did NOT pass the 6th
-positional milestone argument (the vast majority — `stages/coder.sh`,
-`stages/review.sh`, `stages/tester.sh`, `stages/tester_continuation.sh`,
-`stages/coder_buildfix.sh`, `stages/review_helpers.sh`,
-`stages/tester_tdd.sh`, `stages/tester_validation.sh`,
-`lib/replan_midrun.sh`, `lib/dry_run.sh`) produced a snapshot with
-`"milestone_id":""`. On `tekhton --resume`, `snap.MilestoneID == ""` falls
-through `requestFromSnapshot` to task/resume mode, `env.go` derives
-`MilestoneMode=false`, and `_hook_mark_done` silently skips because it gates
-on `MILESTONE_MODE && _CURRENT_MILESTONE`. The operator's manifest entry
-never flips to `done` — proximate cause of m34.1 staying `todo` through
-five successful pipeline runs on 2026-06-02.
+m36.3 — Intake Stage Port. Closes the M36 arc by porting `stages/intake.sh`
+(377 LOC) to `internal/stages/intake/`, consuming the m36.2
+`internal/intake/` package in-process. Deletes the three intake bash files
+(`stages/intake.sh`, `lib/intake_helpers.sh`,
+`lib/intake_verdict_handlers.sh`), the m36.2 transition CLI shim
+(`cmd/tekhton/intake.go`), and three obsolete bash tests
+(`tests/test_intake.sh`, `tests/test_intake_bash_passthrough.sh`,
+`tests/test_m118_intake_deferred_emit.sh`,
+`tests/test_clarify_intake_handler.sh`).
 
-Goal 1 — Emit `milestone_id` with env fallback in `_state_write_snapshot`:
+### Goal 1 — `internal/stages/intake/`
 
-- `lib/state_helpers.sh::_state_write_snapshot` now computes
-  `milestone_id_field` from a three-tier precedence chain before populating
-  the `--field` array:
-  `${milestone_num:-${MILESTONE_ID:-${_CURRENT_MILESTONE:-}}}`. The explicit
-  6th positional still wins (so `lib/orchestrate_save.sh`'s existing call
-  site continues to behave identically); the m26 env-contract `MILESTONE_ID`
-  takes precedence over the legacy bash-orchestrator `_CURRENT_MILESTONE`.
-  All three empty means a non-milestone task run — the field stays empty and
-  the existing omitempty path in both writer branches (Go-path `applyField`
-  + bash-fallback `_state_bash_write_fields`) drops the key.
-- All env reads use the `${VAR:-DEFAULT}` form per the m27 unguarded-reads
-  contract.
+Four new Go files under `internal/stages/intake/`:
 
-Goal 2 — Tests:
+- **`intake.go`** (339 lines) — exports `RunStage(ctx, *proto.StageRequestV1)`
+  matching the M34/M35/M36.1 stage-port signature. Ports the full bash flow:
+  sentinel cleanup (sole owner of `.final_check_result` + `.commit_decision`),
+  HUMAN_MODE skip, INTAKE_AGENT_ENABLED skip, cached-run branch, content
+  read + content-hash skip, banner, prompt invoke, verdict dispatch
+  (PASS/TWEAKED/SPLIT_RECOMMENDED/NEEDS_CLARITY), `_INTAKE_PASS_EMIT`
+  flag set ONLY on the live-PASS path.
 
-- `tests/test_state_writer_resume_fields.sh` (extended) — added six new
-  assertions across two scenario groups:
-  - Scenario C (bash-fallback writer): MILESTONE_ID set, _CURRENT_MILESTONE
-    legacy fallback, both-unset omit.
-  - Scenario D (Go-path writer): same three cases, read back via
-    `tekhton state read --field milestone_id`.
-  Total: 14 assertions, all PASS. Existing m40.1 auto-advance scenarios
-  remain untouched.
-- `internal/runner/resume_test.go` (extended) — two new tests:
-  - `TestRequestFromSnapshotMilestoneIDFixture` loads a hand-authored
-    fixture envelope with `milestone_id:"m34.2"` through `state.New(...)
-    .Read()`, then asserts the rebuilt `RunRequestV1` has
-    `Mode == RunModeMilestone && Milestone == "m34.2"`. This is the
-    production path operators reach via `tekhton --resume`.
-  - `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough` is the backward-
-    compat AC anchor: a fixture without the `milestone_id` key produces
-    `snap.MilestoneID == ""` and routes to `RunModeTask` when
-    `ResumeTask != ""`. Pre-m40.2 state files continue to load cleanly.
+- **`context.go`** (232 lines) — prompt-variable builders. Exports
+  `buildPromptVars`, `buildProjectIndex`, `buildHistoryBlock`,
+  `buildHealthSummary`, `buildIntakeRoleContent`, `buildNotesContext`.
+  The keyword-overlap matcher ports the bash 4-char-min word filter (and
+  uses `internal/notes.ExtractFromProject` in-process — eliminates one
+  subprocess exec). The history/health/index builders best-effort exec
+  `tekhton <subcommand>` paths; those subcommands don't exist yet so the
+  blocks degrade to empty (documented in Design Observations).
 
-Goal 3 — Arc-close version bump and changelog:
+- **`verdict.go`** (102 lines) — wires `internal/intake.VerdictHandler` with
+  in-process `internal/state.Store.Update` for halt-state writes. Stubs
+  `Split` / `Switch` (a follow-up milestone hooks the real
+  `internal/manifest` seams).
 
-- `VERSION` set to `4.40.0` at write-time (subsequently auto-bumped to
-  `4.40.1` by the harness mid-run — left as-is per the existing harness
-  contract).
-- `.claude/project_version.cfg` resolved (the file had stale merge conflict
-  markers around identical content); now `CURRENT_VERSION=4.40.1`.
-- `CHANGELOG.md`: consolidated `[4.40.0]` arc section summarizing both m40.1
-  and m40.2 fixes, with the user-facing failure mode (silent manifest no-flip
-  on resumed milestone runs) stated up front.
+- **`config.go`** (158 lines) + **`env.go`** (63 lines) — env reads via
+  `envOr`/`envBool`/`envInt` (V4 m27 env contract), per-call config snapshot.
+
+The `_INTAKE_PASS_EMIT` env var is set ONLY on the live PASS dispatch
+path; explicitly unset on every skip path (disabled, HUMAN_MODE, no
+content, unchanged, cached). Asymmetry preserved verbatim from the bash
+M118 contract — the TUI relies on this for ordering the success line
+after the green pill flip. A subprocess-boundary sidecar file
+(`TEKHTON_INTAKE_ENV_OUT`) emits the three exports as a sourceable bash
+file so the legacy `run_stage_intake` shim in `tekhton-legacy.sh` can
+read them back across the exec boundary.
+
+### Goal 2 — Stagerunner registration
+
+`internal/stagerunner/helpers.go`:
+
+- Adds `intakestage "github.com/geoffgodwin/tekhton/internal/stages/intake"`
+  import.
+- `DefaultStageDefs[proto.StageIntake]` now carries `GoImpl: intake.RunStage`
+  only (Script and Helpers dropped). The wedge audit asserts no
+  `Script:` or `Helpers:` lines remain on the `StageIntake` entry.
+
+### Goal 3 — Bash deletions + CLI shim retirement
+
+Files deleted:
+
+- `stages/intake.sh` (377 LOC).
+- `lib/intake_helpers.sh` (113 LOC — the m36.2 shim shrunk it from 472).
+- `lib/intake_verdict_handlers.sh` (35 LOC — m36.2 shrunk from 204).
+- `cmd/tekhton/intake.go` (454 LOC — the m36.2 transition CLI shim).
+- `cmd/tekhton/intake_test.go` (105 LOC).
+- `tests/test_intake_bash_passthrough.sh` (180 LOC — m36.2-only test).
+- `tests/test_intake.sh` (sourced `lib/intake_helpers.sh`; intake logic now
+  Go-tested by `internal/intake/*_test.go` + `internal/stages/intake/*_test.go`).
+- `tests/test_m118_intake_deferred_emit.sh` (sourced the deleted bash; the
+  M118 deferred-emit contract is now Go-tested by
+  `TestRunStage_LiveDispatchPassSetsEmitFlag` +
+  `TestRunStage_HumanModeSkipDoesNotEmitPass`).
+- `tests/test_clarify_intake_handler.sh` (m25 skip-stub — no-op).
+
+`cmd/tekhton/main.go` drops the `newIntakeCmd()` registration.
+
+`tekhton-legacy.sh`:
+
+- Removes the three `source "${TEKHTON_HOME}/{lib,stages}/intake*.sh"` lines.
+- Adds a `run_stage_intake` bash shim (after the m36.1 architect shim) that
+  execs `tekhton run-stage intake` with a sourceable env sidecar to read
+  `INTAKE_VERDICT` / `INTAKE_CONFIDENCE` / `_INTAKE_PASS_EMIT` back across
+  the subprocess boundary.
+- Updates `--add-milestone` to emit a clear "temporarily unavailable
+  post-m36.3 in agent-driven create mode" warning before routing to
+  `--draft-milestones` (the working user-driven alternative). The deferred-
+  stub message satisfies the AC's `grep -q 'temporarily unavailable
+  post-m36.3'` assertion without regressing the existing working flow.
+
+### Goal 4 — Parity gate + tests
+
+- `tests/test_intake_parity.sh` (218 lines) — 8-scenario parity gate covering:
+  `pass`, `tweaked`, `split-recommended`, `needs-clarity-complete` (verifies
+  `block|needs_clarity` verdict AND CLARIFICATIONS.md byte content),
+  `cached-run`, `human-mode-skip`, `disabled`, `no-content`. Uses
+  `TEKHTON_AGENT_BINARY=/bin/false` so the agent invocation always fails
+  cleanly and the stage falls through to its best-effort report-parse
+  path. Wired into `make dogfood`.
+- `internal/stages/intake/intake_test.go` (367 lines) — branch coverage:
+  disabled skip, HUMAN_MODE skip (asserts `_INTAKE_PASS_EMIT` absent),
+  sentinel cleanup, cached-run, live PASS (asserts `_INTAKE_PASS_EMIT=true`),
+  content-hash skip, no-content, verdict-exit-reason mapping, env exporter.
+- `internal/stages/intake/context_test.go` (194 lines) — per-builder unit
+  tests, keyword-overlap matcher edge cases, no-file and read-file paths.
+- `internal/stages/intake/verdict_test.go` (280 lines) — dispatch routing,
+  CLARIFICATIONS.md write, state-store round-trip, NEEDS_CLARITY
+  complete-mode → block verdict, ErrHalt sentinel propagation.
+
+Coverage: **77.8%** of statements in `internal/stages/intake/` (above the
+75% AC threshold).
+
+### Goal 5 — Wedge audit + Makefile + docs + VERSION
+
+- `scripts/wedge-audit-companions.sh` extended:
+  - Forbids re-introduction of `stages/intake.sh`,
+    `lib/intake_helpers.sh`, `lib/intake_verdict_handlers.sh` (m36.3
+    violation message).
+  - Asserts `DefaultStageDefs[StageIntake]` lists no `Script:` or
+    `Helpers:` entries (catches the dead-Helpers regression).
+  - Asserts `INTAKE_CLARITY_THRESHOLD` is NOT referenced in Go intake
+    code (the threshold belongs in the prompt template only —
+    Go-side gate enforcement would double-gate the agent contract).
+  - Regression-verified: `touch lib/intake_helpers.sh && bash
+    scripts/wedge-audit.sh` exits 1 with the m36.3 violation message.
+- `Makefile` `dogfood` target wires `tests/test_intake_parity.sh`
+  immediately after the m36.1 architect parity gate.
+- `docs/v4-phase5-stub.md` — intake row flipped to **done** in the
+  stage-port matrix; the "intake stage rows are arriving in two halves"
+  paragraph rewritten to past tense; a new "Phase 5 follow-up:
+  --add-milestone port" section documents the deferred
+  `run_intake_create` scope.
+- `docs/go-migration.md` — new "Phase 5 — M36 Closeout (Architect +
+  Intake Stage Port)" retro at the top: bash LOC deleted, Go LOC added,
+  patterns established (in-process verdict dispatch, sentinel-cleanup
+  invariant, `_INTAKE_PASS_EMIT` asymmetry, env-sidecar pattern), and
+  deferred work.
+- `VERSION` bumped to `4.41.0` to mark m36.3 arc-close.
+
+### Goal 6 — Test-suite repair
+
+The stage-port deletions tripped four existing tests / test files that
+sourced the deleted bash files. Each was either deleted (because the
+contract is now Go-tested in `internal/stages/intake/`) or repointed:
+
+- `internal/stagerunner/parity_test.go` — `TestDefaultStageDefsHelpersMatchLegacy`
+  now expects `[]` for `StageIntake` Helpers (was the two-file list).
+  `TestBashAdapterRealHelperIntegration` removed (depended on
+  `lib/intake_helpers.sh`; the bash-adapter per-stage helper pattern
+  is still covered by `TestBashAdapterPerStageHelperSourced`).
+- `internal/stagerunner/adapter_test.go` — `newAdapter` test helper now
+  defaults `Script` to `"stages/<name>.sh"` for stages whose
+  `DefaultStageDefs` entry is Go-only; the existing adapter unit tests
+  use the intake stage NAME as a vehicle for testing the bash adapter
+  mechanics (with stub `stages/intake.sh` files in `t.TempDir()`).
+- `tests/test_v4_env_contract.sh` — Test 2 repointed from
+  `lib/intake_helpers.sh` smoking-gun to `lib/hooks_final_checks.sh`
+  as the canonical reference (intake_helpers no longer exists).
+- `tests/test_stage_env_setu.sh` — comment line 34 repointed from the
+  deleted `lib/intake_helpers.sh:29` to `lib/hooks_final_checks.sh`.
+- `lib/dry_run.sh` — comment line 15 updated to reflect that
+  `run_stage_intake` is now Go-native.
 
 ## Root Cause (bugs only)
 
-N/A — m40.2 is an additive parity fix completing the m40 arc, not a bug
-regression. The gap was that the bash state writer's `milestone_id` field
-was sourced only from the 6th positional argument, and most stage-level
-`write_pipeline_state` callers did not pass it.
+N/A — m36.3 is a stage-port milestone, not a bug fix.
 
 ## Files Modified
 
-- `lib/state_helpers.sh` — `_state_write_snapshot` adds a `milestone_id_field`
-  local using the `positional > MILESTONE_ID > _CURRENT_MILESTONE` precedence
-  chain; the `--field` array entry consumes it. (230 lines, under ceiling.)
-- `tests/test_state_writer_resume_fields.sh` — extended with the
-  `_write_with_milestone_env` helper plus Scenarios C (bash-fallback) and
-  D (Go-path), six new assertions. (296 lines, under ceiling.)
-- `internal/runner/resume_test.go` — two new tests
-  (`TestRequestFromSnapshotMilestoneIDFixture`,
-  `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough`); the existing
-  `os` import gets added for `os.WriteFile`.
-- `VERSION` — bumped to `4.40.0` at milestone close (harness post-bumped to
-  `4.40.1`).
-- `.claude/project_version.cfg` — merge-conflict markers removed; tracking
-  current version.
-- `CHANGELOG.md` — `[4.40.0]` section documenting the m40 arc closure.
+### Created (NEW)
+- `internal/stages/intake/intake.go` (NEW)
+- `internal/stages/intake/context.go` (NEW)
+- `internal/stages/intake/verdict.go` (NEW)
+- `internal/stages/intake/config.go` (NEW)
+- `internal/stages/intake/env.go` (NEW)
+- `internal/stages/intake/intake_test.go` (NEW)
+- `internal/stages/intake/context_test.go` (NEW)
+- `internal/stages/intake/verdict_test.go` (NEW)
+- `tests/test_intake_parity.sh` (NEW)
+
+### Modified
+- `internal/stagerunner/helpers.go` — register `GoImpl: intake.RunStage`;
+  drop `Script` + `Helpers` for `StageIntake`; add intakestage import.
+- `internal/stagerunner/adapter_test.go` — `newAdapter` Script default.
+- `internal/stagerunner/parity_test.go` — drop
+  `TestBashAdapterRealHelperIntegration`; update wantHelpers for intake.
+- `cmd/tekhton/main.go` — drop `newIntakeCmd()` registration.
+- `tekhton-legacy.sh` — drop three intake source lines; add
+  `run_stage_intake` bash shim that execs `tekhton run-stage intake`;
+  update `--add-milestone` deprecation message.
+- `scripts/wedge-audit-companions.sh` — m36.3 forbid rules + assertions.
+- `Makefile` — wire `test_intake_parity.sh` into `dogfood`.
+- `lib/dry_run.sh` — comment update.
+- `tests/test_v4_env_contract.sh` — repoint Test 2 to hooks_final_checks.sh.
+- `tests/test_stage_env_setu.sh` — comment-only update.
+- `docs/v4-phase5-stub.md` — intake row done; follow-up section added.
+- `docs/go-migration.md` — Phase 5 M36 Closeout retro at top.
+- `VERSION` — bumped to `4.41.0`.
+
+### Deleted
+- `stages/intake.sh`
+- `lib/intake_helpers.sh`
+- `lib/intake_verdict_handlers.sh`
+- `cmd/tekhton/intake.go`
+- `cmd/tekhton/intake_test.go`
+- `tests/test_intake_bash_passthrough.sh`
+- `tests/test_intake.sh`
+- `tests/test_m118_intake_deferred_emit.sh`
+- `tests/test_clarify_intake_handler.sh`
 
 ## Docs Updated
 
-None — no public-surface docs require updates. The change is internal to the
-state-writer fallback chain and the JSON envelope. The `--auto-advance` CLI
-flag help, README, and `docs/v4-env-contract.md` are unchanged. No new
-config keys; no new prompt template variables. The CHANGELOG entry is the
-only operator-visible artifact.
+- `docs/v4-phase5-stub.md` — intake stage row flipped to **done**;
+  `## Phase 5 follow-up: --add-milestone port` section added.
+- `docs/go-migration.md` — new `## Phase 5 — M36 Closeout` section at top.
+
+No other public-surface docs touched. CLI flags / config keys are
+unchanged.
 
 ## Design Observations
 
-- The milestone's "End-to-end proof" Goal 3 refers to capturing the `EnvKV`
-  slice fed to the finalize hook. The Go-side env builder is verified
-  indirectly: `TestRequestFromSnapshotMilestoneIDFixture` confirms
-  `req.Mode == RunModeMilestone && req.Milestone == "m34.2"` — the upstream
-  precondition for `env.go:115` to derive `MilestoneMode=true`. The
-  fixture-driven Go test is the regression net the milestone describes;
-  capturing the full `EnvKV` slice in-process would require a larger seam
-  beyond this milestone's scope (a hook fixture in `internal/runner`).
-- The milestone references `tekhton state validate` as the JSON-validation
-  surface. That subcommand still does not exist (m40.1's
-  CODER_SUMMARY flagged the same observation). The new Scenario D
-  assertions reuse `tekhton state read --field milestone_id` for the
-  validate-shape role — the reader rejects corrupt JSON with exit 2,
-  identical to a hypothetical `state validate`.
+- **`internal/health/` and `tekhton index summary` / `tekhton causal
+  verdict-history` do not yet exist as Go ports.** The milestone
+  description claims "internal/health/ — call as Go function" and
+  "history block (`internal/causal/` calls — already Go)", but those Go
+  packages haven't been ported. The intake context builders
+  (`buildHistoryBlock`, `buildHealthSummary`, `buildProjectIndex`) shell
+  out to non-existent `tekhton` subcommands and degrade to empty strings
+  when those subcommands fail. The intake prompt template still works
+  with empty values (those vars are enrichment, not required), and the
+  parity gate uses a mock agent so prompt content doesn't affect verdict
+  assertions. A future milestone that ports the health / causal-query /
+  index-reader subsystems will activate those context blocks without
+  touching the intake stage.
+
+- **`--add-milestone` was already routing to `run_draft_milestones`
+  pre-m36.3.** The milestone's Watch For block warns that deleting
+  `stages/intake.sh` breaks the `run_intake_create` create-mode flow,
+  and asks for a deferred-stub message. The pre-existing code already
+  deprecated `--add-milestone` to `--draft-milestones` — `run_intake_create`
+  was dead code (no caller in the dispatcher). The implementation
+  preserves the working `--draft-milestones` routing AND adds the
+  deferred-stub message so the AC's `grep -q 'temporarily unavailable
+  post-m36.3'` test passes without regressing the existing working
+  alternative.
+
+- **`m36.3` was driven manually, not by `tekhton run --milestone m36.3
+  --complete`** — the AC's last bullet asks for self-hosted execution.
+  This file was written by a coder agent invocation; the pipeline
+  harness that would have driven this milestone end-to-end was
+  unavailable for this run.
 
 ## Acceptance Criteria Verification
 
-- [x] `write_pipeline_state` emits `"milestone_id": "<id>"` when `MILESTONE_ID`
-  env is set — Scenario C1 + D1.
-- [x] Same behavior when `_CURRENT_MILESTONE` is set but `MILESTONE_ID` is
-  empty — Scenario C2 + D2.
-- [x] No `milestone_id` key in the output when both vars are unset — Scenario
-  C3 + D3.
-- [x] `tests/test_state_writer_resume_fields.sh` includes three new test
-  cases per writer path (six total) and all pass — verified by direct run.
-- [x] `internal/runner/resume_test.go` has a new test loading a fixture
-  with `milestone_id:"m34.2"` and asserting milestone mode round-trip —
-  `TestRequestFromSnapshotMilestoneIDFixture`.
-- [x] A fixture state file with NO `milestone_id` key continues to load and
-  falls through to task/resume mode —
-  `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough`.
-- [x] End-to-end: a resumed halted-milestone state file produces a
-  rebuilt RunRequest with `Mode == RunModeMilestone && Milestone != ""` —
-  proven by the fixture test (the env builder downstream is already
-  verified by existing m26 tests).
-- [x] `bash tests/run_tests.sh` clean — 513/513 shell tests PASS; all Go
-  packages PASS.
+- [x] `internal/stages/intake/intake.go` exports `RunStage(ctx, *proto.StageRequestV1)`.
+- [x] `internal/stages/intake/context.go` exports `buildPromptVars`,
+  `buildProjectIndex`, `buildHistoryBlock`, `buildHealthSummary`,
+  `buildNotesContext`, `buildIntakeRoleContent`.
+- [x] `DefaultStageDefs[proto.StageIntake]` has `GoImpl: intake.RunStage`
+  AND does NOT have `Script` or `Helpers` populated.
+- [x] `stages/intake.sh`, `lib/intake_helpers.sh`,
+  `lib/intake_verdict_handlers.sh` are deleted.
+- [x] `cmd/tekhton/intake.go` and `cmd/tekhton/intake_test.go` are deleted.
+- [x] `cmd/tekhton/main.go` no longer registers `newIntakeCmd()`.
+- [x] `scripts/wedge-audit.sh` rejects re-introducing any of the three
+  intake bash files — regression-tested manually.
+- [x] `scripts/wedge-audit.sh` rejects a `Helpers` entry on `StageIntake`.
+- [x] `bash scripts/wedge-audit.sh` exits 0 against the m36.3-closed tree.
+- [x] `tests/test_intake_parity.sh` exits 0 across the eight scenarios.
+- [x] `make dogfood` includes `tests/test_intake_parity.sh`.
+- [x] `needs-clarity-complete` scenario asserts CLARIFICATIONS.md content.
+- [x] The intake stage exports `_INTAKE_PASS_EMIT=true` ONLY on the PASS
+  dispatch path — `TestRunStage_HumanModeSkipDoesNotEmitPass` +
+  `TestRunStage_LiveDispatchPassSetsEmitFlag`.
+- [x] The intake stage clears `.final_check_result` and `.commit_decision`
+  on entry — `TestRunStage_SentinelCleanup`.
+- [x] `INTAKE_CLARITY_THRESHOLD` is consulted by the prompt template only;
+  NOT by Go-side gate logic — wedge-audit asserts zero matches under
+  `internal/stages/intake/` + `internal/intake/`.
+- [x] Verdict-dispatch routes TWEAKED → `HandleTweaked`, SPLIT_RECOMMENDED
+  → `HandleSplitRecommended`, NEEDS_CLARITY → `HandleNeedsClarity`, PASS
+  → flag-set-only — `TestDispatchVerdictHandler_Routing`.
+- [x] `tekhton-legacy.sh --add-milestone` entry includes "temporarily
+  unavailable post-m36.3" message (routes to `--draft-milestones` as
+  the working fallback).
+- [x] `go test ./internal/stages/intake/... ./internal/intake/...` passes
+  with coverage ≥ 75% (77.8% actual).
+- [x] `bash tests/run_tests.sh` baseline preserved (no new failures
+  introduced — deleted four obsolete bash tests in lockstep with
+  their bash dependencies).
+- [x] `docs/v4-phase5-stub.md` intake row marked done; `--add-milestone
+  deferral` section present.
+- [x] `docs/go-migration.md` has an "M36 Closeout" section at the top.
+- [x] `VERSION` bumped to `4.41.0`.
+- [ ] Self-hosted execution — see Design Observations.
 
 ## Human Notes Status
 

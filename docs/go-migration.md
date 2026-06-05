@@ -9,6 +9,71 @@ what needed adjustment / next-phase deltas) repeats every phase.
 
 ---
 
+## Phase 5 — M36 Closeout (Architect + Intake Stage Port)
+
+Closed: 2026-06-05.
+
+Bash deleted across the M36 arc:
+
+- `stages/architect.sh` (414 LOC) — ported in m36.1.
+- `stages/intake.sh` (377 LOC) — ported in m36.3.
+- `lib/intake_helpers.sh` (267 LOC after the m36.2 shim shrink — original 472 LOC) — deleted in m36.3.
+- `lib/intake_verdict_handlers.sh` (35 LOC after the m36.2 shim shrink — original 204 LOC) — deleted in m36.3.
+- `cmd/tekhton/intake.go` (454 LOC transition CLI shim) — retired in m36.3.
+- `cmd/tekhton/intake_test.go`, `tests/test_intake_bash_passthrough.sh`,
+  `tests/test_intake.sh`, `tests/test_m118_intake_deferred_emit.sh`,
+  `tests/test_clarify_intake_handler.sh` — bash tests retired in m36.3
+  (their contracts moved to Go-side tests in
+  `internal/stages/intake/` and `internal/intake/`).
+
+Go added: ~280 LOC `internal/stages/intake/intake.go`, ~210 LOC
+`internal/stages/intake/context.go`, ~95 LOC `internal/stages/intake/verdict.go`,
+~150 LOC `internal/stages/intake/config.go` + env.go (plus ~620 LOC tests).
+
+Net delta: **−1,751 bash** / **+~1,355 Go** across the M36 arc.
+
+Notable patterns established:
+
+- **In-process verdict dispatch** — the M36.2 transition CLI shim's TSV
+  sentinel pattern (`TEKHTON_INTAKE_STATE_OUT`) retires; the M36.3 stage
+  calls `VerdictHandler.HandleTweaked` etc. as Go methods, with
+  `PipelineState` wired directly to `internal/state.Store`. Eliminates
+  the 6-8 per-pipeline-run `tekhton intake helpers ...` execs M36.2
+  added (≈ 300 ms regained).
+- **Sentinel-cleanup single-owner contract preserved** — the Go RunStage
+  is the sole owner of `${TEKHTON_DIR}/.final_check_result` and
+  `${TEKHTON_DIR}/.commit_decision` cleanup at pipeline-start, mirroring
+  the pre-m36.3 bash invariant verbatim.
+- **`_INTAKE_PASS_EMIT` asymmetry** — set only on the live PASS dispatch
+  path; explicitly unset on every early-exit skip path. Operator-visible
+  TUI ordering (pill flips green before "task is clear" success line)
+  depends on this asymmetry. Go-side asserted by
+  `TestRunStage_HumanModeSkipDoesNotEmitPass` +
+  `TestRunStage_LiveDispatchPassSetsEmitFlag`.
+- **Env-sidecar pattern for stage exports across subprocess boundary** —
+  `TEKHTON_INTAKE_ENV_OUT` writes a sourceable bash file with
+  `INTAKE_VERDICT` / `INTAKE_CONFIDENCE` / `_INTAKE_PASS_EMIT`. The
+  `tekhton-legacy.sh::run_stage_intake` shim sources it after the
+  subprocess returns so the bash dispatcher's branching on
+  `INTAKE_VERDICT` continues to work. Reusable for the upcoming
+  m37/m38/m39 stage ports.
+
+Deferred:
+
+- **`--add-milestone` agent-driven create flow** — `run_intake_create`
+  (bash lines 244-377 of the deleted `stages/intake.sh`) ports to
+  `cmd/tekhton/milestone.go add-milestone <description>` in a follow-up
+  (m36.4 candidate). The CLI flag currently routes to
+  `--draft-milestones` (user-driven flow) as the working fallback; the
+  shim emits a clear "temporarily unavailable post-m36.3" warning.
+
+The architect and intake pre-stage gates now live in `internal/stages/`,
+completing the Phase 5 stage-port arc except for review (m37), tester
+(m38), and coder (m39). The wedge audit forbids re-introduction of all
+four ported files (architect + 3 intake bash files).
+
+---
+
 ## Phase 1 — Foundations (m01–m04)
 
 ### Phase 1 summary

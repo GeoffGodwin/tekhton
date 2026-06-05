@@ -58,7 +58,9 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newClarifyCmd())
 	cmd.AddCommand(newGateCmd())
 	cmd.AddCommand(newSecurityCmd())
-	cmd.AddCommand(newIntakeCmd())
+	// m36.3: intake CLI shim (newIntakeCmd) deleted alongside the bash
+	// stage. The intake stage is now Go-native and called in-process via
+	// internal/stagerunner.DefaultStageDefs[StageIntake].GoImpl.
 	return cmd
 }
 
