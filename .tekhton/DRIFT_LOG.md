@@ -4,15 +4,16 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 198
+- Runs since audit: 199
 =======
-- Runs since audit: 198
+- Runs since audit: 199
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 198
+- Runs since audit: 199
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-05 | "Implement Milestone m36.3: Intake Stage Port"] `internal/runner/resume_test.go:68-79` â `resumeWithEnv` is a test-only `*Runner` method that manually calls `requestFromSnapshot` + `ApplyEnvDefaults` rather than going through the production `Resume()` path. A comment pointing at `TestResumeProductionPath` as the canonical production-path test would help future readers understand the divergence and not add validation-sensitive tests to the helper path.
 - [ ] [2026-06-03 | "unknown"] `CLARIFICATIONS.md` echo corruption: the injected clarifications block echoed question text as answers, removing all task signal. This is a data-plumbing issue in how the pipeline populates `CLARIFICATIONS.md` before render â worth a targeted investigation to prevent future null runs caused by missing task signal.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go` now partially overlaps with the new `internal/notes` mutation helpers (`CountOpen` vs. `UnresolvedCount`, `ResolveByModifiedFiles` vs. `SelectCleanupBatch+MarkResolved`). Noted in CODER_SUMMARY as an m40 candidate; included here so the drift log counts it.
 - [2026-05-31 | "unknown"] `engine.go` `ReadContext`: the `c.CauseChain = ""` stub has no inline comment tying it to the missing `cause_chain_summary` port. Carry forward from cycle 1.

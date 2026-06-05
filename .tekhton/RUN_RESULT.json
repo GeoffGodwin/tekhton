@@ -6,5 +6,6 @@
   "elapsed_secs": 11073,
   "recovery": "save_exit",
   "error_message": "stagerunner: subprocess failed\nexit status 1",
-  "error_class": "coder"
+  "error_class": "coder",
+  "tests_run": true
 }
