@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.40.0] - 2026-06-05
+
 ### Added
+- **m40 — resume parity fixes (m40.1 + m40.2).** Closes the auto-advance and
+  milestone-mode resume gap exposed by the m34.1 dogfood. Before this arc, a
+  halted milestone-mode run resumed via `tekhton --resume` rebuilt the
+  `RunRequest` with `AutoAdvance=false` AND `Milestone=""`, leaving
+  `MILESTONE_MODE=false` through the finalize chain. `_hook_mark_done` then
+  skipped silently and the manifest never advanced — the operator could run
+  the same milestone successfully several times in a row without it flipping
+  to `done`.
 - **m40.1 — snapshot proto auto-advance fields.** `StateSnapshotV1` now carries
   `auto_advance` (bool) and `auto_advance_limit` (int) as first-class fields
   with `omitempty` JSON tags. The runner's `requestFromSnapshot` copies both
@@ -18,14 +28,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AUTO_ADVANCE` / `AUTO_ADVANCE_LIMIT` env vars (already populated by the
   m26 env builder for milestone-mode runs). Backward-compat preserved: state
   files written without the keys load cleanly with zero-value fields.
+- **m40.2 — state writer milestone_id field.** `lib/state_helpers.sh`
+  `_state_write_snapshot` now sources `milestone_id` from a three-tier
+  precedence chain: explicit 6th positional argument, then `MILESTONE_ID`
+  (the m26 env-contract carrier), then `_CURRENT_MILESTONE` (the legacy
+  bash-orchestrator global). All-empty means a non-milestone task run and
+  the field is omitted through omitempty parity. Previously, only callers
+  that explicitly passed the 6th positional emitted milestone_id; stage-
+  level `write_pipeline_state` sites in `stages/coder.sh`,
+  `stages/review.sh`, `stages/tester.sh`, etc. did not, so a halted
+  milestone-mode run lost the milestone identity on resume.
 - `cmd/tekhton/state.go::applyField` and `lookupField` extended to handle
   `reflect.Bool` so the `tekhton state update --field auto_advance=true`
   hop the bash writer uses round-trips correctly.
-- `tests/test_state_writer_resume_fields.sh` — new shim-boundary integration
-  test driving `write_pipeline_state` with `AUTO_ADVANCE=true
-  AUTO_ADVANCE_LIMIT=4` through both the Go-path (`tekhton state update`)
-  and the bash-fallback writer, asserting the field shape and backward
-  compatibility.
+- `tests/test_state_writer_resume_fields.sh` — extended shim-boundary
+  integration test. m40.1 scenarios cover `AUTO_ADVANCE=true
+  AUTO_ADVANCE_LIMIT=4` round-trip through both writer paths. m40.2 adds
+  six scenarios across bash-fallback and Go-path writers: MILESTONE_ID env
+  set, _CURRENT_MILESTONE legacy fallback, and both-unset task-mode.
+- `internal/runner/resume_test.go` — three new Go tests:
+  `TestRequestFromSnapshotMilestoneIDFixture` loads a hand-authored
+  `milestone_id:"m34.2"` fixture and asserts the rebuilt request routes to
+  milestone mode; `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough`
+  anchors the backward-compat path (no key → task mode); m40.1 added
+  `TestRequestFromSnapshotAutoAdvanceFields`,
+  `TestRequestFromSnapshotAutoAdvanceBackwardCompat`, and
+  `TestStateSnapshotAutoAdvanceJSONRoundTrip` covering the auto-advance
+  round-trip.
 
 ## [4.35.0] - 2026-06-03
 

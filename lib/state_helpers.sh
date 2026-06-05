@@ -65,13 +65,24 @@ _state_write_snapshot() {
         auto_advance_limit_field="${AUTO_ADVANCE_LIMIT:-}"
     fi
 
+    # Milestone id carry-over (m40.2): callers that don't pass the 6th
+    # positional (most stage-level write_pipeline_state sites) still need
+    # milestone_id emitted in milestone mode so the resume request rebuilds
+    # with Mode == RunModeMilestone and _hook_mark_done flips the manifest.
+    # Precedence: explicit positional > MILESTONE_ID (m26 env contract) >
+    # _CURRENT_MILESTONE (legacy bash-orchestrator global). Empty in all three
+    # means a non-milestone task run — the field stays empty and the writer
+    # omits it through omitempty parity.
+    local milestone_id_field
+    milestone_id_field="${milestone_num:-${MILESTONE_ID:-${_CURRENT_MILESTONE:-}}}"
+
     local -a fields=(
         --field "exit_stage=${exit_stage}"
         --field "exit_reason=${exit_reason}"
         --field "resume_flag=${resume_flag}"
         --field "resume_task=${resume_task}"
         --field "notes=${extra_notes}"
-        --field "milestone_id=${milestone_num:-}"
+        --field "milestone_id=${milestone_id_field}"
         --field "auto_advance=${auto_advance_field}"
         --field "auto_advance_limit=${auto_advance_limit_field}"
         --field "pipeline_order=${PIPELINE_ORDER:-standard}"

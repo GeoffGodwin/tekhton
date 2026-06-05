@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_state_writer_resume_fields.sh — m40.1 acceptance test for the auto-
-# advance round-trip in the bash state writer.
+# test_state_writer_resume_fields.sh — m40.1 + m40.2 acceptance tests for
+# the resume-field round-trip in the bash state writer.
 #
-# Exercises write_pipeline_state with AUTO_ADVANCE=true AUTO_ADVANCE_LIMIT=4
-# in the environment and asserts the produced JSON contains both fields with
-# the right shape (auto_advance: true, auto_advance_limit: 4). Backward-compat
-# AC: a writer call WITHOUT the env vars must produce a JSON envelope that
-# omits both fields.
+# m40.1 — exercises write_pipeline_state with AUTO_ADVANCE=true
+# AUTO_ADVANCE_LIMIT=4 in the environment and asserts the produced JSON
+# contains both fields with the right shape (auto_advance: true,
+# auto_advance_limit: 4). Backward-compat AC: a writer call WITHOUT the env
+# vars must produce a JSON envelope that omits both fields.
+#
+# m40.2 — exercises milestone_id emission when callers don't pass the 6th
+# positional argument. Three cases: MILESTONE_ID env set, _CURRENT_MILESTONE
+# legacy fallback, and both-unset task-mode (omit the key entirely).
 #
 # Covers both writer paths:
 #   1. Go path:  `tekhton state update` reads --field K=V and applies the
@@ -65,6 +69,44 @@ _write_with_env() {
         source "${TEKHTON_HOME}/lib/state.sh"
         write_pipeline_state "review" "blockers_remain" "--start-at review" \
             "Drive m40.1 round-trip" "test note" "m42"
+    )
+}
+
+# _write_with_milestone_env STATE_FILE MILESTONE_ID_VAL CURRENT_MILESTONE_VAL POSITIONAL_VAL [FORCE_BASH]
+# m40.2 helper: drives write_pipeline_state with explicit control over the
+# three milestone_id sources (positional, MILESTONE_ID env, _CURRENT_MILESTONE
+# legacy env). Empty POSITIONAL_VAL skips the 6th argument so the writer's
+# env-fallback chain is exercised the way stage-level callers reach it.
+_write_with_milestone_env() {
+    local state_file="$1"
+    local mid="${2:-}"
+    local cur="${3:-}"
+    local pos="${4:-}"
+    local force_bash="${5:-false}"
+    (
+        unset AUTO_ADVANCE AUTO_ADVANCE_LIMIT MILESTONE_ID _CURRENT_MILESTONE
+        PIPELINE_STATE_FILE="$state_file"
+        export PIPELINE_STATE_FILE
+        [[ -n "$mid" ]] && { MILESTONE_ID="$mid"; export MILESTONE_ID; }
+        [[ -n "$cur" ]] && { _CURRENT_MILESTONE="$cur"; export _CURRENT_MILESTONE; }
+
+        if [[ "$force_bash" = "true" ]]; then
+            # PATH strip is subshell-local; forces the bash-fallback branch.
+            # shellcheck disable=SC2030,SC2031
+            PATH=$(printf '%s' "$PATH" | tr ':' '\n' \
+                | grep -v -E '(tekhton/bin|/tekhton/?$)' | paste -sd: -)
+            export PATH
+        fi
+
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/state.sh"
+        if [[ -n "$pos" ]]; then
+            write_pipeline_state "review" "blockers_remain" "--start-at review" \
+                "Drive m40.2 milestone_id round-trip" "test note" "$pos"
+        else
+            write_pipeline_state "review" "blockers_remain" "--start-at review" \
+                "Drive m40.2 milestone_id round-trip" "test note"
+        fi
     )
 }
 
@@ -167,6 +209,81 @@ if [[ -n "$_TEKHTON_BIN" ]]; then
     fi
 else
     echo "SKIP: Go-path tests — tekhton binary not built (run 'make build' to enable)"
+fi
+
+# ---------------------------------------------------------------------------
+# Scenario C (m40.2): milestone_id env fallback chain — bash-fallback writer.
+# Exercises the writer when the 6th positional is empty so the env-chain
+# (MILESTONE_ID → _CURRENT_MILESTONE → omit) is the only source of truth.
+# ---------------------------------------------------------------------------
+
+# C1. MILESTONE_ID set, no positional → emit milestone_id from env.
+_MID_FILE="${TMPDIR}/state_mid.json"
+_write_with_milestone_env "$_MID_FILE" "m34.2" "" "" "true"
+if grep -q '"milestone_id":"m34.2"' "$_MID_FILE"; then
+    _pass "bash-fallback emits milestone_id from MILESTONE_ID env"
+else
+    _fail "bash-fallback missing milestone_id from MILESTONE_ID — file: $(cat "$_MID_FILE")"
+fi
+
+# C2. _CURRENT_MILESTONE set (no MILESTONE_ID), no positional → legacy fallback.
+_LEG_FILE="${TMPDIR}/state_legacy_mid.json"
+_write_with_milestone_env "$_LEG_FILE" "" "m34.2" "" "true"
+if grep -q '"milestone_id":"m34.2"' "$_LEG_FILE"; then
+    _pass "bash-fallback emits milestone_id from _CURRENT_MILESTONE legacy fallback"
+else
+    _fail "bash-fallback missing milestone_id from _CURRENT_MILESTONE — file: $(cat "$_LEG_FILE")"
+fi
+
+# C3. Both env vars unset, no positional → milestone_id key omitted.
+_NMS_FILE="${TMPDIR}/state_no_mid.json"
+_write_with_milestone_env "$_NMS_FILE" "" "" "" "true"
+if grep -q '"milestone_id"' "$_NMS_FILE"; then
+    _fail "bash-fallback emitted milestone_id when both env vars unset"
+else
+    _pass "bash-fallback omits milestone_id when both env vars unset"
+fi
+
+# ---------------------------------------------------------------------------
+# Scenario D (m40.2): same env fallback chain — Go-path writer.
+# ---------------------------------------------------------------------------
+
+if [[ -n "$_TEKHTON_BIN" ]]; then
+    # shellcheck disable=SC2031
+    PATH="${TEKHTON_HOME}/bin:$PATH"
+    export PATH
+
+    # D1. MILESTONE_ID set, no positional → field round-trips through Go reader.
+    _GO_MID_FILE="${TMPDIR}/state_go_mid.json"
+    _write_with_milestone_env "$_GO_MID_FILE" "m34.2" "" "" "false"
+    _val=$("$_TEKHTON_BIN" state read --path "$_GO_MID_FILE" --field milestone_id 2>/dev/null || true)
+    if [[ "$_val" = "m34.2" ]]; then
+        _pass "Go-path persists milestone_id from MILESTONE_ID env"
+    else
+        _fail "Go-path milestone_id read returned '$_val' (want 'm34.2')"
+    fi
+
+    # D2. _CURRENT_MILESTONE legacy fallback through the Go reader.
+    _GO_LEG_FILE="${TMPDIR}/state_go_legacy_mid.json"
+    _write_with_milestone_env "$_GO_LEG_FILE" "" "m34.2" "" "false"
+    _val=$("$_TEKHTON_BIN" state read --path "$_GO_LEG_FILE" --field milestone_id 2>/dev/null || true)
+    if [[ "$_val" = "m34.2" ]]; then
+        _pass "Go-path persists milestone_id from _CURRENT_MILESTONE fallback"
+    else
+        _fail "Go-path milestone_id legacy read returned '$_val' (want 'm34.2')"
+    fi
+
+    # D3. Both env vars unset → Go reader sees no key.
+    _GO_NMS_FILE="${TMPDIR}/state_go_no_mid.json"
+    _write_with_milestone_env "$_GO_NMS_FILE" "" "" "" "false"
+    _val=$("$_TEKHTON_BIN" state read --path "$_GO_NMS_FILE" --field milestone_id 2>/dev/null || true)
+    if [[ -z "$_val" ]]; then
+        _pass "Go-path omits milestone_id when both env vars unset"
+    else
+        _fail "Go-path emitted milestone_id='$_val' when both env vars unset"
+    fi
+else
+    echo "SKIP: Go-path m40.2 milestone_id tests — tekhton binary not built"
 fi
 
 # ---------------------------------------------------------------------------

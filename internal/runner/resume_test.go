@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -134,6 +135,78 @@ func TestRequestFromSnapshotAutoAdvanceBackwardCompat(t *testing.T) {
 	}
 	if req.AutoAdvanceLimit != 0 {
 		t.Fatalf("AutoAdvanceLimit = %d; want 0 when snapshot omits the field", req.AutoAdvanceLimit)
+	}
+}
+
+// TestRequestFromSnapshotMilestoneIDFixture covers the m40.2 round-trip: a
+// hand-authored fixture envelope containing `"milestone_id":"m34.2"` must
+// rebuild a request with Mode == RunModeMilestone and Milestone == "m34.2"
+// after passing through state.Read + requestFromSnapshot. Drives the same
+// path operators reach via `tekhton --resume` from a halted milestone run.
+func TestRequestFromSnapshotMilestoneIDFixture(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "PIPELINE_STATE.json")
+	fixture := `{
+  "proto":"tekhton.state.v1",
+  "updated_at":"2026-06-05T08:00:00Z",
+  "resume_task":"Implement milestone",
+  "milestone_id":"m34.2",
+  "exit_stage":"coder",
+  "exit_reason":"stage_failed_review"
+}
+`
+	if err := os.WriteFile(path, []byte(fixture), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	store := state.New(path)
+	snap, err := store.Read()
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	r := New(&fakePipeline{})
+	req := r.requestFromSnapshot(snap)
+	if req.Mode != proto.RunModeMilestone {
+		t.Fatalf("Mode = %q, want RunModeMilestone", req.Mode)
+	}
+	if req.Milestone != "m34.2" {
+		t.Fatalf("Milestone = %q, want m34.2", req.Milestone)
+	}
+}
+
+// TestRequestFromSnapshotMilestoneIDAbsentFallsThrough is the m40.2 backward-
+// compat AC: a fixture without milestone_id must NOT route to milestone mode.
+// It falls through to task mode when ResumeTask is present, or stays resume
+// otherwise. Anchors the m40.2 behavior that a pre-m40.2 state file (no
+// milestone_id key) keeps producing the historical resume request shape.
+func TestRequestFromSnapshotMilestoneIDAbsentFallsThrough(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "PIPELINE_STATE.json")
+	fixture := `{
+  "proto":"tekhton.state.v1",
+  "updated_at":"2026-06-05T08:00:00Z",
+  "resume_task":"Continue task",
+  "exit_stage":"review",
+  "exit_reason":"stage_failed_review"
+}
+`
+	if err := os.WriteFile(path, []byte(fixture), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	store := state.New(path)
+	snap, err := store.Read()
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if snap.MilestoneID != "" {
+		t.Fatalf("snap.MilestoneID = %q, want empty (fixture omits the key)", snap.MilestoneID)
+	}
+	r := New(&fakePipeline{})
+	req := r.requestFromSnapshot(snap)
+	if req.Mode != proto.RunModeTask {
+		t.Fatalf("Mode = %q, want RunModeTask when milestone_id absent and ResumeTask present", req.Mode)
+	}
+	if req.Milestone != "" {
+		t.Fatalf("Milestone = %q, want empty when fixture omits milestone_id", req.Milestone)
 	}
 }
 
