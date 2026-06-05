@@ -2,17 +2,14 @@
 PASS
 
 ## Confidence
-92
+95
 
 ## Reasoning
-- Scope is precisely defined: every file to create, modify, and delete is listed with expected LOC and change type
-- Acceptance criteria are fully specific and machine-verifiable (exact shell commands, grep patterns, exit code assertions, coverage floor)
-- The three parity-gate scenarios each declare exact assertion targets (dispatch counts, drift count before/after, HUMAN_ACTION_REQUIRED.md diff, audit-counter reset) — no vague "works correctly" language
-- Design section provides Go function signatures, struct shapes, and pseudocode for all three implementation files, leaving no room for two developers to diverge significantly
-- The sr/jr routing split behavior (sr = Simplification only, jr = Staleness + Dead Code + Naming) is called out in both the Design and Watch For sections with the precise bash line references (160-194) so the port boundary is unambiguous
-- The OOS re-add path (resolve-all then re-add OOS items) is explicitly flagged as critical with bash line references (260-320) — the most likely source of silent behavioral drift
-- The Design Doc Observations filter chain is called out with the count (eight patterns, lines 363-376) and a table-test requirement per pattern
-- Dependencies are explicit (m25 for drift API, m34 for stage-port pattern, m35.3 as immediate predecessor) and the drift API surface is listed in full (five functions) so no guessing about what M25 shipped
-- TUI verdict strings are enumerated byte-for-byte (`UPSTREAM_ERROR`, `NO_PLAN`, `BUILD_BROKEN`, `audit_complete`) eliminating paraphrase risk
-- No new operator-visible config keys are introduced, so no Migration Impact section is needed
-- No UI components touched; UI testability criterion is not applicable
+- Scope is precisely defined: two bash files in, specific Go files out, explicit "NOT deleted in m36.2" sequencing rule stated multiple times
+- Full Go API signatures provided in code blocks — no guessing required for method names, parameter types, return types, or receiver names
+- Operator-facing string constants provided verbatim with a mandatory byte-for-byte preservation constraint and specific regression tests that enforce it
+- Acceptance criteria are machine-verifiable: grep commands with expected match counts, named test functions with exact pass/fail semantics, coverage floor (≥80%), and bash function count checks
+- Watch For section covers every non-obvious implementation hazard: size-guard floor (>20 lines), atomic mv + backup requirement, DAG fallback path, CompleteMode short-circuit, tty-check fallback for confirm-tweaks prompt
+- Out-of-scope items are explicitly named (notes context filter → M36.3, clarify subsystem stays out-of-process, stage caller logic → M36.3) — no ambiguity about where the boundary sits
+- No new user-facing config keys introduced; no migration impact section needed
+- No UI components; UI testability criterion not applicable
