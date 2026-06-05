@@ -361,3 +361,65 @@ func pinDate(t *testing.T, want string) {
 	dateProvider = func() string { return want }
 	t.Cleanup(func() { dateProvider = orig })
 }
+
+// TestExtractInlineMilestoneBlock_H6DoesNotStop documents the known coverage
+// gap flagged by the reviewer: inlineHeadingRE uses `^#{1,5}\s` which does
+// not match H6 headings (`######`). Content after an H6 inside a milestone
+// block therefore continues to be returned by MilestoneContent rather than
+// being treated as a section boundary. This test exercises the path and pins
+// the current (gap) behaviour so a future fix is detectable.
+func TestExtractInlineMilestoneBlock_H6DoesNotStop(t *testing.T) {
+	h := newTestHelpers(t)
+	h.DagEnabled = false
+
+	claude := "# Project\n\n## Milestone 1\nContent line 1.\n###### H6 inside milestone\nContent after H6.\n\n## Milestone 2\nShould not be included.\n"
+	_ = os.WriteFile(h.ProjectRulesFile, []byte(claude), 0o644)
+
+	got, err := h.MilestoneContent(true, "1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// H6 is not a stop signal — the heading line itself and the content that
+	// follows it are both returned as part of the milestone block.
+	if !strings.Contains(got, "###### H6 inside milestone") {
+		t.Errorf("H6 heading missing from milestone block; gap: inlineHeadingRE ^#{1,5}\\s does not match ######; got:\n%s", got)
+	}
+	if !strings.Contains(got, "Content after H6.") {
+		t.Errorf("content after H6 missing from milestone block; got:\n%s", got)
+	}
+
+	// H2 is a valid stop — the next milestone's content must not bleed in.
+	if strings.Contains(got, "Should not be included.") {
+		t.Errorf("milestone 2 content leaked into milestone 1 block; got:\n%s", got)
+	}
+}
+
+// TestAddPMMetadata_UnclosedMetaBlockFallback exercises the fallback branch
+// inside insertAfterMetaBlock (helpers.go:444): when a `milestone-meta` HTML
+// comment is present but has no `-->` terminator, the function cannot insert
+// after the closing arrow and falls back to insertAfterFirstLine.
+func TestAddPMMetadata_UnclosedMetaBlockFallback(t *testing.T) {
+	h := newTestHelpers(t)
+	// The meta block is intentionally left open — no --> terminator.
+	body := "# m1 — Demo\n<!-- milestone-meta\nid: \"1\"\nstatus: \"todo\"\n\n## Overview\nBody.\n"
+	msFile := filepath.Join(h.MilestoneDir, "m1.md")
+	_ = os.WriteFile(msFile, []byte(body), 0o644)
+
+	pinDate(t, "2026-06-04")
+	if err := h.AddPMMetadata(msFile); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := os.ReadFile(msFile)
+	// The fallback path calls insertAfterFirstLine, so the comment must appear
+	// immediately after the first line (the # m1 heading).
+	wantPrefix := "# m1 — Demo\n<!-- PM-tweaked: 2026-06-04 -->\n"
+	if !strings.HasPrefix(string(got), wantPrefix) {
+		t.Errorf("unclosed meta-block: expected fallback to insert after first line; got:\n%s", got)
+	}
+	// The original body content must still be present after the inserted line.
+	if !strings.Contains(string(got), "<!-- milestone-meta") {
+		t.Errorf("unclosed meta-block: original meta comment absent from output; got:\n%s", got)
+	}
+}

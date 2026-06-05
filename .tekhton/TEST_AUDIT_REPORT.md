@@ -1,119 +1,59 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 29 test functions
-(primary: drift_integration_test.go × 4 tests;
-freshness sample: architect_test.go × 9, plan_parser_test.go × 9, remediation_test.go × 7)
+Tests audited: 4 files, 37 test functions
+- `internal/intake/helpers_test.go` — 20 functions (PRIMARY — modified this run; 18 by coder, 2 added by tester)
+- `internal/intake/verdict_test.go` — 12 functions (freshness sample)
+- `cmd/tekhton/intake_test.go` — 5 functions (freshness sample)
+- `internal/supervisor/decoder_test.go` — unrelated to m36.2 (freshness sample, no scope issues)
+
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: setupFixture drift-counter format does not match drift.Log API
-- File: internal/stages/architect/architect_test.go:61-86
-- Issue: `setupFixture` writes the audit counter in the format
-  `## Audit Counter\n\nruns_since_audit: 6\nlast_audit: never`. The comment in
-  `drift_integration_test.go:64-66` explicitly documents that the canonical format
-  is `- Runs since audit: N` under a `## Metadata` list (title-case, space-separated,
-  dash-list item) to match the regex in `drift.Log.GetRunsSinceAudit`. The two
-  formats diverge: `setupFixture` uses a lowercase underscore key in a different
-  section header. In tests that use `setupFixture` (all nine tests in architect_test.go),
-  `resetAuditCounter` calls `drift.NewLog.ResetRunsSinceAudit()`, which returns an
-  error it cannot parse; the error is swallowed by the `|| true`-style guard in
-  `resetAuditCounter`; the counter is never updated; and no assertion in
-  `architect_test.go` checks the counter value, so the silent failure is invisible.
-  `CountUnresolved()` is unaffected because both formats use standard `- [ ]`
-  items under `## Unresolved Observations`. The `drift_integration_test.go` tests
-  were added to fill this gap, which is good — but the root inconsistency in
-  `architect_test.go`'s fixture helper remains.
+#### INTEGRITY: Weak assertion in TestHandleTweakedNonMilestone
+- File: internal/intake/verdict_test.go:327
+- Issue: The test asserts only `v.Task == ""` (i.e., Task is non-empty) after `HandleTweaked` in non-milestone mode. It does not verify the content of `v.Task`. `ParseTweaks("testdata/report_tweaked.md")` returns the `## Tweaked Content` block; `ApplyTweakTask` then sets `v.Task` to the first non-empty line (`"# m99.9 — Test Milestone (PM-tweaked)"`). A regression that set Task to any non-empty string — including whitespace or a stale value — would pass this check. The full round-trip is exercised by `TestApplyTweakTask`, but this test leaves the caller-level assertion underconstrained.
 - Severity: MEDIUM
-- Action: In `setupFixture`, replace the `## Audit Counter\n\nruns_since_audit: ...`
-  block with `## Metadata\n- Last audit: never\n- Runs since audit: N\n`,
-  matching the format in `writeDriftLogWithCounter`. This ensures `resetAuditCounter`
-  is genuinely exercised (not silently skipped) in architect_test.go tests. No
-  new counter-value assertions are needed in that file; drift_integration_test.go
-  already owns those.
+- Action: Replace `if v.Task == ""` with a content-specific check such as `if !strings.Contains(v.Task, "m99.9")` to pin the actual extracted value.
 
-#### COVERAGE: SimplificationScenario omits total agent-call count assertion
-- File: internal/stages/architect/drift_integration_test.go:193-209
-- Issue: `TestRunStage_FullAuditPath_SimplificationScenario` asserts sr and jr
-  dispatch counts by label but does not assert total `len(a.calls)`. The baseline
-  plan produces 4 calls (architect + sr + jr + expedited reviewer). A spurious
-  extra agent call would not be caught here. The parallel test in
-  `architect_test.go:130` asserts `len(a.calls) == 4` for the same scenario, so
-  the suite has coverage — but the integration test that was added to close parity
-  gaps does not replicate it, leaving the integration scenario weaker than the
-  unit test for this one property.
+#### COVERAGE: MilestoneFileResolver alternate-lookup path in ApplyTweakMilestone untested
+- File: internal/intake/helpers_test.go (missing test)
+- Issue: `ApplyTweakMilestone` contains a resolver fallback at helpers.go:221-226 — when `msNum + ".md"` does not exist in MilestoneDir, it calls `h.MilestoneFileResolver(msNum)` to find the real filename. No test exercises this branch. The only resolver-seam test is `TestMilestoneContent_DAGFile`, which covers `MilestoneContent`, not `ApplyTweakMilestone`. A regression in the resolver dispatch for the apply path would surface only at runtime via the bash passthrough tests, not in the Go unit suite.
 - Severity: LOW
-- Action: Add `if len(a.calls) != 4 { t.Errorf("agent calls: want 4 (arch+sr+jr+review), got %d (%v)", len(a.calls), labels(a.calls)) }` after the sr/jr count assertions.
+- Action: Add a test that sets `h.MilestoneFileResolver` to return a known filename (e.g. `"m99.9-verbose-title.md"`) and calls `ApplyTweakMilestone` with the numeric ID `"m99.9"` against a MilestoneDir that has the verbose-title file but not `m99.9.md`; assert the resolver-found file is written and backed up correctly.
 
-#### NAMING: Dead `a.err = nil` assignment in UpstreamErrorReturnsPass
-- File: internal/stages/architect/architect_test.go:271
-- Issue: `TestRunStage_UpstreamErrorReturnsPass` calls `withStubs(t)` to install a
-  `*fakeAgent` as `a`, then on the very next line sets `a.err = nil` (a no-op —
-  the zero value), then immediately replaces the agent runner with `&upstreamAgent{}`
-  via `SetAgentRunner`. The variable `a` is never read again. The comment "Force
-  the architect agent to return an UPSTREAM-classified result" correctly describes
-  `upstreamAgent`, not `a.err`. The dead line suggests an abandoned approach that
-  was not cleaned up.
+#### NAMING: Unreachable `return` after `t.Skipf` in TestBashShimDoesNotRedefineStrings
+- File: internal/intake/verdict_test.go:275
+- Issue: `t.Skipf(...)` calls `runtime.Goexit()` internally; the `return` on the immediately following line is unreachable dead code. This suggests a misunderstanding of `t.Skipf` vs. a normal early-return guard, and is mildly misleading to future readers.
 - Severity: LOW
-- Action: Remove `a.err = nil` and change `a, _, _ := withStubs(t)` to `_, _, _ =
-  withStubs(t)` (keeping withStubs to restore the build-gate and TUI seams), or
-  drop `withStubs` and register only the agent cleanup. Either way eliminates the
-  misleading dead assignment.
+- Action: Remove the `return` statement. No behavior change; `t.Skipf` already terminates the goroutine.
 
----
+#### COVERAGE: TestExtractInlineMilestoneBlock_H6DoesNotStop pins gap behavior without a discoverable marker
+- File: internal/intake/helpers_test.go:371
+- Issue: The test correctly documents that `inlineHeadingRE = ^#{1,5}\s` does not match H6, so H6 headings do not stop inline milestone extraction. The comment is clear, but there is no `t.Log` statement or similar mechanism that surfaces the gap in verbose test output (`go test -v`). If a developer later fixes the regex, the test will fail in the non-obvious direction (the H6 line would no longer be present in the output), which could be misread as a test failure rather than a gap closure.
+- Severity: LOW
+- Action: Add `t.Log("known gap: inlineHeadingRE ^#{1,5}\\s does not match H6 — fix will break this test intentionally")` so the gap is visible under `-v` and easily searchable.
+
+### Scope Alignment (freshness sample)
+
+- `internal/intake/verdict_test.go` — fully aligned. All referenced symbols (`ErrHalt`, `MsgTweaksRejected`, `MsgClarifyCompleteHalt`, `VerdictHandler`, `ErrTweakRejected`, `pinTimestamp`) exist in the current `internal/intake/` package. Testdata fixture paths match the files present under `testdata/`. Golden-file comparison normalizes timestamps via regex before diffing — robust against time-of-day variation. No orphaned references.
+- `cmd/tekhton/intake_test.go` — fully aligned. `newIntakeCmd()` is registered in `cmd/tekhton/main.go`. `buildTekhtonBinary` is shared via `cmd/tekhton/security_test.go` (same `package main` test binary). Fixture paths resolve correctly relative to the test binary CWD. No orphaned references.
+- `internal/supervisor/decoder_test.go` — not touched by m36.2; no scope issues introduced.
 
 ### Passing Rubric Points
 
 **Assertion Honesty — PASS.**
-All numeric assertions in `drift_integration_test.go` are traceable to implementation
-logic. OOS count of 1 follows from applying `oosFilters` to plan_baseline.md's Out
-of Scope section: "Refactor the orchestrate retry loop..." passes all four patterns;
-"No items remain in the security domain." is dropped by `(?i)^No (items?|observations?)\b`;
-"None" is dropped by `(?i)^None\b`. HA count of 2 follows from applying `designDocFilters`
-to plan_baseline.md's Design Doc Observations: the first two bullets survive; the last
-three are dropped by the HUMAN_ACTION, route-to-human, and All-observations-documented
-patterns respectively. Post-resolve drift count of 1 follows from resolve-all (5→0) +
-AppendEntries (re-add 1 OOS). Build-broken drift count of 2 follows from the early
-return before step 5 (no ResolveAllObservations called). No magic constants.
+All numeric and string assertions are derived from real implementation behavior or testdata fixtures. Size-guard thresholds (50%, 20-line floor) match `ApplyTweakMilestone` parameters. Confidence values (95, 60, 100) match fixture file content and clamp logic in `ParseConfidence`. Hash value in `TestContentHash` and `TestIntakeCmd_ContentHash` is the standard SHA-256 of `"hello world"` produced by Go's `crypto/sha256` — not a fabricated constant. PipelineState arg ordering in `TestRejectionMessageByteIdentity` matches the literal call at verdict.go:163-165.
 
 **Implementation Exercise — PASS.**
-Tests call `RunStage` directly with real `drift.NewLog` / `drift.NewHumanAction`
-implementations. Only the non-deterministic boundaries are stubbed (supervisor via
-`fakeAgent`, build gate via `fakeBuildGate`, TUI via `fakeTUI`). The full audit-path
-code — plan parsing, filter chains, drift resolution, OOS re-add, human action
-surfacing, audit counter reset — executes unconditionally in all four tests.
+Tests call real `Helpers` and `VerdictHandler` methods. `newTestHelpers` wires a real temp-dir Helpers struct; only non-deterministic boundaries (stdin, timestamps, dates) are overridden via package-level var seams. No test mocks the function under test.
 
 **Test Weakening — N/A.**
-`drift_integration_test.go` is a new file. No existing tests were modified.
+The two tests added by the tester (`TestExtractInlineMilestoneBlock_H6DoesNotStop` and `TestAddPMMetadata_UnclosedMetaBlockFallback`) are appended to the end of `helpers_test.go`. No existing assertions were removed or broadened.
 
 **Test Naming — PASS.**
-All four functions in the primary file encode scenario and expected outcome:
-`_SimplificationScenario`, `_JrWorkOnlyScenario`, `_DesignDocOnlyScenario`,
-`_BuildBroken_DriftUnchangedCounterReset`. Freshness sample follows the same convention.
+All test names encode scenario and expected outcome: `_SizeGuardReject`, `_SizeGuardAccept`, `_SmallMilestoneNoGuard`, `_InsertAfterMetaBlock`, `_InsertAfterFirstLine`, `_UpdateExisting`, `_DAGFile`, `_InlineFallback`, `_NonMilestoneMode`, `_H6DoesNotStop`, `_UnclosedMetaBlockFallback`.
 
-**Scope Alignment — PASS.**
-Agent label strings asserted in `drift_integration_test.go` ("Coder (architect
-remediation)", "Jr Coder (architect remediation)") match exactly what `runRework`
-sets in `remediation.go:36-37`. Exit-reason strings ("audit_complete", "build_broken")
-match `passResult` calls in `architect.go`. Fixture filenames match `config.go` field
-names. No orphaned references.
-
-**Test Isolation — PASS (drift_integration_test.go).**
-All fixture directories created via `t.TempDir()`. All env overrides applied via
-`t.Setenv()` (auto-restored). No reads from live build reports, pipeline logs, causal
-logs, `.claude/logs/*`, or other mutable project-state files. The MEDIUM finding above
-applies to `architect_test.go` (freshness sample), not to the primary audit file.
-
-**plan_parser_test.go — PASS.**
-Nine tests with good edge case coverage: empty input, nil reader, multiline bullet
-joining, None placeholder detection, and per-pattern filter verification. All fixtures
-are inline strings or checked-in testdata files (static source, not run artifacts).
-Named descriptively. No issues.
-
-**remediation_test.go — PASS.**
-Seven tests covering sr/jr model routing, turn-budget arithmetic (CoderMaxTurns/3
-integer division, clamp-to-1), unknown-kind error propagation, and error forwarding.
-Uses `withFakeAgent` to record calls without invoking the real supervisor. Label,
-model, MaxTurns, and AllowedTools are each asserted individually. Named descriptively.
-No issues.
+**Test Isolation — PASS.**
+All tests use `t.TempDir()` for mutable state or checked-in `testdata/` for fixtures. `TestBashShimDoesNotRedefineStrings` reads checked-in source files (`lib/intake_helpers.sh`, `lib/intake_verdict_handlers.sh`), not pipeline run artifacts — this is acceptable. No test reads `.tekhton/*.md`, `.claude/logs/*`, or any other mutable project-state file.

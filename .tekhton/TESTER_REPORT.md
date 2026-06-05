@@ -1,13 +1,12 @@
 ## Planned Tests
-- [x] `internal/stages/architect/drift_integration_test.go` — full audit path: drift count delta + HA count + audit-counter reset for three parity scenarios + build_broken invariants
+- [x] `internal/intake/helpers_test.go` — H6 heading inside milestone block does not stop scan (documents gap); unclosed milestone-meta block falls back to first-line PM insertion
 
 ## Test Run Results
-Passed: 4  Failed: 0
-Full suite: Shell 511 passed, 0 failed; Go all packages passed
-`go test ./internal/stages/architect/...` coverage: 75.0% (meets ≥75% threshold)
+Passed: 2  Failed: 0
+Full `internal/intake` suite: 38 tests, all passed
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/stages/architect/drift_integration_test.go`
+- [x] `internal/intake/helpers_test.go`

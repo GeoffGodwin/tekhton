@@ -3,9 +3,13 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 - Runs since audit: 195
 =======
 - Runs since audit: 195
+>>>>>>> Stashed changes
+=======
+- Runs since audit: 18
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -44,6 +48,7 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+<<<<<<< Updated upstream
 - [x] [2026-06-04 | "unknown"] `plan_parser.go:124-130` â `sectionHeaders` map iteration is non-deterministic (Go map range order is random per spec). If a single heading matched two keys simultaneously (unlikely with these specific keys, but theoretically possible), the assigned canonical section would be non-deterministic. An ordered slice of `struct{key, canonical string}` pairs would eliminate this.
 - [x] [2026-06-04 | "unknown"] `architect.go:85` â `os.Getenv("_TUI_ACTIVE")` is read directly from the process environment rather than from `cfg` or `req.EnvOverrides`. Consistent with the security/cleanup stage pattern but means TUI state cannot be overridden per-request in integration tests without `t.Setenv`. Low impact.
 - [x] [2026-05-31 | "unknown"] `remediation.go:68` â `envPlus` appends `TEKHTON_HOME`, `ERRORS_STREAM`, and `PHASE_LABEL` to `os.Environ()` without deduplication. On Linux, `getenv()` returns the first match, so if `TEKHTON_HOME` is already exported by the caller (the common case), the appended value is harmlessly redundant rather than an override. A comment clarifying this would prevent future confusion about intent.
@@ -89,5 +94,7 @@
 - [x] [2026-05-18 | "unknown"] The two DRIFT_LOG.md staleness fixes (ADL-36 sub-items A and B) are factually correct. `TestDefaultLibHelpersParityWithLegacy` is confirmed at `internal/stagerunner/parity_test.go:42`. `scriptFor` is confirmed absent from `internal/stagerunner/adapter.go` and `adapter_test.go` (grep returns no matches). The resolved entries in DRIFT_LOG.md accurately describe both dispositions.
 <<<<<<< Updated upstream
 - [RESOLVED 2026-05-26] m25 router fix — The non-blocking router that misclassified a CI-failing test as non-blocking (flagged in the m21 closeout) is fixed in `internal/drift/router.go::Route`. The Go router rules an explicit `[FAIL]` header sentinel ahead of the heuristic chain, so CI-failure artifacts now classify as `DispositionBlocking` regardless of any reviewer-vocabulary tokens that happen to appear in the body. Regression test: `internal/drift/router_test.go::TestRouter_CIFailingTest_IsBlocking` against the captured fixture in `internal/drift/testdata/m21_router_misclassification/`. See `docs/go-migration.md` § "m25 router fix" for the full postmortem.
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
