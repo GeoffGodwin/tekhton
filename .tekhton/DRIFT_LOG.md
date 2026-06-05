@@ -4,12 +4,12 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 195
+- Runs since audit: 196
 =======
-- Runs since audit: 195
+- Runs since audit: 196
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 18
+- Runs since audit: 196
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -48,6 +48,8 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-04 | "Implement Milestone m36.2: Intake Helpers Port"] `cmd/tekhton/intake.go:443` â `shimSplit` unconditionally returns an error ("not yet wired (m36.2)"). Correct for scope, but the wiring point is only annotated with the milestone name, not a reference to the M36.3 milestone file. Future contributors may not know where to find the follow-on work.
+- [x] [2026-06-04 | "Implement Milestone m36.2: Intake Helpers Port"] `internal/intake/helpers.go:50-52` â `ContentHash` doc comment references `sha256sum` (Linux utility). On macOS the equivalent is `shasum -a 256`. The comment is accurate for CI but could mislead local debugging on macOS. Low impact since the Go implementation is correct on all platforms.
 <<<<<<< Updated upstream
 - [x] [2026-06-04 | "unknown"] `plan_parser.go:124-130` â `sectionHeaders` map iteration is non-deterministic (Go map range order is random per spec). If a single heading matched two keys simultaneously (unlikely with these specific keys, but theoretically possible), the assigned canonical section would be non-deterministic. An ordered slice of `struct{key, canonical string}` pairs would eliminate this.
 - [x] [2026-06-04 | "unknown"] `architect.go:85` â `os.Getenv("_TUI_ACTIVE")` is read directly from the process environment rather than from `cfg` or `req.EnvOverrides`. Consistent with the security/cleanup stage pattern but means TUI state cannot be overridden per-request in integration tests without `t.Setenv`. Low impact.
