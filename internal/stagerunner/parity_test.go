@@ -225,12 +225,19 @@ func TestBashAdapterRealHelperIntegration(t *testing.T) {
 			t.Skipf("required file %s not found: %v", rel, err)
 		}
 	}
+	// m36.2: lib/intake_helpers.sh is now a wedge shim that execs the Go
+	// binary. Skip when bin/tekhton isn't built so contributors who haven't
+	// run `make build` don't see a spurious failure.
+	tekhtonBin := filepath.Join(repoRoot, "bin", "tekhton")
+	if _, err := os.Stat(tekhtonBin); err != nil {
+		t.Skipf("tekhton binary not found at %s (m36.2 — run `make build`): %v", tekhtonBin, err)
+	}
 
 	proj := t.TempDir()
 
-	// Stage script that calls _intake_content_hash — a pure function defined
-	// in lib/intake_helpers.sh that hashes its argument with sha256sum.
-	// The hash is returned as exit_reason so the test can verify it.
+	// Stage script that calls _intake_content_hash — post-m36.2 this execs
+	// `tekhton intake helpers content-hash` via the shim; the returned hash
+	// is still a 64-char SHA-256 hex digest, so the assertion below stands.
 	stageDir := t.TempDir()
 	stageScript := filepath.Join(stageDir, "intake.sh")
 	const canaryInput = "real-helper-canary"
@@ -247,6 +254,7 @@ func TestBashAdapterRealHelperIntegration(t *testing.T) {
 	a := &BashAdapter{
 		TekhtonHome: repoRoot,
 		ProjectDir:  proj,
+		TekhtonBin:  tekhtonBin, // m36.2: shim execs TEKHTON_BIN to compute the hash.
 		// LibHelpers is empty: only common.sh is sourced (hardcoded by
 		// buildBashScript) plus the per-stage intake_helpers.sh below.
 		// This avoids sourcing all 109 DefaultLibHelpers files in a unit test

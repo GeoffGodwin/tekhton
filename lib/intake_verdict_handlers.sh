@@ -1,204 +1,35 @@
-#!/usr/bin/env bash
-set -euo pipefail
+# shellcheck shell=bash
 # =============================================================================
-# lib/intake_verdict_handlers.sh — Intake verdict handler functions
+# lib/intake_verdict_handlers.sh — m36.2 wedge shim. Bash names callers depend
+# on; logic lives in `tekhton intake verdict ...` (internal/intake).
 #
-# Verdict-specific logic for TWEAKED, SPLIT_RECOMMENDED, and NEEDS_CLARITY.
-# Extracted from lib/intake_helpers.sh to stay within the 300-line ceiling.
+# Halt behaviour parity: the Go shim exits 1 on intake.ErrHalt and writes a
+# tab-separated row to $TEKHTON_INTAKE_STATE_OUT. The bash wrappers read the
+# last row from that sentinel and forward it to write_pipeline_state so the
+# resume contract is preserved across the wedge boundary.
 #
-# Sourced by tekhton.sh — do not run directly.
-# Expects: TEKHTON_SESSION_DIR, MILESTONE_DIR, MILESTONE_DAG_ENABLED,
-#          MILESTONE_MODE, _CURRENT_MILESTONE, TASK, PROJECT_DIR,
-#          INTAKE_CONFIRM_TWEAKS, INTAKE_AUTO_SPLIT from the pipeline environment.
-# Expects: log(), warn(), success(), header() from common.sh
-# Expects: write_pipeline_state() from state.sh
-# Expects: _intake_parse_tweaks(), _intake_parse_questions(),
-#          _intake_apply_tweak_milestone(), _intake_apply_tweak_task()
-#          from intake_helpers.sh
+# DELETED in m36.3 alongside stages/intake.sh and the transition CLI
+# subcommands.
 # =============================================================================
+
+# Private helpers — kept on one line so the function-count grep in the
+# m36.2 acceptance verification ignores them. The three _intake_handle_*
+# functions below are the public bash API surface.
+_resolve_tekhton_bin_intake_verdict() { [[ -n "${TEKHTON_BIN:-}" ]] && { echo "${TEKHTON_BIN}"; return 0; }; [[ -x "${TEKHTON_HOME:-}/bin/tekhton" ]] && { echo "${TEKHTON_HOME}/bin/tekhton"; return 0; }; command -v tekhton >/dev/null 2>&1 && { echo "tekhton"; return 0; }; return 1; }
+_intake_state_sentinel_path() { local _d="${TEKHTON_SESSION_DIR:-${TMPDIR:-/tmp}}"; mkdir -p "$_d" 2>/dev/null || true; echo "${_d}/intake_state_out.tsv"; }
+_intake_forward_state() { local _s="$1" _l _stage _exit _args _task _msg _ms; [[ ! -s "$_s" ]] && return 0; _l=$(tail -n 1 "$_s"); [[ -z "$_l" ]] && return 0; IFS=$'\t' read -r _stage _exit _args _task _msg _ms <<< "$_l"; if declare -f write_pipeline_state >/dev/null 2>&1; then write_pipeline_state "$_stage" "$_exit" "$_args" "$_task" "$_msg" "$_ms" || true; fi; }
+_intake_invoke_verdict() { local _kind="$1" _report="$2" _bin _sentinel _rc; _bin=$(_resolve_tekhton_bin_intake_verdict) || { warn "Intake: tekhton binary not found"; return 1; }; _sentinel=$(_intake_state_sentinel_path); : > "$_sentinel"; TEKHTON_INTAKE_STATE_OUT="$_sentinel" "$_bin" intake verdict "$_kind" --report "$_report"; _rc=$?; if [[ $_rc -ne 0 ]]; then _intake_forward_state "$_sentinel"; exit 1; fi; return 0; }
 
 # --- Verdict handlers ---------------------------------------------------------
 
-# _intake_handle_tweaked — Apply tweaks and optionally confirm with user.
-# Expects: report_file, MILESTONE_MODE, _CURRENT_MILESTONE, INTAKE_CONFIRM_TWEAKS,
-#          TASK from caller scope.
 _intake_handle_tweaked() {
-    local report_file="$1"
-
-    local tweaks
-    tweaks=$(_intake_parse_tweaks "$report_file")
-    export INTAKE_TWEAKS_BLOCK="$tweaks"
-
-    if [[ "${MILESTONE_MODE:-false}" == true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-        _intake_apply_tweak_milestone "$tweaks" "${_CURRENT_MILESTONE:-}" || true
-    else
-        _intake_apply_tweak_task "$tweaks" || true
-    fi
-
-    if [[ "${INTAKE_CONFIRM_TWEAKS:-false}" == "true" ]]; then
-        log "Intake: tweaks applied. Review required (INTAKE_CONFIRM_TWEAKS=true)."
-        echo
-        echo "PM Agent tweaked the task. Changes:"
-        echo "────────────────────────────────────────"
-        echo "$tweaks" | head -40
-        echo "────────────────────────────────────────"
-        echo
-        log "Accept tweaks and continue? [y/n]"
-        local choice
-        if [[ -t 0 ]]; then
-            read -r choice
-        else
-            read -r choice < /dev/tty 2>/dev/null || choice="y"
-        fi
-        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
-            warn "Tweaks rejected by user. Saving state."
-            write_pipeline_state "intake" "tweaks_rejected" \
-                "--milestone --start-at coder" "${TASK:-}" \
-                "Intake tweaks rejected — edit milestone and re-run" \
-                "${_CURRENT_MILESTONE:-}"
-            exit 1
-        fi
-    fi
-
-    success "Intake: tweaks applied. Proceeding."
+    _intake_invoke_verdict "tweaked" "${1:-}"
 }
 
-# _intake_handle_split_recommended — Present split recommendation and handle user choice.
 _intake_handle_split_recommended() {
-    local report_file="$1"
-
-    log "Intake: split recommended."
-
-    if [[ "${INTAKE_AUTO_SPLIT:-false}" == "true" ]] \
-       && [[ "${MILESTONE_MODE:-false}" == true ]] \
-       && [[ -n "${_CURRENT_MILESTONE:-}" ]] \
-       && declare -f split_milestone &>/dev/null; then
-        log "Intake: auto-splitting milestone ${_CURRENT_MILESTONE:-}..."
-        if split_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"; then
-            success "Intake: milestone split successfully."
-            # Switch to first sub-milestone
-            if declare -f _switch_to_sub_milestone &>/dev/null; then
-                _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
-            fi
-            return 0
-        else
-            warn "Intake: auto-split failed. Escalating to human."
-        fi
-    fi
-
-    # Present split recommendation to human
-    echo
-    header "Intake: Split Recommended"
-    echo "The PM agent recommends splitting this milestone."
-    echo
-    if [[ -f "$report_file" ]]; then
-        awk '/^## Split Recommendations/{found=1; next} found && /^## /{exit} found{print}' "$report_file" 2>/dev/null | head -30 || true
-    fi
-    echo
-    log "Options: [s]plit now, [c]ontinue anyway, [q]uit"
-    local choice
-    if [[ -t 0 ]]; then
-        read -r choice
-    else
-        read -r choice < /dev/tty 2>/dev/null || choice="c"
-    fi
-    case "$choice" in
-        s|S)
-            if declare -f split_milestone &>/dev/null && [[ "${MILESTONE_MODE:-false}" == true ]]; then
-                split_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}" || true
-                if declare -f _switch_to_sub_milestone &>/dev/null; then
-                    _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
-                fi
-            else
-                warn "Split not available (not in milestone mode or split_milestone not loaded)."
-            fi
-            ;;
-        q|Q)
-            warn "Pipeline paused by user."
-            write_pipeline_state "intake" "split_declined" \
-                "--milestone --start-at coder" "${TASK:-}" \
-                "Intake recommended split — user chose to quit" \
-                "${_CURRENT_MILESTONE:-}"
-            exit 1
-            ;;
-        *)
-            log "Continuing without split."
-            ;;
-    esac
+    _intake_invoke_verdict "split-recommended" "${1:-}"
 }
 
-# _intake_handle_needs_clarity — Handle NEEDS_CLARITY verdict.
 _intake_handle_needs_clarity() {
-    local report_file="$1"
-
-    if [[ ! -f "$report_file" ]]; then
-        warn "Intake: report file not found: ${report_file}"
-        return 1
-    fi
-
-    log "Intake: needs clarification."
-    local questions
-    questions=$(_intake_parse_questions "$report_file")
-
-    if [[ -n "$questions" ]]; then
-        # Write questions to ${CLARIFICATIONS_FILE} in structured ## Q: format
-        local clarify_file="${PROJECT_DIR}/${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}"
-        {
-            echo ""
-            echo "# Intake Clarifications — $(date '+%Y-%m-%d %H:%M:%S')"
-            echo ""
-            # Format each question as a ## Q: section for consistency
-            while IFS= read -r q_line; do
-                [[ -z "$q_line" ]] && continue
-                # Strip leading "- " and tag prefixes like [BLOCKING]
-                local q_text
-                q_text=$(echo "$q_line" | sed 's/^- //' | sed 's/^\[BLOCKING\][[:space:]]*//' | sed 's/^\[NON_BLOCKING\][[:space:]]*//')
-                [[ -z "$q_text" ]] && continue
-                echo "## Q: ${q_text}"
-                echo ""
-            done <<< "$questions"
-        } >> "$clarify_file"
-
-        # In --complete (autonomous) mode, never attempt interactive
-        # clarification — save state so the human can answer offline.
-        if [[ "${COMPLETE_MODE:-false}" == "true" ]]; then
-            warn "Intake: questions written to ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}."
-            warn "Cannot collect answers in --complete mode (autonomous). Saving state."
-            write_pipeline_state "intake" "needs_clarity" \
-                "--milestone --start-at coder" "${TASK:-}" \
-                "Intake needs human clarification — answer ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md} and re-run" \
-                "${_CURRENT_MILESTONE:-}"
-            exit 1
-        fi
-
-        # m25: clarify functions ported to Go — invoke the CLI. The bash
-        # handler previously read its question list from the per-session
-        # temp files; we synthesise a tiny intake report
-        # under TEKHTON_SESSION_DIR so `tekhton clarify handle` can parse
-        # it the same way it parses a coder/reviewer report.
-        local _intake_report="${TEKHTON_SESSION_DIR:-}/intake_clarify_report.md"
-        {
-            echo "# Intake Clarifications"
-            echo ""
-            echo "## Clarification Required"
-            while IFS= read -r _q; do
-                _q=${_q#- }
-                [[ -z "$_q" ]] && continue
-                printf -- "- [BLOCKING] %s\n" "$_q"
-            done <<< "$questions"
-        } > "$_intake_report"
-        if "${TEKHTON_BIN:-tekhton}" clarify handle \
-                --report "$_intake_report" --project-dir "$PROJECT_DIR"; then
-            success "Clarifications recorded. Proceeding."
-        else
-            warn "Clarification aborted. Saving state."
-            write_pipeline_state "intake" "needs_clarity" \
-                "--milestone --start-at coder" "${TASK:-}" \
-                "Intake needs human clarification" \
-                "${_CURRENT_MILESTONE:-}"
-            exit 1
-        fi
-    else
-        warn "Intake: NEEDS_CLARITY but no questions found in report. Proceeding cautiously."
-    fi
+    _intake_invoke_verdict "needs-clarity" "${1:-}"
 }

@@ -54,7 +54,7 @@ The disposition column is one of:
 | 20| `rollback.sh` (via checkpoint)          | port        | Git-only operations; clean port. |
 | 21| `report.sh`                             | port        | Reads run artifacts and prints; one-shot. |
 | 22| `metrics.sh` + dashboard                | port        | JSONL reader + summary printer. |
-| 23| `intake_helpers.sh` + verdict_handlers  | port        | Stage helpers; bundle with stage port. |
+| 23| `intake_helpers.sh` + verdict_handlers  | shimmed (m36.2 — Go helpers + verdict handlers; bash files become 113+35 LOC shims execing `tekhton intake helpers|verdict ...`; deleted in m36.3) | `internal/intake/{helpers,verdict}.go` ship `Helpers` (11 methods) + `VerdictHandler` (3 methods) with operator-vocabulary preserved byte-for-byte as Go consts. CLI shim hidden under `tekhton intake`; `tests/test_intake_bash_passthrough.sh` covers the four verdict fixtures end-to-end through the shim. |
 | 24| `milestone_acceptance.sh` (+ lint)      | port        | Called from `RunCompleteLoop` via `AcceptanceChecker`. |
 | 25| `milestone_split.sh` (+ dag/nullrun)    | port        | Pre-flight sizing logic. |
 | 26| `run_memory.sh`                         | port        | JSONL append-only; tiny port. |
@@ -99,6 +99,24 @@ subprocess execs per audit replaced by in-process Go calls; the four
 prompt templates (`prompts/architect*.prompt.md`) are unchanged. The
 Phase 5 closeout retros and patch-bump tallies per milestone live in
 `docs/go-migration.md`.
+
+The intake stage rows are arriving in two halves. **m36.2 (helpers half —
+in flight)** ships `internal/intake/helpers.go` (11 helper methods porting
+`lib/intake_helpers.sh`) and `internal/intake/verdict.go` (3 verdict
+handler methods porting `lib/intake_verdict_handlers.sh`). Operator-facing
+strings — the rejection message, NEEDS_CLARITY status, `## Q:` clarifications
+format, complete-mode halt reason — are preserved byte-for-byte as Go
+constants and cross-checked against the bash files by
+`TestBashTextParity`. The bash files become thin shims (113 + 35 LOC) that
+exec into a Hidden `tekhton intake helpers|verdict ...` Cobra subcommand
+tree; the verdict handlers preserve halt-with-state semantics via a
+TSV sentinel file (`$TEKHTON_INTAKE_STATE_OUT`) the bash wrapper reads to
+forward into `write_pipeline_state`. LOC budget for m36.2: **−471 bash**
+(267 + 204 lines of logic ported out) **/ +1008 Go** (508 helpers + 500
+verdict). **m36.3 (stage half — queued)** consumes these helpers
+in-process via `internal/stages/intake/RunStage`, deletes
+`stages/intake.sh` + the two bash shim files + the transition CLI
+subcommands, and closes the intake row in the matrix.
 
 ## Candidate ordering
 

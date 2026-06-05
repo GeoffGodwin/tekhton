@@ -11,6 +11,17 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 PROJECT_DIR="$TMPDIR_TEST"
 export TEKHTON_HOME PROJECT_DIR
 
+# m36.2 wedge: lib/intake_helpers.sh now execs the Go shim. Pin TEKHTON_BIN
+# to the local build (matches the pattern in test_notes_parity.sh). Skip
+# cleanly if the binary is not built so contributors who haven't run
+# `make build` don't see a spurious failure.
+TEKHTON_BIN="${TEKHTON_HOME}/bin/tekhton"
+if [[ ! -x "$TEKHTON_BIN" ]]; then
+    echo "test_intake.sh: tekhton binary not found at ${TEKHTON_BIN}; skipping (run 'make build' first)"
+    exit 0
+fi
+export TEKHTON_BIN
+
 # --- Required globals ---
 TEKHTON_SESSION_DIR="${TMPDIR_TEST}/session"
 mkdir -p "$TEKHTON_SESSION_DIR"
