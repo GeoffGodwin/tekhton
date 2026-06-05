@@ -507,7 +507,18 @@ func deriveMilestoneTask(req *proto.RunRequestV1) {
 	if err != nil {
 		return
 	}
+	// Try the literal id first, then with an "m" prefix prepended. The CLI's
+	// normalizeMilestoneID strips the prefix from --milestone arguments so
+	// req.Milestone is the bare-number form ("36.1"), but the manifest stores
+	// entries keyed by the prefixed form ("m36.1"). Without the second
+	// lookup, this entire helper silently no-ops for every CLI-initiated
+	// milestone run — which is what produced the empty TASK that triggered
+	// the "feat: changes in .claude/project_version.cfg" commit subjects
+	// across the m36.1 dogfood pass.
 	entry, ok := m.Get(req.Milestone)
+	if !ok && !strings.HasPrefix(req.Milestone, "m") {
+		entry, ok = m.Get("m" + req.Milestone)
+	}
 	if !ok {
 		return
 	}
