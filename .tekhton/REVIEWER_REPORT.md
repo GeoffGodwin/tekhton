@@ -1,22 +1,21 @@
-# Reviewer Report — m40.2 State Writer: Milestone ID Field
+# Reviewer Report — m44
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `tests/test_state_writer_resume_fields.sh` is now at 296/300 lines — four lines from the hard ceiling. The next functional addition to this file will require extraction before it can accept more test cases.
-- The milestone design specified placing `milestone_id` alphabetically before `notes` in the `--field` array. The implementation inserts it after `notes` (line 85 follows line 84). JSON field ordering has no semantic impact — both the Go and bash readers look up keys by name, and the spec does not require ordered keys. Cosmetic; no change required.
-- The end-to-end AC asks for `env.MilestoneMode == true` verified by capturing the `EnvKV` slice fed to the finalize hook. `TestRequestFromSnapshotMilestoneIDFixture` establishes `req.Mode == RunModeMilestone` — the upstream precondition for `env.go:115` to derive `MilestoneMode=true`. Full hook-fixture coverage is documented as out-of-scope in CODER_SUMMARY Design Observations; the regression net is adequate.
-- Scenario D re-prepends `${TEKHTON_HOME}/bin` to PATH at line 253 even though Scenario B already did so at line 168 (both are top-level, not in subshells). The duplicate prepend is harmless but slightly untidy.
+- `tests/test_commit_subject_fallback.sh` line 31 shadows the system `TMPDIR` variable with `TMPDIR=$(mktemp -d)`. If any sourced library later calls `mktemp`, the new temp files land inside the test's own tmpdir instead of the system temp dir. Rename to `_TEST_TMPDIR` (or `TEST_TMPDIR`) to avoid the collision. Low risk here since the sourced libs don't call `mktemp`, but it's a maintenance hazard for future test additions.
+- `hooks.sh` line 190: `NR>0` in the awk guard is vacuously true (awk NR starts at 1, so NR is never 0). The guard's intent — skip blank lines and the summary line — is already handled by `NF>=2`. Harmless, and the design spec included it, so leave as-is unless cleaning up in a future pass.
+- Pre-existing (not introduced by m44): `lib/hooks.sh` lines 1–2 carry a `#!/usr/bin/env bash` shebang and `set -euo pipefail` for a file that is sourced, not executed directly. Sourced lib files are supposed to inherit `set -euo pipefail` from the caller per CLAUDE.md Rule 2. The shebang is ignored at source-time and the `set` invocation is a no-op when the caller already has it set, so no correctness risk — just stylistic debt to clean up at some point.
 
 ## Coverage Gaps
-None
+- Scenario 2 tests `generate_commit_message "" "44"` by passing the milestone number as a direct `$2` argument. It does not test the full chain where `_hook_commit` reads `_CURRENT_MILESTONE` from the subprocess environment and forwards it as `$2`. The grep assertion covers that the three `export` lines exist, but doesn't execute the actual subprocess. Acceptable trade-off (test stays fast and Go-binary-independent), but a future shim-boundary test could drive `finalize_run 1` end-to-end in a throwaway repo to close the gap completely.
 
 ## Drift Observations
-- `internal/runner/resume_test.go:68-79` — `resumeWithEnv` is a test-only `*Runner` method that manually calls `requestFromSnapshot` + `ApplyEnvDefaults` rather than going through the production `Resume()` path. A comment pointing at `TestResumeProductionPath` as the canonical production-path test would help future readers understand the divergence and not add validation-sensitive tests to the helper path.
+- None

@@ -28,8 +28,8 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+_TEST_TMPDIR=$(mktemp -d)
+trap 'rm -rf "$_TEST_TMPDIR"' EXIT
 
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -150,7 +150,7 @@ _gen_subject() {
 # Goal 1 regression guard — must NOT pick .claude/project_version.cfg.
 # ---------------------------------------------------------------------------
 
-_S1_DIR="${TMPDIR}/s1"
+_S1_DIR="${_TEST_TMPDIR}/s1"
 _seed_repo "$_S1_DIR"
 _seed_diff "$_S1_DIR"
 
@@ -177,7 +177,7 @@ fi
 # Goal 2 outcome — derives subject from get_milestone_title.
 # ---------------------------------------------------------------------------
 
-_S2_DIR="${TMPDIR}/s2"
+_S2_DIR="${_TEST_TMPDIR}/s2"
 _seed_repo "$_S2_DIR"
 _seed_diff "$_S2_DIR"
 _seed_claude_md "$_S2_DIR" "44" "Commit Subject Regression"
@@ -198,7 +198,7 @@ fi
 # Smoke check — TASK-driven subject path must still win.
 # ---------------------------------------------------------------------------
 
-_S3_DIR="${TMPDIR}/s3"
+_S3_DIR="${_TEST_TMPDIR}/s3"
 _seed_repo "$_S3_DIR"
 _seed_diff "$_S3_DIR"
 

@@ -1,49 +1,32 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 8 new test assertions/functions
-- `tests/test_state_writer_resume_fields.sh` — extended with `_write_with_milestone_env` helper and Scenarios C/D (6 new bash assertions)
-- `internal/runner/resume_test.go` — 2 new Go test functions: `TestRequestFromSnapshotMilestoneIDFixture`, `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough`
-
+Tests audited: 1 file, 5 assertions (procedural bash — 3 scenarios + 1 AC grep + 1 regression guard)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: No test for MILESTONE_ID vs _CURRENT_MILESTONE precedence ordering
-- File: tests/test_state_writer_resume_fields.sh:221
-- Issue: The three-tier chain is `positional > MILESTONE_ID > _CURRENT_MILESTONE` (state_helpers.sh:77). C1 exercises MILESTONE_ID alone; C2 exercises _CURRENT_MILESTONE alone. No case sets both simultaneously (e.g. MILESTONE_ID="m99" + _CURRENT_MILESTONE="m34.2") to assert MILESTONE_ID wins. The `_write_with_milestone_env` helper already accepts both as separate args (positions 2 and 3), so a new scenario requires only a call and one grep assertion.
+#### EXERCISE: Export-chain integration gap
+- File: tests/test_commit_subject_fallback.sh:214–223
+- Issue: The Goal 2 path is split across two separate checks that do not compose into an end-to-end verification. Scenario 2 (line 185) passes `"44"` as `$2` directly to `generate_commit_message`, confirming the downstream milestone-title logic works. The AC grep (line 217) confirms the three `export` lines exist in `orchestrate_save.sh`. Neither check verifies the full chain: `_orch_record_save_state` exports → `finalize_run 1` spawns subprocess → `_hook_commit` reads env → forwards to `generate_commit_message` as `$2`. An adversarial implementation could export the variables to a different scope or after the `finalize_run 1` call and both existing checks would still pass. The CODER_SUMMARY explicitly acknowledges this tradeoff ("The export → env-inheritance → $2 chain is bash-local and tested separately via the grep assertion") and justifies the design on test speed grounds — acceptable for a bash-level regression test.
 - Severity: MEDIUM
-- Action: Add C4 (bash-fallback) and D4 (Go-path): call `_write_with_milestone_env "$file" "m99" "m34.2" "" "true/false"` and assert the output contains `"milestone_id":"m99"` rather than `"m34.2"`. No implementation changes needed.
+- Action: No immediate action required — the tradeoff is sound and documented. A future shim-boundary integration test (following the `test_state_writer_resume_fields.sh` pattern) that drives `_orch_record_save_state` end-to-end with a real finalize invocation would close this gap. Defer to a follow-on milestone.
 
-#### COVERAGE: No test for positional argument overriding env vars
-- File: tests/test_state_writer_resume_fields.sh:103
-- Issue: The positional (6th arg) is the highest-precedence source. No test passes a positional value alongside a conflicting MILESTONE_ID env var to confirm the positional wins. The `pos` parameter on `_write_with_milestone_env` already supports this; the scenario is just absent.
+#### INTEGRITY: AC grep does not verify ordering relative to `finalize_run 1`
+- File: tests/test_commit_subject_fallback.sh:217–223
+- Issue: `grep -cE "^[[:space:]]*export (TASK|_CURRENT_MILESTONE|MILESTONE_MODE)" lib/orchestrate_save.sh` counts occurrences of the three export lines anywhere in the file. An implementation that placed the exports *after* `finalize_run 1` (line 36 of orchestrate_save.sh) would pass this assertion while being functionally broken — the subprocess spawned by `finalize_run 1` would not inherit the variables. The current implementation places them correctly at lines 32–34, so this is not a current defect, only a future fragility.
 - Severity: LOW
-- Action: Optional — add a scenario calling `_write_with_milestone_env "$file" "m34.2" "" "m99.0" "true"` and asserting output is `"m99.0"`. The bash expansion at state_helpers.sh:77 makes the positional priority self-evident from source; the test documents intent for future readers.
+- Action: Acceptable as-is. If a future refactor moves the exports, the behavioral gap would surface in production before this check catches it. A more precise assertion would use `awk` to verify the exports precede `finalize_run 1` in the file; worth considering if `orchestrate_save.sh` is heavily modified in a future milestone.
 
-None: No HIGH findings. No INTEGRITY, SCOPE, WEAKENING, NAMING, EXERCISE, or ISOLATION violations.
+#### COVERAGE: No test for empty-diff path after m44 sort logic
+- File: tests/test_commit_subject_fallback.sh (no specific line)
+- Issue: No scenario exercises `generate_commit_message` when `git diff HEAD --stat` produces no output (e.g., immediately after a commit with a clean working tree). In that case, `subject` remains `"${prefix}: changes pending"` and the sort-by-lines branch at hooks.sh:187–195 never fires. This is a pre-existing coverage gap — the m44 change only touches the non-empty diff branch — and the `"changes pending"` stub was present before m44 and is unchanged.
+- Severity: LOW
+- Action: No action required for m44. If the `"changes pending"` stub subject appears in production, add a scenario to a follow-on test.
 
-### Rubric Assessment
-
-**Assertion Honesty — PASS.**
-C1/C2/C3 grep patterns match the exact JSON encoding produced by `_state_bash_write_fields` for str-typed fields (state_helpers.sh:159). C3 absence check is correct: the `elif [[ -n "$val" ]]` guard skips empty strings, so no `milestone_id` key reaches the output when the chain resolves to empty.
-Go fixture tests (resume_test.go:146, 181) write a hand-authored JSON envelope, parse it through `state.New(path).Read()`, then call `requestFromSnapshot` — the same path `tekhton --resume` takes. Assertions at lines 168–173 and 205–210 are derived directly from the branching logic at resume.go:67–73: if `snap.MilestoneID != ""`, set `RunModeMilestone`; else if `req.Task != ""`, set `RunModeTask`. No hard-coded magic values.
-
-**Edge Case Coverage — PASS (two gaps noted above, MEDIUM and LOW).**
-Scenarios C1–C3 and D1–D3 cover: MILESTONE_ID-set, _CURRENT_MILESTONE-fallback, and both-unset omit. Backward compat (pre-m40.2 state with no milestone_id key routes to task mode) is covered by `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough`. Missing: MILESTONE_ID+_CURRENT_MILESTONE conflict (MEDIUM) and positional-overrides-env (LOW).
-
-**Implementation Exercise — PASS.**
-Shell tests source `lib/state.sh`, which calls `write_pipeline_state` → `_state_write_snapshot` (state_helpers.sh:21–113) → `_state_bash_write_fields` (state_helpers.sh:120–182) on the fallback path. Go tests create real fixture files via `os.WriteFile`, call `state.New(path).Read()`, and invoke `r.requestFromSnapshot(snap)`. The `fakePipeline` satisfies runner construction only and is not on the tested path.
-
-**Test Weakening — PASS.**
-No existing assertions in either file were removed or broadened. Scenarios A and B (m40.1) in the shell test file (lines 124–212) are byte-for-byte unchanged. All pre-existing Go test functions remain intact and unmodified.
-
-**Test Naming — PASS.**
-`TestRequestFromSnapshotMilestoneIDFixture` encodes: function under test, feature (milestone_id), and test method (fixture). `TestRequestFromSnapshotMilestoneIDAbsentFallsThrough` encodes: function, scenario (absent key), and expected behavior (falls through to task mode). Shell assertion messages (`"bash-fallback emits milestone_id from MILESTONE_ID env"`, etc.) are equivalently specific.
-
-**Scope Alignment — PASS.**
-`StateSnapshotV1.MilestoneID` confirmed at internal/proto/state_v1.go:28. `requestFromSnapshot` milestone routing confirmed at internal/runner/resume.go:67–73. `_state_write_snapshot` milestone_id_field chain at lib/state_helpers.sh:76–77. Deleted file `.tekhton/stage_results/stage_tester_r1_b0.json` has no reference in either test file — no orphan risk.
-
-**Test Isolation — PASS.**
-Shell test: `TMPDIR=$(mktemp -d)` + `trap 'rm -rf "$TMPDIR"' EXIT`; all state files written to `$TMPDIR/*`; each `_write_with_milestone_env` call runs in a `(...)` subshell with `unset MILESTONE_ID _CURRENT_MILESTONE` at entry, preventing pipeline-mode env leakage into backward-compat scenarios.
-Go tests: `t.TempDir()` for all file I/O; fixture content is an inline string literal. Neither test file reads `.tekhton/`, `.claude/logs/`, or any other mutable project-state file.
+### No findings in these categories
+- **ISOLATION**: The three git-repo scenarios each create and use independent throwaway repos under `$_TEST_TMPDIR` (line 31) with `trap 'rm -rf "$_TEST_TMPDIR"' EXIT` (line 32). No pipeline artifacts (`.tekhton/*.md`, `.claude/logs/*`) are read without fixture isolation. The AC grep reads `lib/orchestrate_save.sh` — a source file under test, not a pipeline-state artifact — consistent with the shim-boundary integration test pattern documented in CLAUDE.md.
+- **WEAKENING**: No existing tests were modified. The TESTER_REPORT notes a TMPDIR shadowing rename — a non-weakening refactor with no assertion changes.
+- **SCOPE**: The deleted file `.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced in the new test. No orphaned imports or stale symbol references found.
+- **NAMING**: Bash procedural style — no test function names to evaluate. Scenario comments and pass/fail messages are specific and encode both the scenario and expected outcome (e.g., "scenario 1: subject picks the most-changed file", "scenario 1 AC: subject does not contain 'project_version.cfg'").
+- **ASSERTION HONESTY**: All assertions derive their expected values from inputs supplied to the function under test or from the fixture data seeded in the temp repo. The project_version.cfg exclusion guard (line 169) is a meaningful negative assertion verifying the fix, not a tautology. The milestone-title assertion (line 188) checks for a string that was seeded into the temp CLAUDE.md, not a hard-coded magic value.

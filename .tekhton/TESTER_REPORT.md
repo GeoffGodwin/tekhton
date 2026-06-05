@@ -1,15 +1,17 @@
 ## Planned Tests
-- [x] `tests/test_state_writer_resume_fields.sh` — bash fallback + Go-path writer emit milestone_id from env chain (m40.2 Scenarios C and D; 14 assertions total covering C1/C2/C3 and D1/D2/D3)
-- [x] `internal/runner/resume_test.go` — fixture-driven round-trip: milestone_id present → RunModeMilestone; absent → fallback to task/resume mode (TestRequestFromSnapshotMilestoneIDFixture + TestRequestFromSnapshotMilestoneIDAbsentFallsThrough)
+- [x] `tests/test_commit_subject_fallback.sh` — verify 5-assertion m44 regression test passes (Goal 1 sort-by-lines, Goal 2 milestone-title subject, Goal 3 TASK smoke, AC grep, project_version.cfg exclusion guard)
+- [x] fix TMPDIR shadowing in `tests/test_commit_subject_fallback.sh` per Reviewer non-blocking note, re-verify passes
 
 ## Test Run Results
 Passed: 2  Failed: 0
 
-Full suite: Shell 1/1 targeted passed; `go test ./internal/runner/...` all passed; full `bash tests/run_tests.sh` shell+Go clean.
+All 5 assertions in `test_commit_subject_fallback.sh` passed both before and after the TMPDIR rename.
+Regression tests `test_state_writer_resume_fields.sh` and `test_finalize_commit_block_reason.sh` pass.
+`shellcheck tests/test_commit_subject_fallback.sh lib/hooks.sh lib/orchestrate_save.sh` clean.
+Full `go test ./...` suite: all packages pass.
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_state_writer_resume_fields.sh`
-- [x] `internal/runner/resume_test.go`
+- [x] `tests/test_commit_subject_fallback.sh`
