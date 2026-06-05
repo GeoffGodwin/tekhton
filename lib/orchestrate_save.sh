@@ -23,6 +23,16 @@ _orch_record_save_state() {
 
     _ORCH_ELAPSED=$(( $(date +%s) - _ORCH_START_TIME ))
 
+    # m44: propagate TASK + milestone identity into the finalize subprocess so
+    # _hook_commit's generate_commit_message can produce a meaningful subject
+    # instead of falling through to the diff-stat fallback. Without these
+    # exports, every save_exit commit landed as
+    # "feat: changes in .claude/project_version.cfg" (alphabetically first
+    # file in the bookkeeping bump diff).
+    export TASK="${TASK:-}"
+    export _CURRENT_MILESTONE="${_CURRENT_MILESTONE:-}"
+    export MILESTONE_MODE="${MILESTONE_MODE:-false}"
+
     finalize_run 1
 
     _choose_resume_start_at

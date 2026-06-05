@@ -182,14 +182,13 @@ ${root_cause}"
         local diff_summary
         diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
 
-        # Refine the "changes pending" placeholder subject with the top file
-        # from the diff. Only fires when TASK was empty AND we had no
-        # milestone title — gives reviewers something to grep for instead of
-        # bare "feat:".
+        # m44: pick the file with the largest lines-changed count (was head -1
+        # alphabetical, which always picked .claude/project_version.cfg).
         if [[ "$subject" == "${prefix}: changes pending" ]]; then
             local top_changed_file
-            top_changed_file=$(echo "$diff_stat" | awk -F'|' 'NR>0 && NF>=2{print $1}' \
-                | sed 's/^ *//;s/ *$//' | head -1)
+            top_changed_file=$(echo "$diff_stat" \
+                | awk -F'|' 'NR>0 && NF>=2 { raw=$2; sub(/^ +/,"",raw); n=raw+0; path=$1; sub(/^ +/,"",path); sub(/ +$/,"",path); print n "\t" path }' \
+                | sort -rn -k1,1 | head -1 | cut -f2-)
             if [ -n "$top_changed_file" ]; then
                 subject="${prefix}: changes in ${top_changed_file}"
             fi
