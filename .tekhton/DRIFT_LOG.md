@@ -3,12 +3,14 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 194
+- Runs since audit: 195
 =======
-- Runs since audit: 194
+- Runs since audit: 195
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-04 | "Implement Milestone m36.2: Intake Helpers Port"] `plan_parser.go:124-130` â `sectionHeaders` map iteration is non-deterministic (Go map range order is random per spec). If a single heading matched two keys simultaneously (unlikely with these specific keys, but theoretically possible), the assigned canonical section would be non-deterministic. An ordered slice of `struct{key, canonical string}` pairs would eliminate this.
+- [ ] [2026-06-04 | "Implement Milestone m36.2: Intake Helpers Port"] `architect.go:85` â `os.Getenv("_TUI_ACTIVE")` is read directly from the process environment rather than from `cfg` or `req.EnvOverrides`. Consistent with the security/cleanup stage pattern but means TUI state cannot be overridden per-request in integration tests without `t.Setenv`. Low impact.
 - [ ] [2026-06-03 | "unknown"] `CLARIFICATIONS.md` echo corruption: the injected clarifications block echoed question text as answers, removing all task signal. This is a data-plumbing issue in how the pipeline populates `CLARIFICATIONS.md` before render â worth a targeted investigation to prevent future null runs caused by missing task signal.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go::CountOpen`, `ResolveByModifiedFiles`, `ClearCompleted` now partially overlap with `notes.UnresolvedCount`, `notes.MarkResolved`, and `notes.SelectCleanupBatch`. The coder's retro flags this for m40 consolidation; accumulating here so it appears in the drift log across milestones.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go::CountOpen`, `ResolveByModifiedFiles`, `ClearCompleted` now partially overlap with `notes.UnresolvedCount`, `notes.MarkResolved`, and `notes.SelectCleanupBatch`. Flagged for future consolidation (probably m40) in the coder's retro; tracking here so the drift log accumulates across milestones.
