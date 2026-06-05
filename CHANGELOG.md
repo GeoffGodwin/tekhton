@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **m40.1 — snapshot proto auto-advance fields.** `StateSnapshotV1` now carries
+  `auto_advance` (bool) and `auto_advance_limit` (int) as first-class fields
+  with `omitempty` JSON tags. The runner's `requestFromSnapshot` copies both
+  onto the rebuilt `RunRequestV1`, so `tekhton --resume` no longer drops the
+  auto-advance arc the operator originally started with
+  `--auto-advance --auto-advance-limit N`. The bash writer
+  (`lib/state_helpers.sh::write_pipeline_state`) emits both fields keyed off
+  `AUTO_ADVANCE` / `AUTO_ADVANCE_LIMIT` env vars (already populated by the
+  m26 env builder for milestone-mode runs). Backward-compat preserved: state
+  files written without the keys load cleanly with zero-value fields.
+- `cmd/tekhton/state.go::applyField` and `lookupField` extended to handle
+  `reflect.Bool` so the `tekhton state update --field auto_advance=true`
+  hop the bash writer uses round-trips correctly.
+- `tests/test_state_writer_resume_fields.sh` — new shim-boundary integration
+  test driving `write_pipeline_state` with `AUTO_ADVANCE=true
+  AUTO_ADVANCE_LIMIT=4` through both the Go-path (`tekhton state update`)
+  and the bash-fallback writer, asserting the field shape and backward
+  compatibility.
+
 ## [4.35.0] - 2026-06-03
 
 ### Changed

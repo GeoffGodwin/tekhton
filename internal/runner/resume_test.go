@@ -97,6 +97,73 @@ func TestRequestFromSnapshotMilestoneMode(t *testing.T) {
 	}
 }
 
+// TestRequestFromSnapshotAutoAdvanceFields covers the m40.1 round-trip: a
+// snapshot with auto_advance=true and auto_advance_limit=4 must restore both
+// fields onto the rebuilt RunRequestV1 so `tekhton --resume` continues the
+// auto-advance arc the operator originally started.
+func TestRequestFromSnapshotAutoAdvanceFields(t *testing.T) {
+	r := New(&fakePipeline{})
+	snap := &proto.StateSnapshotV1{
+		ResumeTask:       "ms task",
+		MilestoneID:      "m42",
+		AutoAdvance:      true,
+		AutoAdvanceLimit: 4,
+	}
+	req := r.requestFromSnapshot(snap)
+	if !req.AutoAdvance {
+		t.Fatalf("AutoAdvance should be true after round-trip")
+	}
+	if req.AutoAdvanceLimit != 4 {
+		t.Fatalf("AutoAdvanceLimit = %d; want 4", req.AutoAdvanceLimit)
+	}
+}
+
+// TestRequestFromSnapshotAutoAdvanceBackwardCompat verifies a state file
+// written WITHOUT the new fields (i.e. by pre-m40.1 code) loads cleanly and
+// leaves AutoAdvance / AutoAdvanceLimit at their zero values. Backward compat
+// AC for m40.1.
+func TestRequestFromSnapshotAutoAdvanceBackwardCompat(t *testing.T) {
+	r := New(&fakePipeline{})
+	snap := &proto.StateSnapshotV1{
+		ResumeTask: "do thing",
+		ExitReason: "stage_failed_review",
+	}
+	req := r.requestFromSnapshot(snap)
+	if req.AutoAdvance {
+		t.Fatalf("AutoAdvance should be false when snapshot omits the field")
+	}
+	if req.AutoAdvanceLimit != 0 {
+		t.Fatalf("AutoAdvanceLimit = %d; want 0 when snapshot omits the field", req.AutoAdvanceLimit)
+	}
+}
+
+// TestStateSnapshotAutoAdvanceJSONRoundTrip covers the on-disk JSON round-
+// trip: encoded → decoded snapshots preserve both fields and the omitempty
+// behavior (zero values emit no key, restored zero values match).
+func TestStateSnapshotAutoAdvanceJSONRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	store := state.New(filepath.Join(tmp, "PIPELINE_STATE.json"))
+	if err := store.Update(func(s *proto.StateSnapshotV1) {
+		s.MilestoneID = "m42"
+		s.AutoAdvance = true
+		s.AutoAdvanceLimit = 4
+	}); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	snap, err := store.Read()
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if !snap.AutoAdvance || snap.AutoAdvanceLimit != 4 {
+		t.Fatalf("round-trip lost fields: AutoAdvance=%v, Limit=%d", snap.AutoAdvance, snap.AutoAdvanceLimit)
+	}
+	r := New(&fakePipeline{})
+	req := r.requestFromSnapshot(snap)
+	if !req.AutoAdvance || req.AutoAdvanceLimit != 4 {
+		t.Fatalf("requestFromSnapshot lost fields: AutoAdvance=%v, Limit=%d", req.AutoAdvance, req.AutoAdvanceLimit)
+	}
+}
+
 func TestApplyEnvDefaultsLeavesNonEmpty(t *testing.T) {
 	req := &proto.RunRequestV1{ProjectDir: "/orig", TekhtonHome: "/orig-home"}
 	ApplyEnvDefaults(req, "/p", "/h")

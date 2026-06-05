@@ -152,7 +152,7 @@ func newRunCmd() *cobra.Command {
 	c.Flags().StringVar(&humanTagFlag, "human-tag", "", "optional tag filter for --human")
 	c.Flags().StringVar(&milestoneFlag, "milestone", "", "specific milestone id to run")
 	c.Flags().BoolVar(&autoAdvanceFlag, "auto-advance", false, "advance to next milestone on success")
-	c.Flags().IntVar(&autoAdvanceLimit, "auto-advance-limit", 0, "override AUTO_ADVANCE_LIMIT")
+	c.Flags().IntVar(&autoAdvanceLimit, "auto-advance-limit", 0, "override AUTO_ADVANCE_LIMIT — persisted in PIPELINE_STATE and restored on --resume")
 	c.Flags().BoolVar(&dryRunFlag, "dry-run", false, "preview run without invoking agents")
 	c.Flags().BoolVar(&noTUIFlag, "no-tui", false, "disable TUI sidecar")
 	c.Flags().StringVar(&projectDirFlag, "project-dir", "", "target project (defaults to PROJECT_DIR or cwd)")
@@ -474,6 +474,7 @@ func buildEnvBuilder(req *proto.RunRequestV1) *runner.EnvBuilder {
 //   - just-finished milestone is not actually marked done (finalize failed
 //     to update the manifest — re-running would loop forever)
 //   - any iteration fails or completes with non-success disposition
+//
 // deriveMilestoneTask populates req.Task with a derived "Implement
 // Milestone <ID>: <Title>" string when:
 //   - req is in milestone mode (req.Mode == RunModeMilestone), AND

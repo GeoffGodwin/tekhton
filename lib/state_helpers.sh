@@ -52,6 +52,19 @@ _state_write_snapshot() {
         fi
     fi
 
+    # Auto-advance carry-over (m40.1): only emit when the env carries a non-
+    # empty value so non-milestone task runs don't leak dead config into the
+    # snapshot. AUTO_ADVANCE / AUTO_ADVANCE_LIMIT are populated by the m26 env
+    # builder for milestone-mode runs; the Go side honors omitempty so a value
+    # of "false" or "0" is a no-write through applyField.
+    local auto_advance_field="" auto_advance_limit_field=""
+    if [[ "${AUTO_ADVANCE:-}" = "true" ]]; then
+        auto_advance_field="true"
+    fi
+    if [[ "${AUTO_ADVANCE_LIMIT:-}" =~ ^[0-9]+$ ]] && [[ "${AUTO_ADVANCE_LIMIT:-0}" != "0" ]]; then
+        auto_advance_limit_field="${AUTO_ADVANCE_LIMIT:-}"
+    fi
+
     local -a fields=(
         --field "exit_stage=${exit_stage}"
         --field "exit_reason=${exit_reason}"
@@ -59,6 +72,8 @@ _state_write_snapshot() {
         --field "resume_task=${resume_task}"
         --field "notes=${extra_notes}"
         --field "milestone_id=${milestone_num:-}"
+        --field "auto_advance=${auto_advance_field}"
+        --field "auto_advance_limit=${auto_advance_limit_field}"
         --field "pipeline_order=${PIPELINE_ORDER:-standard}"
         --field "tester_mode=${TESTER_MODE:-verify_passing}"
         --field "human_mode=${HUMAN_MODE:-false}"
@@ -105,6 +120,7 @@ _state_bash_write_fields() {
         local -A scalars=(
             [exit_stage]=str [exit_reason]=str [resume_flag]=str
             [resume_task]=str [notes]=str [milestone_id]=str
+            [auto_advance]=bool [auto_advance_limit]=int
             [pipeline_attempt]=int [agent_calls_total]=int
         )
         local -A extras=()
@@ -123,6 +139,11 @@ _state_bash_write_fields() {
                         continue
                     fi
                     printf ',\n  "%s":%s' "$key" "$val"
+                elif [[ "$type" = "bool" ]]; then
+                    # Only emit true — false/empty omitted (omitempty parity).
+                    if [[ "$val" = "true" ]]; then
+                        printf ',\n  "%s":true' "$key"
+                    fi
                 elif [[ -n "$val" ]]; then
                     printf ',\n  "%s":"%s"' "$key" "$(_json_escape "$val")"
                 fi

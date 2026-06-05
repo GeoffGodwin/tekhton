@@ -186,6 +186,16 @@ func applyField(snap *proto.StateSnapshotV1, key, val string) {
 			}
 			fv.SetInt(n)
 			return
+		case reflect.Bool:
+			if val == "" {
+				return
+			}
+			b, err := strconv.ParseBool(val)
+			if err != nil {
+				return
+			}
+			fv.SetBool(b)
+			return
 		}
 	}
 	if val == "" {
@@ -224,6 +234,11 @@ func lookupField(snap *proto.StateSnapshotV1, key string) string {
 				return ""
 			}
 			return strconv.FormatInt(n, 10)
+		case reflect.Bool:
+			if !fv.Bool() {
+				return ""
+			}
+			return "true"
 		}
 	}
 	if snap.Extra != nil {

@@ -14,23 +14,25 @@ const StateProtoV1 = "tekhton.state.v1"
 // Extra so a future v1.x reader still understands a v1.0 file. A field gets
 // promoted to first-class only on a v2 bump.
 type StateSnapshotV1 struct {
-	Proto           string            `json:"proto"`
-	RunID           string            `json:"run_id,omitempty"`
-	StartedAt       string            `json:"started_at,omitempty"`
-	UpdatedAt       string            `json:"updated_at"`
-	Mode            string            `json:"mode,omitempty"`
-	ResumeTask      string            `json:"resume_task,omitempty"`
-	ResumeFlag      string            `json:"resume_flag,omitempty"`
-	ExitStage       string            `json:"exit_stage,omitempty"`
-	ExitReason      string            `json:"exit_reason,omitempty"`
-	Notes           string            `json:"notes,omitempty"`
-	LastEventID     string            `json:"last_event_id,omitempty"`
-	MilestoneID     string            `json:"milestone_id,omitempty"`
-	ReviewCycle     int               `json:"review_cycle,omitempty"`
-	PipelineAttempt int               `json:"pipeline_attempt,omitempty"`
-	AgentCallsTotal int               `json:"agent_calls_total,omitempty"`
-	Errors          []ErrorRecordV1   `json:"errors,omitempty"`
-	Extra           map[string]string `json:"extra,omitempty"`
+	Proto            string            `json:"proto"`
+	RunID            string            `json:"run_id,omitempty"`
+	StartedAt        string            `json:"started_at,omitempty"`
+	UpdatedAt        string            `json:"updated_at"`
+	Mode             string            `json:"mode,omitempty"`
+	ResumeTask       string            `json:"resume_task,omitempty"`
+	ResumeFlag       string            `json:"resume_flag,omitempty"`
+	ExitStage        string            `json:"exit_stage,omitempty"`
+	ExitReason       string            `json:"exit_reason,omitempty"`
+	Notes            string            `json:"notes,omitempty"`
+	LastEventID      string            `json:"last_event_id,omitempty"`
+	MilestoneID      string            `json:"milestone_id,omitempty"`
+	AutoAdvance      bool              `json:"auto_advance,omitempty"`
+	AutoAdvanceLimit int               `json:"auto_advance_limit,omitempty"`
+	ReviewCycle      int               `json:"review_cycle,omitempty"`
+	PipelineAttempt  int               `json:"pipeline_attempt,omitempty"`
+	AgentCallsTotal  int               `json:"agent_calls_total,omitempty"`
+	Errors           []ErrorRecordV1   `json:"errors,omitempty"`
+	Extra            map[string]string `json:"extra,omitempty"`
 }
 
 // ErrorRecordV1 captures the AGENT_ERROR_* classification block the bash

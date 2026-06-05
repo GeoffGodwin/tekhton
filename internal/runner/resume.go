@@ -55,12 +55,14 @@ func (r *Runner) Resume(ctx context.Context) (*proto.RunResultV1, error) {
 // fields become redundant.
 func (r *Runner) requestFromSnapshot(snap *proto.StateSnapshotV1) *proto.RunRequestV1 {
 	req := &proto.RunRequestV1{
-		Proto:       proto.RunRequestProtoV1,
-		Mode:        proto.RunModeResume,
-		Task:        snap.ResumeTask,
-		Complete:    isCompleteLoopExit(snap.ExitReason),
-		ProjectDir:  r.ProjectDir,
-		TekhtonHome: r.TekhtonHome,
+		Proto:            proto.RunRequestProtoV1,
+		Mode:             proto.RunModeResume,
+		Task:             snap.ResumeTask,
+		Complete:         isCompleteLoopExit(snap.ExitReason),
+		AutoAdvance:      snap.AutoAdvance,
+		AutoAdvanceLimit: snap.AutoAdvanceLimit,
+		ProjectDir:       r.ProjectDir,
+		TekhtonHome:      r.TekhtonHome,
 	}
 	if snap.MilestoneID != "" {
 		req.Mode = proto.RunModeMilestone
