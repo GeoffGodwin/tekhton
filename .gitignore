@@ -101,3 +101,7 @@ MILESTONE_ARCHIVE.md
 # Go build artifacts (V4)
 bin/
 *.test
+
+# Tekhton runtime artifacts
+.tekhton/BUILD_FIX_REPORT.md
+.claude/preflight_bak/
