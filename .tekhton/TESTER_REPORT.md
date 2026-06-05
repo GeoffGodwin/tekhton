@@ -5,6 +5,8 @@
 ## Test Run Results
 Passed: 2  Failed: 0
 
+Full suite: Shell 513/513 passed, Go all packages passed, Python skipped.
+
 ## Bugs Found
 None
 

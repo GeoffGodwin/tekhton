@@ -1,59 +1,47 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 37 test functions
-- `internal/intake/helpers_test.go` — 20 functions (PRIMARY — modified this run; 18 by coder, 2 added by tester)
-- `internal/intake/verdict_test.go` — 12 functions (freshness sample)
-- `cmd/tekhton/intake_test.go` — 5 functions (freshness sample)
-- `internal/supervisor/decoder_test.go` — unrelated to m36.2 (freshness sample, no scope issues)
+Tests audited: 2 files, 10 test functions
+- `internal/runner/resume_test.go` — 10 functions total; 3 new (m40.1): `TestRequestFromSnapshotAutoAdvanceFields`, `TestRequestFromSnapshotAutoAdvanceBackwardCompat`, `TestStateSnapshotAutoAdvanceJSONRoundTrip`
+- `tests/test_state_writer_resume_fields.sh` — new file; 8 assertions across 4 scenarios (bash-fallback on/off, Go-path on/off)
 
 Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: Weak assertion in TestHandleTweakedNonMilestone
-- File: internal/intake/verdict_test.go:327
-- Issue: The test asserts only `v.Task == ""` (i.e., Task is non-empty) after `HandleTweaked` in non-milestone mode. It does not verify the content of `v.Task`. `ParseTweaks("testdata/report_tweaked.md")` returns the `## Tweaked Content` block; `ApplyTweakTask` then sets `v.Task` to the first non-empty line (`"# m99.9 — Test Milestone (PM-tweaked)"`). A regression that set Task to any non-empty string — including whitespace or a stale value — would pass this check. The full round-trip is exercised by `TestApplyTweakTask`, but this test leaves the caller-level assertion underconstrained.
-- Severity: MEDIUM
-- Action: Replace `if v.Task == ""` with a content-specific check such as `if !strings.Contains(v.Task, "m99.9")` to pin the actual extracted value.
-
-#### COVERAGE: MilestoneFileResolver alternate-lookup path in ApplyTweakMilestone untested
-- File: internal/intake/helpers_test.go (missing test)
-- Issue: `ApplyTweakMilestone` contains a resolver fallback at helpers.go:221-226 — when `msNum + ".md"` does not exist in MilestoneDir, it calls `h.MilestoneFileResolver(msNum)` to find the real filename. No test exercises this branch. The only resolver-seam test is `TestMilestoneContent_DAGFile`, which covers `MilestoneContent`, not `ApplyTweakMilestone`. A regression in the resolver dispatch for the apply path would surface only at runtime via the bash passthrough tests, not in the Go unit suite.
+#### COVERAGE: Go-path backward-compat does not check auto_advance_limit absence
+- File: `tests/test_state_writer_resume_fields.sh:159-167`
+- Issue: The Go-path backward-compat block asserts only that `auto_advance` is empty when `AUTO_ADVANCE` is unset. It does not assert that `auto_advance_limit` is also absent via `tekhton state read --field auto_advance_limit`. The bash-fallback backward-compat block (lines 106–114) covers both fields; the Go-path block covers only one. If a future change accidentally emitted `auto_advance_limit` on unrelated writes, only the bash-fallback path would catch it.
 - Severity: LOW
-- Action: Add a test that sets `h.MilestoneFileResolver` to return a known filename (e.g. `"m99.9-verbose-title.md"`) and calls `ApplyTweakMilestone` with the numeric ID `"m99.9"` against a MilestoneDir that has the verbose-title file but not `m99.9.md`; assert the resolver-found file is written and backed up correctly.
+- Action: After line 165, add a `tekhton state read --field auto_advance_limit` check against `$_GO_FILE_OFF` and assert the result is empty, mirroring the pattern already present for `auto_advance`.
 
-#### NAMING: Unreachable `return` after `t.Skipf` in TestBashShimDoesNotRedefineStrings
-- File: internal/intake/verdict_test.go:275
-- Issue: `t.Skipf(...)` calls `runtime.Goexit()` internally; the `return` on the immediately following line is unreachable dead code. This suggests a misunderstanding of `t.Skipf` vs. a normal early-return guard, and is mildly misleading to future readers.
+#### COVERAGE: AUTO_ADVANCE=false explicit-false boundary not exercised
+- File: `tests/test_state_writer_resume_fields.sh` (no existing scenario)
+- Issue: `_state_write_snapshot` (state_helpers.sh:61) gates emission on `[[ "${AUTO_ADVANCE:-}" = "true" ]]`, so the explicit string `"false"` is treated the same as unset and the field is omitted. No test passes `AUTO_ADVANCE=false` to confirm this. The risk is subtle: if a caller ever passes the raw variable value directly into `--field auto_advance=$AUTO_ADVANCE` (instead of the derived `auto_advance_field` local), `applyField` (state.go:189–196) would write `false` to the snapshot — a regression only this missing case would catch.
 - Severity: LOW
-- Action: Remove the `return` statement. No behavior change; `t.Skipf` already terminates the goroutine.
+- Action: Add a third bash-fallback scenario calling `_write_with_env "$file" "false" "" "true"` and asserting `auto_advance` is absent from the output JSON. One new scenario block parallel to the existing backward-compat block.
 
-#### COVERAGE: TestExtractInlineMilestoneBlock_H6DoesNotStop pins gap behavior without a discoverable marker
-- File: internal/intake/helpers_test.go:371
-- Issue: The test correctly documents that `inlineHeadingRE = ^#{1,5}\s` does not match H6, so H6 headings do not stop inline milestone extraction. The comment is clear, but there is no `t.Log` statement or similar mechanism that surfaces the gap in verbose test output (`go test -v`). If a developer later fixes the regex, the test will fail in the non-obvious direction (the H6 line would no longer be present in the output), which could be misread as a test failure rather than a gap closure.
-- Severity: LOW
-- Action: Add `t.Log("known gap: inlineHeadingRE ^#{1,5}\\s does not match H6 — fix will break this test intentionally")` so the gap is visible under `-v` and easily searchable.
+None: No HIGH findings.
 
-### Scope Alignment (freshness sample)
-
-- `internal/intake/verdict_test.go` — fully aligned. All referenced symbols (`ErrHalt`, `MsgTweaksRejected`, `MsgClarifyCompleteHalt`, `VerdictHandler`, `ErrTweakRejected`, `pinTimestamp`) exist in the current `internal/intake/` package. Testdata fixture paths match the files present under `testdata/`. Golden-file comparison normalizes timestamps via regex before diffing — robust against time-of-day variation. No orphaned references.
-- `cmd/tekhton/intake_test.go` — fully aligned. `newIntakeCmd()` is registered in `cmd/tekhton/main.go`. `buildTekhtonBinary` is shared via `cmd/tekhton/security_test.go` (same `package main` test binary). Fixture paths resolve correctly relative to the test binary CWD. No orphaned references.
-- `internal/supervisor/decoder_test.go` — not touched by m36.2; no scope issues introduced.
-
-### Passing Rubric Points
+### Rubric Assessment
 
 **Assertion Honesty — PASS.**
-All numeric and string assertions are derived from real implementation behavior or testdata fixtures. Size-guard thresholds (50%, 20-line floor) match `ApplyTweakMilestone` parameters. Confidence values (95, 60, 100) match fixture file content and clamp logic in `ParseConfidence`. Hash value in `TestContentHash` and `TestIntakeCmd_ContentHash` is the standard SHA-256 of `"hello world"` produced by Go's `crypto/sha256` — not a fabricated constant. PipelineState arg ordering in `TestRejectionMessageByteIdentity` matches the literal call at verdict.go:163-165.
+All assertions derive from real function calls. In `resume_test.go`, the expected values (`true`, `4`, `false`, `0`) are the values set on the snapshot structs passed into `requestFromSnapshot` — not fabricated constants. In the shell test, `grep '"auto_advance":true'` and `tekhton state read --field auto_advance` check output produced by the live `write_pipeline_state` → `_state_write_snapshot` call chain with the test-supplied env vars.
+
+**Edge Case Coverage — PASS (with LOW gaps noted above).**
+Go tests cover: happy path (fields present), backward compat (fields absent via zero-value struct), and on-disk JSON round-trip (write → read → requestFromSnapshot). Shell test covers: bash-fallback with fields on/off, Go-path with fields on; Go-path off partial.
 
 **Implementation Exercise — PASS.**
-Tests call real `Helpers` and `VerdictHandler` methods. `newTestHelpers` wires a real temp-dir Helpers struct; only non-deterministic boundaries (stdin, timestamps, dates) are overridden via package-level var seams. No test mocks the function under test.
+`TestRequestFromSnapshotAutoAdvanceFields` calls `r.requestFromSnapshot(snap)` directly (resume.go:56–74). `TestStateSnapshotAutoAdvanceJSONRoundTrip` drives `state.New(tmp).Update()` → `store.Read()` → `requestFromSnapshot`, exercising `StateSnapshotV1` JSON marshaling (state_v1.go:29–30) end-to-end. The shell test sources `lib/state.sh` which calls `write_pipeline_state` → `_state_write_snapshot` (state_helpers.sh:21–102) and `_state_bash_write_fields` (state_helpers.sh:109–171) for the fallback path. The `fakePipeline` is used only to satisfy `runner.New()` construction; it is not on the path under test.
 
-**Test Weakening — N/A.**
-The two tests added by the tester (`TestExtractInlineMilestoneBlock_H6DoesNotStop` and `TestAddPMMetadata_UnclosedMetaBlockFallback`) are appended to the end of `helpers_test.go`. No existing assertions were removed or broadened.
+**Test Weakening — PASS.**
+No existing tests were modified. All seven pre-existing functions in `resume_test.go` (`TestIsCompleteLoopExit`, `TestResumeMissingState`, `TestResumeRebuildsTaskRequest`, `TestRequestFromSnapshotMilestoneMode`, `TestApplyEnvDefaultsLeavesNonEmpty`, `TestResumeProductionPath`, `TestResumeProductionPathRejectsMissingAmbient`) are unchanged.
 
 **Test Naming — PASS.**
-All test names encode scenario and expected outcome: `_SizeGuardReject`, `_SizeGuardAccept`, `_SmallMilestoneNoGuard`, `_InsertAfterMetaBlock`, `_InsertAfterFirstLine`, `_UpdateExisting`, `_DAGFile`, `_InlineFallback`, `_NonMilestoneMode`, `_H6DoesNotStop`, `_UnclosedMetaBlockFallback`.
+`TestRequestFromSnapshotAutoAdvanceFields`, `TestRequestFromSnapshotAutoAdvanceBackwardCompat`, and `TestStateSnapshotAutoAdvanceJSONRoundTrip` each encode the component under test, the scenario, and the expected property. Shell test assertion messages (`"bash-fallback emits auto_advance: true"`, `"Go-path persists auto_advance_limit=4"`) are similarly specific.
+
+**Scope Alignment — PASS.**
+New fields `AutoAdvance` and `AutoAdvanceLimit` are confirmed present at `internal/proto/state_v1.go:29-30`. The copy into `RunRequestV1` is at `internal/runner/resume.go:62-63`. `applyField` bool branch is at `cmd/tekhton/state.go:189-196`. `lookupField` bool branch is at `cmd/tekhton/state.go:239-242`. `_state_write_snapshot` auto-advance block is at `lib/state_helpers.sh:60-66`. All references in the test files resolve to live implementation code.
 
 **Test Isolation — PASS.**
-All tests use `t.TempDir()` for mutable state or checked-in `testdata/` for fixtures. `TestBashShimDoesNotRedefineStrings` reads checked-in source files (`lib/intake_helpers.sh`, `lib/intake_verdict_handlers.sh`), not pipeline run artifacts — this is acceptable. No test reads `.tekhton/*.md`, `.claude/logs/*`, or any other mutable project-state file.
+All three Go tests use `t.TempDir()` for any file I/O, or operate entirely in-memory. The shell test creates `TMPDIR=$(mktemp -d)` with `trap 'rm -rf "$TMPDIR"' EXIT`. Each `_write_with_env` invocation runs in a `(...)` subshell with `unset AUTO_ADVANCE AUTO_ADVANCE_LIMIT` at the top, preventing the parent pipeline's milestone-mode env (which sets these vars) from leaking into backward-compat scenarios. No test reads `.tekhton/`, `.claude/logs/`, pipeline run artifacts, or any other mutable project-state file.
