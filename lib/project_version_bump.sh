@@ -22,7 +22,7 @@
 # guarded by a sentinel so multiple sources (e.g. tekhton-legacy.sh + a
 # direct test source) don't re-execute the body.
 if [[ -z "${_PROJECT_VERSION_BUMP_HELPERS_SOURCED:-}" ]]; then
-    # shellcheck source=./project_version_bump_helpers.sh
+    # shellcheck source=lib/project_version_bump_helpers.sh
     source "$(dirname -- "${BASH_SOURCE[0]}")/project_version_bump_helpers.sh"
     _PROJECT_VERSION_BUMP_HELPERS_SOURCED=1
 fi
