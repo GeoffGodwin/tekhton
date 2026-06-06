@@ -1,32 +1,94 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 5 assertions (procedural bash — 3 scenarios + 1 AC grep + 1 regression guard)
+Tests audited: 2 files, 8 test functions (6 new Go unit tests in `completion_test.go`
++ 2 shell integration scenarios in `test_completion_gate_retry.sh`)
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: Export-chain integration gap
-- File: tests/test_commit_subject_fallback.sh:214–223
-- Issue: The Goal 2 path is split across two separate checks that do not compose into an end-to-end verification. Scenario 2 (line 185) passes `"44"` as `$2` directly to `generate_commit_message`, confirming the downstream milestone-title logic works. The AC grep (line 217) confirms the three `export` lines exist in `orchestrate_save.sh`. Neither check verifies the full chain: `_orch_record_save_state` exports → `finalize_run 1` spawns subprocess → `_hook_commit` reads env → forwards to `generate_commit_message` as `$2`. An adversarial implementation could export the variables to a different scope or after the `finalize_run 1` call and both existing checks would still pass. The CODER_SUMMARY explicitly acknowledges this tradeoff ("The export → env-inheritance → $2 chain is bash-local and tested separately via the grep assertion") and justifies the design on test speed grounds — acceptable for a bash-level regression test.
-- Severity: MEDIUM
-- Action: No immediate action required — the tradeoff is sound and documented. A future shim-boundary integration test (following the `test_state_writer_resume_fields.sh` pattern) that drives `_orch_record_save_state` end-to-end with a real finalize invocation would close this gap. Defer to a follow-on milestone.
+None.
 
-#### INTEGRITY: AC grep does not verify ordering relative to `finalize_run 1`
-- File: tests/test_commit_subject_fallback.sh:217–223
-- Issue: `grep -cE "^[[:space:]]*export (TASK|_CURRENT_MILESTONE|MILESTONE_MODE)" lib/orchestrate_save.sh` counts occurrences of the three export lines anywhere in the file. An implementation that placed the exports *after* `finalize_run 1` (line 36 of orchestrate_save.sh) would pass this assertion while being functionally broken — the subprocess spawned by `finalize_run 1` would not inherit the variables. The current implementation places them correctly at lines 32–34, so this is not a current defect, only a future fragility.
-- Severity: LOW
-- Action: Acceptable as-is. If a future refactor moves the exports, the behavioral gap would surface in production before this check catches it. A more precise assertion would use `awk` to verify the exports precede `finalize_run 1` in the file; worth considering if `orchestrate_save.sh` is heavily modified in a future milestone.
+---
 
-#### COVERAGE: No test for empty-diff path after m44 sort logic
-- File: tests/test_commit_subject_fallback.sh (no specific line)
-- Issue: No scenario exercises `generate_commit_message` when `git diff HEAD --stat` produces no output (e.g., immediately after a commit with a clean working tree). In that case, `subject` remains `"${prefix}: changes pending"` and the sort-by-lines branch at hooks.sh:187–195 never fires. This is a pre-existing coverage gap — the m44 change only touches the non-empty diff branch — and the `"changes pending"` stub was present before m44 and is unchanged.
-- Severity: LOW
-- Action: No action required for m44. If the `"changes pending"` stub subject appears in production, add a scenario to a follow-on test.
+**Rubric 1 — Assertion Honesty**
 
-### No findings in these categories
-- **ISOLATION**: The three git-repo scenarios each create and use independent throwaway repos under `$_TEST_TMPDIR` (line 31) with `trap 'rm -rf "$_TEST_TMPDIR"' EXIT` (line 32). No pipeline artifacts (`.tekhton/*.md`, `.claude/logs/*`) are read without fixture isolation. The AC grep reads `lib/orchestrate_save.sh` — a source file under test, not a pipeline-state artifact — consistent with the shim-boundary integration test pattern documented in CLAUDE.md.
-- **WEAKENING**: No existing tests were modified. The TESTER_REPORT notes a TMPDIR shadowing rename — a non-weakening refactor with no assertion changes.
-- **SCOPE**: The deleted file `.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced in the new test. No orphaned imports or stale symbol references found.
-- **NAMING**: Bash procedural style — no test function names to evaluate. Scenario comments and pass/fail messages are specific and encode both the scenario and expected outcome (e.g., "scenario 1: subject picks the most-changed file", "scenario 1 AC: subject does not contain 'project_version.cfg'").
-- **ASSERTION HONESTY**: All assertions derive their expected values from inputs supplied to the function under test or from the fixture data seeded in the temp repo. The project_version.cfg exclusion guard (line 169) is a meaningful negative assertion verifying the fix, not a tautology. The milestone-title assertion (line 188) checks for a string that was seeded into the temp CLAUDE.md, not a hard-coded magic value.
+All assertions derive from real implementation behavior:
+
+- `ev.fields["first_exit"] != "1"` — `completion.go:292` calls
+  `strconv.Itoa(exitCode)` where `exitCode` is the runner's return value (1).
+  The test double drives the value; the assertion checks what the implementation
+  computed from it.
+- `ev.fields["retry_exit"] != "0"` — the implementation hardcodes `"0"` at
+  `completion.go:293` precisely because the block is only reached when
+  `retryExitCode == 0`. The assertion tests a real code path, not a magic literal.
+- `test_cmd` and `milestone` fields check values the test wired into the struct
+  (`"test-cmd-flake"`, `"m45"`); the implementation reads them from the struct
+  fields at `completion.go:294-295`. No invented constants.
+- `rr.calls` counts are driven by the actual logic branches: 1 call for
+  opt-out, 2 calls for both-fail, 0 calls for grace-cancelled.
+
+**Rubric 2 — Edge Case Coverage**
+
+Six distinct paths tested:
+1. Happy path (first fail, retry passes) — causal event emitted, dedup recorded.
+2. Both-fail path — `ErrCompletionTestFailed`, zero causal events.
+3. Context cancel during grace window — zero runner calls, elapsed < 5s.
+4. Context cancel during retry delay — one runner call, elapsed < 5s.
+5. Opt-out (`RetryOnNoBaseline:false`) — single call, immediate halt.
+6. Baseline-branch isolation — retry does not fire when `HasBaseline()==true`.
+
+Shell integration adds two cross-binary scenarios. The suite is comprehensive
+for the m45 feature surface.
+
+**Rubric 3 — Implementation Exercise**
+
+All Go tests call `g.Run(ctx)` which calls the real `runTestCmd()` path.
+`sequenceRunner` and `fakeCausalEmitter` are minimal seams; no gate logic is
+mocked. The shell test calls the actual `bin/tekhton gate completion` binary
+with the production `completionGateFromEnv()` path.
+
+**Rubric 4 — Test Weakening**
+
+`completion_test.go` grew from 319 to 524 lines. The 14 pre-m45 test functions
+(lines 24–474) are unchanged. No assertions were removed or broadened. Not a
+weakening concern.
+
+**Rubric 5 — Test Naming**
+
+All six new Go test names encode scenario and expected outcome:
+`TestCompletionGate_NoBaselineFirstFailsRetryPasses`,
+`TestCompletionGate_GracePeriodRespectsContextCancel`, etc. Shell function names
+(`_scenario_flake_then_pass`, `_scenario_both_fail`) are likewise clear.
+
+**Rubric 6 — Scope Alignment**
+
+All referenced types, fields, and error sentinels exist in the current
+implementation:
+- `CompletionGate.GraceSecs`, `.RetryOnNoBaseline`, `.RetryDelay`, `.Causal`
+  — declared at `completion.go:87-104`.
+- `CausalEmitter` interface — `completion.go:163-165`.
+- `ErrCompletionTestFailed` — `completion.go:113`.
+- `sequenceRunner` / `fakeRunner` — defined in `phases_test.go:262-291` (same
+  package, shared across test files in the `gates` package).
+- Shell env keys `COMPLETION_GATE_GRACE_SECS`, `COMPLETION_GATE_RETRY_NO_BASELINE`,
+  `COMPLETION_GATE_RETRY_DELAY_SECS` — all read by `completionGateFromEnv()`
+  at `gate.go:272-274`.
+
+No orphaned, stale, or misaligned references found.
+
+**Rubric 7 — Test Isolation**
+
+Go tests: all use `t.TempDir()` for fixture files. No live project state read.
+
+Shell tests: both scenarios use `mktemp -d` and clean up with
+`trap 'rm -rf "$tmp"' RETURN`. Both use `env -i` to build an explicit
+environment, preventing ambient project config from leaking in.
+`CAUSAL_LOG_FILE`, `PROJECT_DIR`, and `TEKHTON_DIR` all resolve to paths inside
+the temp directory.
+
+Environment-passthrough note (not a finding): `ExecRunner.Run()` spawns
+`bash -c <TEST_CMD>` without overriding `c.Env`, so the subprocess inherits the
+full parent environment including `TEKHTON_TEST_SENTINEL`. This is intentional
+— the shell test passes `TEKHTON_TEST_SENTINEL` via `env -i`, and the sentinel
+var propagates correctly to `flake_test_cmd`. No isolation breach.
