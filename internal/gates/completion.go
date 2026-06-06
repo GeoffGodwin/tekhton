@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -76,6 +77,31 @@ type CompletionGate struct {
 	// Milestone / Cwd are ambient context the dump-file header inherits.
 	Milestone string
 	Cwd       string
+
+	// GraceSecs is the m45 grace window before the first TEST_CMD
+	// invocation. Default 3s via env COMPLETION_GATE_GRACE_SECS. After a
+	// large coder refactor, TEST_CMD fires within milliseconds of the
+	// coder's last syscall — the sleep + sync narrows the file-system
+	// flush / dedup-fingerprint race that has caused observed false halts.
+	// Zero disables the window (used by unit tests).
+	GraceSecs time.Duration
+
+	// RetryOnNoBaseline is the m45 one-retry policy. When true, a non-zero
+	// TEST_CMD exit on the no-baseline path triggers a single retry after
+	// RetryDelay. If the retry passes, the gate proceeds and emits a
+	// completion_gate_flake causal event. If both attempts fail, halts as
+	// before. Default true via env COMPLETION_GATE_RETRY_NO_BASELINE.
+	RetryOnNoBaseline bool
+
+	// RetryDelay is the m45 sleep between the first failed TEST_CMD and the
+	// retry. Default 5s via env COMPLETION_GATE_RETRY_DELAY_SECS.
+	RetryDelay time.Duration
+
+	// Causal is the optional pluggable causal-log emitter. Used by the m45
+	// one-retry policy to record completion_gate_flake events. nil is a
+	// no-op — the gate works correctly without it, only loses the
+	// observability signal.
+	Causal CausalEmitter
 }
 
 // Sentinel errors callers match with errors.Is.
@@ -131,6 +157,25 @@ type SummaryDriftHook interface {
 	Run(summaryFile string)
 }
 
+// CausalEmitter is the m45 hook for completion_gate_flake events. Callers
+// pass an implementation that writes to the project's CAUSAL_LOG.jsonl;
+// tests pass a fake that records calls in-memory.
+type CausalEmitter interface {
+	Emit(eventType string, fields map[string]string)
+}
+
+// CausalFunc adapts a function to the CausalEmitter interface — the
+// standard "FunctionAsInterface" pattern that lets the CLI wire a closure
+// without declaring a struct type.
+type CausalFunc func(eventType string, fields map[string]string)
+
+// Emit implements CausalEmitter.
+func (f CausalFunc) Emit(eventType string, fields map[string]string) {
+	if f != nil {
+		f(eventType, fields)
+	}
+}
+
 // Run executes the completion gate. Returns nil on pass; an
 // ErrCompletion* sentinel on fail. Infrastructure errors (subprocess
 // crash, summary file unreadable) wrap a non-sentinel error so callers
@@ -183,6 +228,23 @@ func (g *CompletionGate) runTestCmd(ctx context.Context) error {
 	if runner == nil {
 		runner = ExecRunner{}
 	}
+
+	// m45 — Grace window before the first TEST_CMD invocation. After a
+	// large coder refactor (200+ turns, hundreds of file writes/deletes),
+	// TEST_CMD fires within milliseconds of the coder's last syscall.
+	// Observed transient flakes: stale test_dedup fingerprint, write
+	// barrier not yet flushed, test runner caching deleted-file metadata.
+	// A short sleep + fsync narrows the window enough to eliminate the
+	// observed false-halts without slowing successful runs perceptibly.
+	if g.GraceSecs > 0 {
+		select {
+		case <-time.After(g.GraceSecs):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		bestEffortSync()
+	}
+
 	out, exitCode, _, err := runner.Run(ctx, g.TestCmd, g.Timeout)
 	if err != nil {
 		return fmt.Errorf("completion gate: %w", err)
@@ -209,6 +271,46 @@ func (g *CompletionGate) runTestCmd(ctx context.Context) error {
 		g.warn("Completion gate FAILED — TEST_CMD exited %d with new failures.", exitCode)
 		return ErrCompletionTestFailed
 	}
+
+	// m45 — One-retry policy on the no-baseline failure path. Catches the
+	// observed transient-flake pattern (file-system flush, port collision,
+	// test_dedup stale fingerprint) without weakening the gate: if the work
+	// is genuinely broken, the retry fails too. Limited to the no-baseline
+	// branch by design — when a baseline exists, the baseline compare
+	// already filters pre-existing failures, so a non-zero exit there is
+	// novel breakage and should halt immediately.
+	if g.RetryOnNoBaseline {
+		select {
+		case <-time.After(g.RetryDelay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		retryOut, retryExitCode, _, retryErr := runner.Run(ctx, g.TestCmd, g.Timeout)
+		if retryErr == nil && retryExitCode == 0 {
+			if g.Causal != nil {
+				g.Causal.Emit("completion_gate_flake", map[string]string{
+					"first_exit": strconv.Itoa(exitCode),
+					"retry_exit": "0",
+					"test_cmd":   g.TestCmd,
+					"milestone":  g.Milestone,
+				})
+			}
+			g.warn("Completion gate: first TEST_CMD flaked (exit=%d), retry passed. Proceeding.", exitCode)
+			if g.Dedup != nil {
+				g.Dedup.RecordPass()
+			}
+			return nil
+		}
+		// Retry also failed — overwrite captured output for the dump file
+		// so operators see the second attempt's diagnostics, and fall
+		// through to the halt path.
+		if retryErr == nil {
+			out = retryOut
+			exitCode = retryExitCode
+			g.dumpFailure(out, exitCode)
+		}
+	}
+
 	g.warn("Completion gate FAILED — TEST_CMD exited %d (no baseline for comparison).", exitCode)
 	return ErrCompletionTestFailed
 }

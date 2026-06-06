@@ -161,9 +161,10 @@ var pipelineConfSections = []SectionRule{
 		Name:        "Test Gate, Audit, Baseline",
 		Description: "Completion gate TEST_CMD execution, M88/M92 audit, baseline diffing, dedup fingerprint, pre-coder test-state cleanup.",
 		Match: matchAny(
-			hasPrefix("TEST_BASELINE", "TEST_AUDIT", "TEST_DEDUP", "PRE_RUN_FIX"),
-			matchExact("TEST_CMD_DEDUP_ENABLED", "COMPLETION_GATE_TEST_ENABLED",
-				"PRE_RUN_CLEAN_ENABLED", "TEST_FIX_FOCUS_ENABLED"),
+			hasPrefix("TEST_BASELINE", "TEST_AUDIT", "TEST_DEDUP", "PRE_RUN_FIX",
+				"COMPLETION_GATE"),
+			matchExact("TEST_CMD_DEDUP_ENABLED", "PRE_RUN_CLEAN_ENABLED",
+				"TEST_FIX_FOCUS_ENABLED"),
 		),
 	},
 	{

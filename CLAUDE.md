@@ -492,6 +492,9 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TEST_BASELINE_STUCK_THRESHOLD` | Consecutive identical acceptance failures before stuck detection (default: 2) |
 | `TEST_BASELINE_PASS_ON_STUCK` | Auto-pass on stuck detection vs exit with diagnosis (default: false) |
 | `TEST_DEDUP_ENABLED` | Skip redundant TEST_CMD runs via working-tree fingerprint (default: true) |
+| `COMPLETION_GATE_GRACE_SECS` | m45. Seconds to sleep + fsync between coder-stage exit and the gate's first TEST_CMD invocation. Narrows the file-system-flush / dedup-fingerprint race that produced observed false halts after large refactors. Clamped 0–60; 0 disables. (default: 3) |
+| `COMPLETION_GATE_RETRY_NO_BASELINE` | m45. When true, a non-zero TEST_CMD exit on the no-baseline path triggers a single retry after `COMPLETION_GATE_RETRY_DELAY_SECS`; if the retry passes, the gate emits a `completion_gate_flake` causal event and proceeds. The retry is intentionally NOT applied to the have-baseline branch — that branch's baseline-compare already filters pre-existing failures. Set false to revert pre-m45 single-attempt behavior. (default: true) |
+| `COMPLETION_GATE_RETRY_DELAY_SECS` | m45. Seconds between the failed first TEST_CMD invocation and the retry. Clamped 0–60. (default: 5) |
 | `PRE_RUN_CLEAN_ENABLED` | Spawn pre-coder fix agent when tests fail before coder runs (default: true) |
 | `PRE_RUN_FIX_MAX_TURNS` | Turn budget for pre-coder fix agent (default: 20) |
 | `PRE_RUN_FIX_MAX_ATTEMPTS` | Max pre-coder fix attempts before proceeding (default: 1) |

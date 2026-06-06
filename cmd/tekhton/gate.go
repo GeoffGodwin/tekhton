@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoffgodwin/tekhton/internal/causal"
 	"github.com/geoffgodwin/tekhton/internal/gates"
 	"github.com/spf13/cobra"
 )
@@ -265,11 +266,87 @@ func completionGateFromEnv() *gates.CompletionGate {
 		Runner:            gates.ExecRunner{},
 		DumpPath:          dump,
 		Milestone:         os.Getenv("_CURRENT_MILESTONE"),
+		// m45 grace window + one-retry policy. Defaults match the bash
+		// config_defaults entries; clamps prevent pathological values from
+		// stalling the pipeline (60s ceiling on grace, 60s on retry delay).
+		GraceSecs:         clampSeconds(envSeconds("COMPLETION_GATE_GRACE_SECS", 3), 0, 60*time.Second),
+		RetryOnNoBaseline: envBool("COMPLETION_GATE_RETRY_NO_BASELINE", true),
+		RetryDelay:        clampSeconds(envSeconds("COMPLETION_GATE_RETRY_DELAY_SECS", 5), 0, 60*time.Second),
+		Causal:            completionCausalEmitter(projectDir),
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		g.Cwd = cwd
 	}
 	return g
+}
+
+// clampSeconds bounds a Duration to [lo, hi]. Used by the m45 gate to keep
+// the operator-tunable grace and retry-delay windows from stalling the
+// pipeline at pathological config values.
+func clampSeconds(v, lo, hi time.Duration) time.Duration {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// completionCausalEmitter returns a CausalEmitter that writes
+// completion_gate_flake events to the project's causal log. nil result is
+// fine — CompletionGate treats a nil Causal field as no-op.
+func completionCausalEmitter(projectDir string) gates.CausalEmitter {
+	if !envBool("CAUSAL_LOG_ENABLED", true) {
+		return nil
+	}
+	logPath := os.Getenv("CAUSAL_LOG_FILE")
+	if logPath == "" {
+		logPath = filepath.Join(".claude", "logs", "CAUSAL_LOG.jsonl")
+	}
+	logPath = resolveUnder(projectDir, logPath)
+	maxEvents := envIntDefault("CAUSAL_LOG_MAX_EVENTS", 2000)
+	runID := os.Getenv("RUN_ID")
+	if runID == "" {
+		runID = os.Getenv("_CURRENT_RUN_ID")
+	}
+	milestone := os.Getenv("_CURRENT_MILESTONE")
+	return gates.CausalFunc(func(eventType string, fields map[string]string) {
+		l, err := causal.Open(logPath, maxEvents, runID)
+		if err != nil {
+			return
+		}
+		defer l.Close()
+		_, _ = l.Emit(causal.EmitInput{
+			Stage:     "completion_gate",
+			Type:      eventType,
+			Detail:    formatCausalDetail(fields),
+			Milestone: milestone,
+		})
+	})
+}
+
+// formatCausalDetail renders the field map as a stable "k=v k=v" string.
+// Keys are emitted in a fixed order so the detail field is deterministic
+// across runs (avoids spurious diffs in tests + log review).
+func formatCausalDetail(fields map[string]string) string {
+	order := []string{"first_exit", "retry_exit", "test_cmd", "milestone"}
+	var b strings.Builder
+	first := true
+	for _, k := range order {
+		v, ok := fields[k]
+		if !ok || v == "" {
+			continue
+		}
+		if !first {
+			b.WriteByte(' ')
+		}
+		first = false
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(v)
+	}
+	return b.String()
 }
 
 // resolveUnder joins a relative path under projectDir. Absolute paths

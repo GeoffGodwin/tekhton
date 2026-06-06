@@ -629,6 +629,23 @@ JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
 
 # COMPLETION_GATE_TEST_ENABLED="true"
 
+# m45 — Grace + retry tuning. Defaults eliminate the observed false-halt
+# pattern on WSL2 after large refactors (file-system flush, stale dedup
+# fingerprint, port collision). Lower if your file system is faster;
+# raise if your CI runner is slower.
+# COMPLETION_GATE_GRACE_SECS="3"          # Seconds to sleep + fsync before
+#                                         # the first TEST_CMD invocation.
+#                                         # Range 0–60. 0 disables.
+# COMPLETION_GATE_RETRY_NO_BASELINE="true"  # When true, a non-zero TEST_CMD
+#                                           # exit on the no-baseline path
+#                                           # retries once after the delay
+#                                           # below. Set false to revert
+#                                           # to pre-m45 single-attempt
+#                                           # behavior.
+# COMPLETION_GATE_RETRY_DELAY_SECS="5"    # Seconds between the failed
+#                                         # first attempt and the retry.
+#                                         # Range 0–60.
+
 # PRE_RUN_CLEAN_ENABLED="true"
 
 # PRE_RUN_FIX_MAX_ATTEMPTS="1"

@@ -511,6 +511,9 @@ var baseDefaults = []defaultRule{
 	{"PRE_RUN_FIX_MAX_ATTEMPTS", lit("1")},
 
 	{"COMPLETION_GATE_TEST_ENABLED", lit("true")},
+	{"COMPLETION_GATE_GRACE_SECS", lit("3")},
+	{"COMPLETION_GATE_RETRY_NO_BASELINE", lit("true")},
+	{"COMPLETION_GATE_RETRY_DELAY_SECS", lit("5")},
 
 	{"TEST_AUDIT_ENABLED", lit("true")},
 	{"TEST_AUDIT_MAX_TURNS", lit("15")},

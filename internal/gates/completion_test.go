@@ -265,6 +265,195 @@ func TestCompletionGate_SummaryDriftFires(t *testing.T) {
 	}
 }
 
+// TestCompletionGate_NoBaselineFirstFailsRetryPasses is the m45 happy-path
+// flake test: TEST_CMD returns exit=1 then exit=0 on the no-baseline path.
+// Expect nil error, RecordPass called, and a completion_gate_flake causal
+// event emitted with the documented fields.
+func TestCompletionGate_NoBaselineFirstFailsRetryPasses(t *testing.T) {
+	dir := t.TempDir()
+	dedup := &fakeDedup{}
+	causal := &fakeCausalEmitter{}
+	g := &CompletionGate{
+		SummaryFile:       writeSummary(t, dir, "# x\n## Status: COMPLETE\n"),
+		TestCmd:           "test-cmd-flake",
+		TestEnabled:       true,
+		RetryOnNoBaseline: true,
+		RetryDelay:        0,
+		Runner:            &sequenceRunner{outs: []string{"FAIL: t.Foo\n", "OK\n"}, exits: []int{1, 0}},
+		Dedup:             dedup,
+		Causal:            causal,
+		Logger:            func(string, ...interface{}) {},
+		Milestone:         "m45",
+	}
+	if err := g.Run(context.Background()); err != nil {
+		t.Fatalf("Run() = %v, want nil (retry passes)", err)
+	}
+	if !dedup.recorded {
+		t.Error("Dedup.RecordPass not called after successful retry")
+	}
+	if len(causal.events) != 1 {
+		t.Fatalf("Causal.Emit called %d times, want 1", len(causal.events))
+	}
+	ev := causal.events[0]
+	if ev.eventType != "completion_gate_flake" {
+		t.Errorf("event type = %q, want completion_gate_flake", ev.eventType)
+	}
+	if ev.fields["first_exit"] != "1" {
+		t.Errorf("first_exit = %q, want 1", ev.fields["first_exit"])
+	}
+	if ev.fields["retry_exit"] != "0" {
+		t.Errorf("retry_exit = %q, want 0", ev.fields["retry_exit"])
+	}
+	if ev.fields["test_cmd"] != "test-cmd-flake" {
+		t.Errorf("test_cmd = %q, want test-cmd-flake", ev.fields["test_cmd"])
+	}
+	if ev.fields["milestone"] != "m45" {
+		t.Errorf("milestone = %q, want m45", ev.fields["milestone"])
+	}
+}
+
+// TestCompletionGate_NoBaselineBothFail is the m45 genuine-breakage path:
+// both attempts return exit=1, no baseline. Expect ErrCompletionTestFailed
+// and no causal event.
+func TestCompletionGate_NoBaselineBothFail(t *testing.T) {
+	dir := t.TempDir()
+	causal := &fakeCausalEmitter{}
+	rr := &sequenceRunner{outs: []string{"FAIL 1\n", "FAIL 2\n"}, exits: []int{1, 1}}
+	g := &CompletionGate{
+		SummaryFile:       writeSummary(t, dir, "# x\n## Status: COMPLETE\n"),
+		TestCmd:           "test-cmd-broken",
+		TestEnabled:       true,
+		RetryOnNoBaseline: true,
+		RetryDelay:        0,
+		Runner:            rr,
+		Causal:            causal,
+		Logger:            func(string, ...interface{}) {},
+	}
+	err := g.Run(context.Background())
+	if !errors.Is(err, ErrCompletionTestFailed) {
+		t.Errorf("Run() = %v, want ErrCompletionTestFailed", err)
+	}
+	if rr.calls != 2 {
+		t.Errorf("runner calls = %d, want 2 (one initial + one retry)", rr.calls)
+	}
+	if len(causal.events) != 0 {
+		t.Errorf("Causal.Emit called %d times on both-fail, want 0", len(causal.events))
+	}
+}
+
+// TestCompletionGate_GracePeriodRespectsContextCancel asserts that an
+// in-flight grace-window sleep aborts promptly on ctx cancellation rather
+// than waiting out the full window — and that no TEST_CMD invocation
+// happens after the cancel.
+func TestCompletionGate_GracePeriodRespectsContextCancel(t *testing.T) {
+	dir := t.TempDir()
+	called := &callCounter{}
+	g := &CompletionGate{
+		SummaryFile: writeSummary(t, dir, "# x\n## Status: COMPLETE\n"),
+		TestCmd:     "never-runs",
+		TestEnabled: true,
+		GraceSecs:   10 * time.Second,
+		Runner:      called,
+		Logger:      func(string, ...interface{}) {},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	err := g.Run(ctx)
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run() = %v, want context.Canceled", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Run took %v, want prompt cancel (< 5s) within the 10s grace window", elapsed)
+	}
+	if called.runs != 0 {
+		t.Errorf("runner invoked %d times during a cancelled grace window, want 0", called.runs)
+	}
+}
+
+// TestCompletionGate_RetryDelayRespectsContextCancel asserts that a ctx
+// cancel during the retry-delay sleep aborts promptly.
+func TestCompletionGate_RetryDelayRespectsContextCancel(t *testing.T) {
+	dir := t.TempDir()
+	rr := &sequenceRunner{outs: []string{"FAIL\n"}, exits: []int{1}}
+	g := &CompletionGate{
+		SummaryFile:       writeSummary(t, dir, "# x\n## Status: COMPLETE\n"),
+		TestCmd:           "any",
+		TestEnabled:       true,
+		RetryOnNoBaseline: true,
+		RetryDelay:        10 * time.Second,
+		Runner:            rr,
+		Logger:            func(string, ...interface{}) {},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	err := g.Run(ctx)
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run() = %v, want context.Canceled", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Run took %v, want prompt cancel inside the retry delay", elapsed)
+	}
+	if rr.calls != 1 {
+		t.Errorf("runner calls = %d, want 1 (first invocation only, cancel during delay)", rr.calls)
+	}
+}
+
+// TestCompletionGate_RetryDisabledHaltsImmediately asserts the
+// pre-m45-behavior opt-out: with RetryOnNoBaseline=false, the no-baseline
+// branch halts on the first failed TEST_CMD without retrying.
+func TestCompletionGate_RetryDisabledHaltsImmediately(t *testing.T) {
+	dir := t.TempDir()
+	rr := &sequenceRunner{outs: []string{"FAIL\n"}, exits: []int{1}}
+	g := &CompletionGate{
+		SummaryFile:       writeSummary(t, dir, "# x\n## Status: COMPLETE\n"),
+		TestCmd:           "any",
+		TestEnabled:       true,
+		RetryOnNoBaseline: false,
+		Runner:            rr,
+		Logger:            func(string, ...interface{}) {},
+	}
+	if err := g.Run(context.Background()); !errors.Is(err, ErrCompletionTestFailed) {
+		t.Errorf("Run() = %v, want ErrCompletionTestFailed", err)
+	}
+	if rr.calls != 1 {
+		t.Errorf("runner calls = %d, want 1 (no retry when RetryOnNoBaseline=false)", rr.calls)
+	}
+}
+
+// TestCompletionGate_RetrySkippedWhenBaselineExists asserts the design
+// invariant: the retry policy is intentionally limited to the no-baseline
+// branch. When a baseline exists, a non-zero exit with novel failures must
+// halt immediately without retrying.
+func TestCompletionGate_RetrySkippedWhenBaselineExists(t *testing.T) {
+	dir := t.TempDir()
+	rr := &sequenceRunner{outs: []string{"FAIL: novel\n"}, exits: []int{1}}
+	g := &CompletionGate{
+		SummaryFile:       writeSummary(t, dir, "# x\n## Status: COMPLETE\n"),
+		TestCmd:           "any",
+		TestEnabled:       true,
+		RetryOnNoBaseline: true, // configured on, but baseline branch ignores
+		Runner:            rr,
+		Baseline:          fakeBaseline{has: true, preexisting: false},
+		Logger:            func(string, ...interface{}) {},
+	}
+	if err := g.Run(context.Background()); !errors.Is(err, ErrCompletionTestFailed) {
+		t.Errorf("Run() = %v, want ErrCompletionTestFailed", err)
+	}
+	if rr.calls != 1 {
+		t.Errorf("runner calls = %d, want 1 (no retry when baseline exists)", rr.calls)
+	}
+}
+
 // TestCompletionGate_RunnerError_WrapsInfrastructureFailure.
 func TestCompletionGate_RunnerError_WrapsInfrastructureFailure(t *testing.T) {
 	dir := t.TempDir()
@@ -316,3 +505,20 @@ func (c *callCounter) Run(_ context.Context, _ string, _ time.Duration) ([]byte,
 type driftFn func(string)
 
 func (f driftFn) Run(p string) { f(p) }
+
+type fakeCausalEvent struct {
+	eventType string
+	fields    map[string]string
+}
+
+type fakeCausalEmitter struct {
+	events []fakeCausalEvent
+}
+
+func (f *fakeCausalEmitter) Emit(eventType string, fields map[string]string) {
+	copied := make(map[string]string, len(fields))
+	for k, v := range fields {
+		copied[k] = v
+	}
+	f.events = append(f.events, fakeCausalEvent{eventType: eventType, fields: copied})
+}
