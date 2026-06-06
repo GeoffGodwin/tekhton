@@ -1,94 +1,47 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 8 test functions (6 new Go unit tests in `completion_test.go`
-+ 2 shell integration scenarios in `test_completion_gate_retry.sh`)
+Tests audited: 3 files, 35 test functions
 Verdict: PASS
 
 ### Findings
 
-None.
+#### NAMING: synthesized_at_max blocker-count skip uses undocumented string-name guard
+- File: internal/review/parser_test.go:109-118
+- Issue: The `synthesized_at_max` fixture contains `"- None (reviewer did not report)"` — a line that does NOT match `noneSentinelRE` because the regex requires `\s*$` after "None" and " (reviewer did not report)" follows. So `HasComplexBlockers()` returns 1 for that fixture, not 0. The test skips the assertion via a string-name guard (`tc.name != "synthesized_at_max"`) rather than a dedicated struct field or explicit comment, while leaving `wantComplex: 0` (the zero default) in the table row — misleadingly suggesting the fixture has 0 complex blockers. The skip is functionally correct but is undocumented and fragile against fixture renames.
+- Severity: LOW
+- Action: Add a `skipBlockerAssert bool` field to `fixtureCase` and set it `true` for the `synthesized_at_max` row, replacing both string-name guard conditions. Alternatively, set `wantComplex: 1` in the row and remove the guard entirely. Add a brief comment explaining that the fixture's "None (reviewer did not report)" deliberately does not match the sentinel regex.
 
----
+#### COVERAGE: DriftObservations and CoverageGaps fields not asserted under non-None content
+- File: internal/review/parser_test.go
+- Issue: The `changes_complex_only.md` fixture has a populated `## Coverage Gaps` section ("No fixture exercises the case where Verdict heading appears twice") and a `## Drift Observations: - None` section. No test case asserts `r.CoverageGaps` or `r.DriftObservations`. Code paths for those sections execute (they go through the same `bulletList` dispatch as ComplexBlockers), so statement coverage is not the gap — but a regression specific to those section names in `canonicalHeading` or the `parseBody` switch (e.g. typo in the `secCoverageGaps` constant) would not be caught by any assertion.
+- Severity: LOW
+- Action: Extend the `changes_complex_only` fixture case in `TestParseReviewerReport_Fixtures` with `wantCoverageGapsAtLeast: 1` (and corresponding assertion), or add a `TestParseReader_SectionsRoundTrip` sub-test that verifies CoverageGaps and DriftObservations parse correctly from an inline body. No new fixture file needed.
 
-**Rubric 1 — Assertion Honesty**
+#### NAMING: Duplicate test case in TestRouteSpecialistRework
+- File: internal/review/specialist_test.go:98-113
+- Issue: Cases `"blockers_exhausted"` (lines 98-103) and `"blockers_at_last_cycle_treated_as_exhausted"` (lines 105-113) have identical inputs — `env = "- something"`, `budget = CycleBudget{Current: 3, Max: 3}`, `want = SpecialistExhausted` — and exercise exactly the same `IsExhausted()` branch. The duplicate adds no coverage value.
+- Severity: LOW
+- Action: Remove `"blockers_at_last_cycle_treated_as_exhausted"`. If the goal is to document the bash review_helpers.sh:21 `>=` boundary, add a short inline comment to the surviving `"blockers_exhausted"` case rather than a separate table row.
 
-All assertions derive from real implementation behavior:
+#### INTEGRITY: None found
+- No assertions test hard-coded values not derived from implementation logic.
+- No trivially-true assertions: the receiver-invariance check in `TestCycleBudget_BumpFromUsage` (`c.Current != 1 || c.Max != 3` after a value-receiver call) is correct defensive programming — it would catch a future pointer-receiver refactor that adds mutation.
+- No mocked implementations standing in for real ones.
 
-- `ev.fields["first_exit"] != "1"` — `completion.go:292` calls
-  `strconv.Itoa(exitCode)` where `exitCode` is the runner's return value (1).
-  The test double drives the value; the assertion checks what the implementation
-  computed from it.
-- `ev.fields["retry_exit"] != "0"` — the implementation hardcodes `"0"` at
-  `completion.go:293` precisely because the block is only reached when
-  `retryExitCode == 0`. The assertion tests a real code path, not a magic literal.
-- `test_cmd` and `milestone` fields check values the test wired into the struct
-  (`"test-cmd-flake"`, `"m45"`); the implementation reads them from the struct
-  fields at `completion.go:294-295`. No invented constants.
-- `rr.calls` counts are driven by the actual logic branches: 1 call for
-  opt-out, 2 calls for both-fail, 0 calls for grace-cancelled.
+#### EXERCISE: All tests call real implementations
+- `TestParseReviewerReport_Fixtures` and `TestParseReviewerReport_RawBody_RoundTrip` call `ParseReviewerReport` directly against real fixture files on disk.
+- `TestParseReader_InMemoryBody`, `TestInlineVerdictFallback_*`, `TestNoneSentinel*`, and `TestParseACPRows_LenientOnDashes` call `ParseReader` with in-memory bodies constructed to exercise specific code paths.
+- `TestCycleBudget_*` cover all five `CycleBudget` methods directly with table-driven cases including overrun and zero-value guards.
+- `TestHasSpecialistBlockers`, `TestFormatSpecialistSection_BashByteParity`, and `TestRouteSpecialistRework` call the exported specialist functions directly.
 
-**Rubric 2 — Edge Case Coverage**
+#### ISOLATION: Clean — no mutable project state accessed
+- All tests use either checked-in fixture files under `internal/review/testdata/` or in-memory `strings.NewReader` inputs.
+- No test reads `.tekhton/*.md`, `.claude/logs/`, run artifacts, or any other mutable pipeline state file. Pass/fail outcomes are fully independent of prior pipeline runs or repo working-tree state.
 
-Six distinct paths tested:
-1. Happy path (first fail, retry passes) — causal event emitted, dedup recorded.
-2. Both-fail path — `ErrCompletionTestFailed`, zero causal events.
-3. Context cancel during grace window — zero runner calls, elapsed < 5s.
-4. Context cancel during retry delay — one runner call, elapsed < 5s.
-5. Opt-out (`RetryOnNoBaseline:false`) — single call, immediate halt.
-6. Baseline-branch isolation — retry does not fire when `HasBaseline()==true`.
-
-Shell integration adds two cross-binary scenarios. The suite is comprehensive
-for the m45 feature surface.
-
-**Rubric 3 — Implementation Exercise**
-
-All Go tests call `g.Run(ctx)` which calls the real `runTestCmd()` path.
-`sequenceRunner` and `fakeCausalEmitter` are minimal seams; no gate logic is
-mocked. The shell test calls the actual `bin/tekhton gate completion` binary
-with the production `completionGateFromEnv()` path.
-
-**Rubric 4 — Test Weakening**
-
-`completion_test.go` grew from 319 to 524 lines. The 14 pre-m45 test functions
-(lines 24–474) are unchanged. No assertions were removed or broadened. Not a
-weakening concern.
-
-**Rubric 5 — Test Naming**
-
-All six new Go test names encode scenario and expected outcome:
-`TestCompletionGate_NoBaselineFirstFailsRetryPasses`,
-`TestCompletionGate_GracePeriodRespectsContextCancel`, etc. Shell function names
-(`_scenario_flake_then_pass`, `_scenario_both_fail`) are likewise clear.
-
-**Rubric 6 — Scope Alignment**
-
-All referenced types, fields, and error sentinels exist in the current
-implementation:
-- `CompletionGate.GraceSecs`, `.RetryOnNoBaseline`, `.RetryDelay`, `.Causal`
-  — declared at `completion.go:87-104`.
-- `CausalEmitter` interface — `completion.go:163-165`.
-- `ErrCompletionTestFailed` — `completion.go:113`.
-- `sequenceRunner` / `fakeRunner` — defined in `phases_test.go:262-291` (same
-  package, shared across test files in the `gates` package).
-- Shell env keys `COMPLETION_GATE_GRACE_SECS`, `COMPLETION_GATE_RETRY_NO_BASELINE`,
-  `COMPLETION_GATE_RETRY_DELAY_SECS` — all read by `completionGateFromEnv()`
-  at `gate.go:272-274`.
-
-No orphaned, stale, or misaligned references found.
-
-**Rubric 7 — Test Isolation**
-
-Go tests: all use `t.TempDir()` for fixture files. No live project state read.
-
-Shell tests: both scenarios use `mktemp -d` and clean up with
-`trap 'rm -rf "$tmp"' RETURN`. Both use `env -i` to build an explicit
-environment, preventing ambient project config from leaking in.
-`CAUSAL_LOG_FILE`, `PROJECT_DIR`, and `TEKHTON_DIR` all resolve to paths inside
-the temp directory.
-
-Environment-passthrough note (not a finding): `ExecRunner.Run()` spawns
-`bash -c <TEST_CMD>` without overriding `c.Env`, so the subprocess inherits the
-full parent environment including `TEKHTON_TEST_SENTINEL`. This is intentional
-— the shell test passes `TEKHTON_TEST_SENTINEL` via `env -i`, and the sentinel
-var propagates correctly to `flake_test_cmd`. No isolation breach.
+#### SCOPE: All references are current
+- All ten fixture files confirmed present under `internal/review/testdata/`.
+- All imported symbols (`ParseReviewerReport`, `ParseReader`, `CycleBudget`, `HasSpecialistBlockers`, `FormatSpecialistSection`, `RouteSpecialistRework`, verdict constants, ACP constants, `SpecialistDecision` enum values) exist in the current implementation.
+- `internal/stages/review/` does not exist (m37.2 deliverable, correctly absent).
+- `stages/review.sh` and `stages/review_helpers.sh` are not referenced in these test files.
+- No orphaned, stale, or misaligned references found.

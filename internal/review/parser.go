@@ -119,11 +119,6 @@ var noneSentinelRE = regexp.MustCompile(`^-?\s*None\s*$`)
 // in the body and we normalize via strings.ToUpper before classification.
 var acpRowRE = regexp.MustCompile(`^-\s*ACP:\s*(.+?)\s+[—-]\s+([A-Za-z]+)\s+[—-]\s+(.+?)\s*$`)
 
-// inlineVerdictRE is the priority-ordered alternation used by the bash
-// fallback `grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED"`.
-// The slice order IS the priority order — first hit wins. Case-insensitive.
-var inlineVerdictRE = regexp.MustCompile(`(?i)REPLAN_REQUIRED|APPROVED_WITH_NOTES|CHANGES_REQUIRED|APPROVED`)
-
 func parseBody(body string) *Report {
 	r := &Report{}
 
