@@ -122,16 +122,17 @@ type CycleBudget struct {
     Max     int
 }
 
-func (c CycleBudget) Increment()         // Current++
+func (c *CycleBudget) Increment()        // Current++ — pointer receiver because it mutates
 func (c CycleBudget) Remaining() int     // Max - Current
 func (c CycleBudget) IsLastCycle() bool  // Current == Max (use at terminal-cycle synthesize-report decision)
 func (c CycleBudget) IsExhausted() bool  // Current >= Max
-func (c CycleBudget) BumpFromUsage(used, limit int) (newLimit int, bumped bool)
+func (c CycleBudget) BumpFromUsage(used, limit, cap int) (newLimit int, bumped bool)
 // BumpFromUsage encapsulates the >=85% usage → +25% / cap-at-REVIEWER_MAX_TURNS_CAP
-// recalibration from review.sh lines 132-148. Returns the new limit and a bool
-// indicating whether a bump was applied. Hands off the actual env-write to the
-// M37.2 caller (BumpFromUsage is read-only — the caller decides whether to
-// export ADJUSTED_REVIEWER_TURNS).
+// recalibration from review.sh lines 132-148. Takes the cap as an arg
+// (defaults to 60 when 0 is passed, matching bash REVIEWER_MAX_TURNS_CAP:-60).
+// Returns the new limit and a bool indicating whether a bump was applied.
+// Hands off the actual env-write to the M37.2 caller (BumpFromUsage is
+// read-only — the caller decides whether to export ADJUSTED_REVIEWER_TURNS).
 ```
 
 Why in M37.1: the parser package needs to know nothing about cycles, but the M37.2 cycle loop will compose `Report` + `CycleBudget` heavily. Both ship as small typed values from the M37.1 package; the M37.2 stage code is dominated by orchestration, not arithmetic.
