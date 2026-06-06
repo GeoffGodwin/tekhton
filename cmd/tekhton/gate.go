@@ -269,9 +269,9 @@ func completionGateFromEnv() *gates.CompletionGate {
 		// m45 grace window + one-retry policy. Defaults match the bash
 		// config_defaults entries; clamps prevent pathological values from
 		// stalling the pipeline (60s ceiling on grace, 60s on retry delay).
-		GraceSecs:         clampSeconds(envSeconds("COMPLETION_GATE_GRACE_SECS", 3), 0, 60*time.Second),
+		GraceSecs:         clampSeconds(envSecondsNonNeg("COMPLETION_GATE_GRACE_SECS", 3), 0, 60*time.Second),
 		RetryOnNoBaseline: envBool("COMPLETION_GATE_RETRY_NO_BASELINE", true),
-		RetryDelay:        clampSeconds(envSeconds("COMPLETION_GATE_RETRY_DELAY_SECS", 5), 0, 60*time.Second),
+		RetryDelay:        clampSeconds(envSecondsNonNeg("COMPLETION_GATE_RETRY_DELAY_SECS", 5), 0, 60*time.Second),
 		Causal:            completionCausalEmitter(projectDir),
 	}
 	if cwd, err := os.Getwd(); err == nil {
@@ -368,7 +368,8 @@ func envOr(key, fallback string) string {
 }
 
 // envSeconds parses an integer-seconds env value, returning a Duration.
-// Empty or unparseable values return fallback seconds.
+// Empty or unparseable values return fallback seconds. 0 is treated as
+// invalid (use envSecondsNonNeg for keys where 0 means "disable").
 func envSeconds(key string, fallback int) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {
@@ -376,6 +377,21 @@ func envSeconds(key string, fallback int) time.Duration {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
+		return time.Duration(fallback) * time.Second
+	}
+	return time.Duration(n) * time.Second
+}
+
+// envSecondsNonNeg is like envSeconds but allows 0 as a valid value.
+// Use for keys where 0 is a meaningful "disable" signal (e.g. grace windows,
+// retry delays) rather than a nonsensical timeout.
+func envSecondsNonNeg(key string, fallback int) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return time.Duration(fallback) * time.Second
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
 		return time.Duration(fallback) * time.Second
 	}
 	return time.Duration(n) * time.Second

@@ -1,7 +1,7 @@
-# Reviewer Report — m44
+# Reviewer Report — m45 (cycle 2)
 
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,12 +10,27 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_commit_subject_fallback.sh` line 31 shadows the system `TMPDIR` variable with `TMPDIR=$(mktemp -d)`. If any sourced library later calls `mktemp`, the new temp files land inside the test's own tmpdir instead of the system temp dir. Rename to `_TEST_TMPDIR` (or `TEST_TMPDIR`) to avoid the collision. Low risk here since the sourced libs don't call `mktemp`, but it's a maintenance hazard for future test additions.
-- `hooks.sh` line 190: `NR>0` in the awk guard is vacuously true (awk NR starts at 1, so NR is never 0). The guard's intent — skip blank lines and the summary line — is already handled by `NF>=2`. Harmless, and the design spec included it, so leave as-is unless cleaning up in a future pass.
-- Pre-existing (not introduced by m44): `lib/hooks.sh` lines 1–2 carry a `#!/usr/bin/env bash` shebang and `set -euo pipefail` for a file that is sourced, not executed directly. Sourced lib files are supposed to inherit `set -euo pipefail` from the caller per CLAUDE.md Rule 2. The shebang is ignored at source-time and the `set` invocation is a no-op when the caller already has it set, so no correctness risk — just stylistic debt to clean up at some point.
+- `internal/config/defaults.go` at 624 lines remains over the 600-line soft target; pre-existing condition, not introduced by m45. Carry forward for the next defaults batch.
+- Integration test comment on line 18 ("runs in ~1s rather than waiting out 3+5 seconds") is now accurate — correctly resolved by the fix below.
 
 ## Coverage Gaps
-- Scenario 2 tests `generate_commit_message "" "44"` by passing the milestone number as a direct `$2` argument. It does not test the full chain where `_hook_commit` reads `_CURRENT_MILESTONE` from the subprocess environment and forwards it as `$2`. The grep assertion covers that the three `export` lines exist, but doesn't execute the actual subprocess. Acceptable trade-off (test stays fast and Go-binary-independent), but a future shim-boundary test could drive `finalize_run 1` end-to-end in a throwaway repo to close the gap completely.
+- None
 
 ## Drift Observations
 - None
+
+---
+
+## Prior Blocker Verification
+
+**Blocker (cycle 1):** `cmd/tekhton/gate.go::completionGateFromEnv` — `envSeconds` used `n <= 0` as the invalidity guard, causing `COMPLETION_GATE_GRACE_SECS=0` and `COMPLETION_GATE_RETRY_DELAY_SECS=0` to silently fall back to their 3s/5s defaults instead of disabling those windows as documented.
+
+**Status: FIXED.**
+
+Evidence:
+- `envSecondsNonNeg` added at `gate.go:386-398`, using `n < 0` as the guard (allows 0). Comment explicitly documents the semantic distinction from `envSeconds`.
+- `completionGateFromEnv` now calls `envSecondsNonNeg` for both `COMPLETION_GATE_GRACE_SECS` (line 272) and `COMPLETION_GATE_RETRY_DELAY_SECS` (line 274).
+- Integration test `tests/test_completion_gate_retry.sh` sets both to 0 and the comment on line 18 ("runs in ~1s rather than waiting out 3+5 seconds") is now correct.
+- The original `envSeconds` comment was updated to note "use envSecondsNonNeg for keys where 0 means 'disable'" — the semantic split is explicit and self-documenting.
+
+Fix is narrowly scoped to the two call sites; no other env reads were touched.
