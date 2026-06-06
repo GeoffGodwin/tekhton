@@ -3,8 +3,10 @@ package intake
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	pkgintake "github.com/geoffgodwin/tekhton/internal/intake"
+	"github.com/geoffgodwin/tekhton/internal/manifest"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -105,14 +107,37 @@ func loadConfig(req *proto.StageRequestV1) config {
 // newHelpers builds an intake.Helpers populated from the stage config. Used
 // for content-hash / report-parsing / tweak-application calls.
 func newHelpers(cfg config) *pkgintake.Helpers {
-	return &pkgintake.Helpers{
+	msDir := resolveProjectRelative(cfg.ProjectDir, cfg.MilestoneDir)
+	h := &pkgintake.Helpers{
 		ProjectDir:         cfg.ProjectDir,
 		SessionDir:         cfg.SessionDir,
-		MilestoneDir:       resolveProjectRelative(cfg.ProjectDir, cfg.MilestoneDir),
+		MilestoneDir:       msDir,
 		ProjectRulesFile:   resolveProjectRelative(cfg.ProjectDir, cfg.ProjectRulesFile),
 		ClarificationsFile: cfg.ClarificationsFile,
 		DagEnabled:         cfg.DagEnabled,
 	}
+	// Wire the manifest-backed bare-id → slug resolver so MilestoneContent
+	// can locate slug-named files (e.g. "m37.1-review-helpers-and-parser.md")
+	// when given "37.1" or "m37.1". Without this, the bare-id direct join
+	// `<MilestoneDir>/37.1.md` misses, the inline CLAUDE.md fallback can't
+	// find per-milestone content, and intake sees only the task title — which
+	// produced the m37.1 / m42 NEEDS_CLARITY false-positives (intake.log
+	// "could not locate milestone file for 42" is the same symptom).
+	h.MilestoneFileResolver = func(num string) string {
+		man, err := manifest.Load(filepath.Join(msDir, "MANIFEST.cfg"))
+		if err != nil {
+			return ""
+		}
+		id := num
+		if !strings.HasPrefix(id, "m") {
+			id = "m" + id
+		}
+		if entry, ok := man.Get(id); ok {
+			return entry.File
+		}
+		return ""
+	}
+	return h
 }
 
 func resolveProjectDir(req *proto.StageRequestV1) string {
