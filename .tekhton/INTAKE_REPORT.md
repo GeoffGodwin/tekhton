@@ -5,84 +5,87 @@ TWEAKED
 52
 
 ## Reasoning
-- The milestone title is self-describing enough to identify the bug: commit subject generation incorrectly falls back to showing `.claude/project_version.cfg` as part of the subject line
-- The git history corroborates the regression — recent commits show subjects like `feat: changes in .claude/project_version.cfg`, which is clearly not the intended output
-- However, the milestone has no body: no description of root cause, no files to modify, no acceptance criteria, and no definition of what the correct behavior should be
-- "Stop falling back" is ambiguous without specifying what should happen instead — remove the fallback entirely, substitute a different value, or suppress the cfg file from subject generation?
-- A developer familiar with `lib/finalize_commit.sh` and `lib/project_version.sh` could likely locate the bug, but acceptance criteria are entirely absent
+- The milestone content is only a title — no scope definition, no acceptance criteria, no files listed, no Watch For section
+- Intent is clear enough from the title: completion gate in `lib/gates.sh` should not halt the pipeline when TEST_CMD fails transiently (e.g., file-system state, artifact churn, or a flaky test immediately after a large coder refactor)
+- "Transient" vs "persistent" failure boundary is undefined — a competent developer could legitimately implement retry logic, a cool-down window, or a fingerprint-diff heuristic and get very different results
+- No acceptance criteria means there is no testable definition of "fixed"
+- Added missing scope, acceptance criteria, and Watch For sections with `[PM: ...]` markers
 
 ## Tweaked Content
 
-# M44: Commit subject regression: stop falling back to ".claude/project_version.cfg"
+# Milestone m45 — Completion gate: stop false-halting on transient TEST\_CMD failure after a large coder refactor
 
-## Problem Statement
+[PM: Title retained verbatim. All sections below are additive — original file had no body beyond this title.]
 
-There is a regression in commit subject generation. When a run produces changes
-only to `.claude/project_version.cfg` (the project version config cache), the
-commit subject incorrectly surfaces the cache file path in the subject line, e.g.:
+## Goal
 
-```
-feat: changes in .claude/project_version.cfg
-```
+The completion gate (`lib/gates.sh`) must not halt the pipeline as a failure when
+TEST_CMD exits non-zero due to a transient condition that clears on an immediate
+retry — specifically when a large coder refactor has left file-system state (stale
+artefacts, build caches, timing-sensitive tests) that causes a single flaky test run.
+The gate should distinguish a genuinely failing test suite from one-off environmental
+noise.
 
-This is not meaningful to humans or git history readers. The subject should either
-describe the actual versioned artifact that changed (e.g., the target project's
-`VERSION` file, `package.json`, etc.) or use a generic version-bump subject if no
-better signal is available.
-
-[PM: Problem statement inferred from milestone title and recent git history showing
-`feat: changes in .claude/project_version.cfg` as commit subjects.]
+[PM: Goal section added — inferred from milestone title.]
 
 ## Scope
 
-Fix the commit subject generator so that `.claude/project_version.cfg` is never
-surfaced as the primary changed file in a commit subject.
-
 **In scope:**
-- Identify where the fallback to `.claude/project_version.cfg` occurs in commit subject logic
-- Remove or suppress the cfg cache path from subject generation
-- Ensure the subject falls back to a sensible generic (e.g., `chore: version bump`) rather than the internal cache file
+- `lib/gates.sh` — completion gate logic; add retry/quiesce behaviour for TEST_CMD
+- Extract helpers to `lib/gates_retry.sh` if the 300-line ceiling would otherwise be
+  exceeded
 
 **Out of scope:**
-- Changes to what `.claude/project_version.cfg` stores or how it is written
-- Changes to the version bump logic itself
+- Changes to the build gate (separate from the completion gate)
+- Changes to `stages/tester.sh` or the tester fix agent — those handle structural
+  test failures, not completion-gate transients
+- Changing the definition of "transient error" for agent-level retries in
+  `lib/agent_retry.sh`
 
-[PM: Scope derived from milestone title; confirm "out of scope" items with author if uncertain.]
-
-## Expected Behavior
-
-After this fix, a run that bumps the project version and produces changes to
-`.claude/project_version.cfg` (with or without changes to other files) must NOT
-produce a commit subject that mentions `.claude/project_version.cfg`.
-
-Acceptable subject patterns include:
-- `chore: bump version to X.Y.Z`
-- `feat: <actual changed file or module description>`
-- Any meaningful subject that does not expose the internal cache path
-
-[PM: Acceptable patterns are illustrative — confirm the canonical fallback subject
-format with the author before implementing.]
-
-## Files Likely Involved
-
-[PM: Not specified in original. Based on project structure:]
-- `lib/finalize_commit.sh` — commit hook + `_do_git_commit` helpers; likely where subject generation occurs
-- `lib/project_version.sh` — version file detection; may contribute the cfg path to the subject
-- `lib/project_version_bump.sh` — version bump logic; may write or reference the cfg path
+[PM: Scope section added — derived from CLAUDE.md file map and milestone title.]
 
 ## Acceptance Criteria
 
-- [ ] Running a milestone that triggers a version bump no longer produces a commit subject containing `.claude/project_version.cfg`
-- [ ] The generated commit subject is human-readable and describes either the versioned artifact or uses a generic version-bump phrase
-- [ ] Existing commit subject generation for non-version-bump runs is unaffected
-- [ ] `shellcheck` passes on all modified `.sh` files with zero warnings
+1. When TEST_CMD exits non-zero inside the completion gate and then exits zero on an
+   immediate re-run with the same working tree, the gate records the run as **passed**
+   and does not halt the pipeline.
+2. When TEST_CMD exits non-zero on every attempt up to the retry limit, the gate still
+   halts the pipeline — retry must not mask genuine failures.
+3. The retry limit is configurable via a new `COMPLETION_GATE_RETRY_ATTEMPTS` config
+   key (default: `1`, meaning one retry after the initial failure). Setting it to `0`
+   restores pre-m45 single-shot behaviour.
+4. Each retry attempt is logged at INFO level so the pipeline transcript shows why the
+   gate paused (e.g., `[gate] TEST_CMD failed on attempt 1/2 — retrying…`).
+5. Existing bash unit tests in `tests/` continue to pass (`bash tests/run_tests.sh`).
+6. `shellcheck lib/gates.sh` (and any extracted helper file) reports zero warnings.
+7. Any modified `.sh` file stays under 300 lines.
 
-[PM: Acceptance criteria entirely absent in original — added above based on the stated regression.]
+[PM: Acceptance criteria added — none existed in the original file. Criteria are
+testable and directly map to the false-halt problem described in the title. The new
+config key follows the naming convention of existing config keys documented in
+CLAUDE.md.]
 
 ## Watch For
 
-- The cfg file path may be injected via `PROJECT_VERSION_CONFIG` variable — ensure the fix filters on the *value* of that variable, not a hardcoded string
-- If commit subject generation uses `git diff --name-only` or similar to pick the "primary" changed file, the filter must exclude Tekhton-internal paths (`.claude/`, `.tekhton/`) generally, not just the cfg file
-- Regression: if `.claude/project_version.cfg` is the ONLY changed file (e.g., a version-only run), the fallback must still produce a valid non-empty subject
+- **300-line ceiling.** `lib/gates.sh` may already be near the limit; extract helpers
+  to `lib/gates_retry.sh` if needed rather than exceeding the ceiling.
+- **Idempotency.** The working tree must be identical between retry attempts — do not
+  clean artefacts between retries, as that could mask a genuine failure caused by
+  dirty output files.
+- **Interaction with TEST_BASELINE.** If `TEST_BASELINE_ENABLED=true`, the baseline
+  capture runs before the coder stage; ensure the retry logic does not confuse a
+  pre-existing failure (captured in baseline) with a transient one.
+- **Config key documentation.** Add `COMPLETION_GATE_RETRY_ATTEMPTS` to the variable
+  table in `CLAUDE.md` following the existing table format.
 
-[PM: Watch For section absent in original — added based on likely implementation surface.]
+[PM: Watch For section added — none existed in original file.]
+
+## Migration Impact
+
+New optional config key: `COMPLETION_GATE_RETRY_ATTEMPTS` (default: `1`).
+Existing deployments require no changes — the default adds one silent retry, which is
+the bug-fix behaviour. Projects that want to revert to strict single-shot mode can set
+`COMPLETION_GATE_RETRY_ATTEMPTS=0` in `pipeline.conf`.
+
+[PM: Migration Impact section added — required by rubric because a new user-facing
+config key is introduced.]
