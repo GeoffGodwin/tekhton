@@ -71,13 +71,13 @@ func loadConfig(req *proto.StageRequestV1) config {
 		Task:             envOrFromReq(req, "TASK", req.Task),
 		CurrentMilestone: envOrFromReq(req, "_CURRENT_MILESTONE", req.Milestone),
 
-		AgentEnabled:     envBool("INTAKE_AGENT_ENABLED", true),
-		HumanMode:        envBool("HUMAN_MODE", false),
-		MilestoneMode:    envBool("MILESTONE_MODE", false),
-		Cached:           envBool("INTAKE_CACHED", false),
-		CompleteMode:     envBool("COMPLETE_MODE", false),
-		HealthEnabled:    envBool("HEALTH_ENABLED", true),
-		CausalLogEnabled: envBool("CAUSAL_LOG_ENABLED", true),
+		AgentEnabled:     envBoolFromReq(req, "INTAKE_AGENT_ENABLED", true),
+		HumanMode:        envBoolFromReq(req, "HUMAN_MODE", false),
+		MilestoneMode:    envBoolFromReq(req, "MILESTONE_MODE", false),
+		Cached:           envBoolFromReq(req, "INTAKE_CACHED", false),
+		CompleteMode:     envBoolFromReq(req, "COMPLETE_MODE", false),
+		HealthEnabled:    envBoolFromReq(req, "HEALTH_ENABLED", true),
+		CausalLogEnabled: envBoolFromReq(req, "CAUSAL_LOG_ENABLED", true),
 
 		ReportFile: resolveProjectRelative(projectDir,
 			envOr("INTAKE_REPORT_FILE", filepath.Join(tekhtonDir, "INTAKE_REPORT.md"))),
@@ -98,7 +98,7 @@ func loadConfig(req *proto.StageRequestV1) config {
 		UIProjectDetected: envOr("UI_PROJECT_DETECTED", "false"),
 		UIFramework:       envOr("UI_FRAMEWORK", ""),
 
-		DagEnabled: envBool("MILESTONE_DAG_ENABLED", true),
+		DagEnabled: envBoolFromReq(req, "MILESTONE_DAG_ENABLED", true),
 	}
 
 	return cfg
