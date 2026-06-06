@@ -4,12 +4,12 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 201
+- Runs since audit: 202
 =======
-- Runs since audit: 201
+- Runs since audit: 202
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 201
+- Runs since audit: 202
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -20,8 +20,6 @@
 - [2026-05-30 | "unknown"] `internal/crawler/deps.go` â `parseCargoDeps` hardcodes `"Cargo.toml"` as the `Manifest` field on `KeyDependency` entries (line ~268), while `parseNodeDeps` correctly uses the `label` variable (which incorporates the `prefix` for sub-project calls). The inconsistency is latent today (prefix is always `""` from `parseDependencies`) but would produce incorrect `manifest` fields in Cargo key dependencies if sub-project recursion were added in m30.2. Recommend aligning to use `label` in `parseCargoDeps` before m30.2 adds sub-project support.
 - [2026-05-30 | "unknown"] `internal/detect/detect.go` â `attach("languages", r)` case branch is unreachable dead code; `Engine.Run` populates Languages/Frameworks directly before the second pass. Future maintainers may mistake it for an active code path.
 - [2026-05-30 | "unknown"] `scripts/capture-detect-baselines.sh:67-70` disables `set -euo pipefail` before calling the detect functions. The `_capture_one` helper's `return 1` on a missing fixture (line 79) is silently swallowed because `set +e` is active at call-site scope (lines 86-88). If a fixture directory is absent the script prints an error to stderr but exits 0, giving a false-success signal. Pre-existing design decision with an explanatory comment; not introduced by this run. Low-priority hardening candidate for a future cleanup pass.
-- [2026-05-30 | "unknown"] `internal/dashboard/emit_reports.go:84-101` â `parseTestAudit` stays inline in the emitter rather than behind a `StatusReader` method. Reasonable for now (simpler than the other parsers), but `EmitReports` is the only emit function that doesn't follow the `e.statusReader().Parse<Kind>(...)` pattern. If a `ParseTestAudit` method is ever needed for a Cobra arm or isolation testing, the pattern will need retrofitting.
-- [2026-05-29 | "unknown"] `internal/dashboard/emit_reports.go:156â179`: `parseReviewerReport` uses a hand-rolled line scanner while `parseIntakeReport` uses `verdictInlineRE`. Two subtly different parsers for the same heading-followed-by-verdict pattern; one reader for both would reduce drift.
 - [2026-05-29 | "unknown"] `internal/dashboard/dashboard.go:154â168`: `jsonEscape` is defined but never called in the package. Dead code from an earlier draft; actual escaping is handled by `json.Marshal` in `jsfile.go`.
 - [2026-05-29 | "unknown"] `cmd/tekhton/dashboard.go:151â163`: `dashDirEnv()` and `dashboardTemplatesDir()` duplicate env-reading logic already in `NewEmitter` via `envOr`. Not harmful but a second reader for the same env vars.
 - [2026-05-28 | "unknown"] Pre-existing: `test_tester.sh` Test 2 fails with UPSTREAM exit 1 (`stages/tester_tdd.sh:84`, `return` vs `exit 1`). Predates m27.x; out of scope for m28.1.
@@ -36,6 +34,9 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-06 | "Implement Milestone m37.1: Review Helpers and Parser"] `synthesized_at_max.md` uses `"None (reviewer did not report)"` as the sentinel text in both blocker sections. This does NOT match `noneSentinelRE` (`^-?\s*None\s*$` requires no trailing text), so `HasComplexBlockers()` returns 1 for this fixture. The test explicitly exempts `synthesized_at_max` from blocker count assertions. Worth confirming the bash synthesizer template and the parser sentinel are aligned â if the bash template uses this exact phrasing, the bash `grep -c "^- "` count would also treat it as a blocker.
+- [x] [2026-05-30 | "unknown"] `internal/dashboard/emit_reports.go:84-101` â `parseTestAudit` stays inline in the emitter rather than behind a `StatusReader` method. Reasonable for now (simpler than the other parsers), but `EmitReports` is the only emit function that doesn't follow the `e.statusReader().Parse<Kind>(...)` pattern. If a `ParseTestAudit` method is ever needed for a Cobra arm or isolation testing, the pattern will need retrofitting.
+- [x] [2026-05-29 | "unknown"] `internal/dashboard/emit_reports.go:156â179`: `parseReviewerReport` uses a hand-rolled line scanner while `parseIntakeReport` uses `verdictInlineRE`. Two subtly different parsers for the same heading-followed-by-verdict pattern; one reader for both would reduce drift.
 - [x] [2026-06-05 | "Implement Milestone m40.2: State Writer: Milestone ID Field"] `internal/runner/resume_test.go:68-79` â `resumeWithEnv` is a test-only `*Runner` method that manually calls `requestFromSnapshot` + `ApplyEnvDefaults` rather than going through the production `Resume()` path. A comment pointing at `TestResumeProductionPath` as the canonical production-path test would help future readers understand the divergence and not add validation-sensitive tests to the helper path.
 - [x] [2026-06-04 | "Implement Milestone m36.2: Intake Helpers Port"] `plan_parser.go:124-130` â `sectionHeaders` map iteration is non-deterministic (Go map range order is random per spec). If a single heading matched two keys simultaneously (unlikely with these specific keys, but theoretically possible), the assigned canonical section would be non-deterministic. An ordered slice of `struct{key, canonical string}` pairs would eliminate this.
 - [x] [2026-06-04 | "Implement Milestone m36.2: Intake Helpers Port"] `architect.go:85` â `os.Getenv("_TUI_ACTIVE")` is read directly from the process environment rather than from `cfg` or `req.EnvOverrides`. Consistent with the security/cleanup stage pattern but means TUI state cannot be overridden per-request in integration tests without `t.Setenv`. Low impact.
