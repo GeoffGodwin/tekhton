@@ -4,12 +4,12 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 209
+- Runs since audit: 210
 =======
-- Runs since audit: 209
+- Runs since audit: 210
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 209
+- Runs since audit: 210
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -35,6 +35,7 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-07 | "Implement Milestone m47: Stage verdict envelope is source of truth: subprocess errors don't override a PASS verdict"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
 - [x] [2026-06-06 | "Implement Milestone m38.3: Tester Fix and Continuation Orchestrators"] `fix_truncate.go:16` vs `fix.go:378` â two compiled failure-marker regexes with divergent vocabulary: `failureMarkerRe` (used for block splitting in SmartTruncateTestOutput) includes FAILED, AssertionError, TypeError, etc.; `failureMarkerExtractRe` (used for pre-filter in extractFailureOutput) uses lowercase `error` and `failure`. The split mirrors the bash two-pass design intentionally; a brief comment cross-referencing the bash source lines would prevent future maintainers from treating the divergence as a bug.
 - [x] [2026-06-06 | "Implement Milestone m38.3: Tester Fix and Continuation Orchestrators"] `continuation.go:49` / `fix.go:48` â `DefaultContinuationAgentTools = "Read Write Edit Bash Glob Grep"` vs `DefaultFixAgentTools = "Read Glob Grep Write Edit Bash"`. Same six tools, different order. No functional impact; aligning the order to a single canonical sequence would reduce cognitive noise when comparing the two constants.
 - [x] [2026-06-06 | "Implement Milestone m38.2: Tester TDD Pre-Flight"] `tdd.go:269-283` â `writePromptTmpFile` materializes rendered prompts to disk so the supervisor can pass them via `--prompt-file`. This is a consistent pattern across sub-stage ports (m35.2 security, m38.2 TDD). If the supervisor gains an in-memory prompt path in a future milestone, all sub-stage callers will need updating together.

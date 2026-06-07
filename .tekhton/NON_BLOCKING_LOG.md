@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-06-07 | "Implement Milestone m47: Stage verdict envelope is source of truth: subprocess errors don't override a PASS verdict"] `internal/stagerunner/parity_test.go` appears modified in git status but is not listed under "Files Modified" in the coder summary â if this was an intentional change it should be disclosed in the summary for traceability.
 - [ ] [2026-06-07 | "Implement Milestone m46: Replan detector body-grep + auto-advance commit-skip cascade"] `fix_truncate.go:117` â `intToString` doc comment says "a small fmt-free integer printer" but the body calls `fmt.Sprintf`. Comment is wrong; the code is correct. Should read "a small integer printer."
 - [ ] [2026-06-07 | "Implement Milestone m46: Replan detector body-grep + auto-advance commit-skip cascade"] `fix_truncate.go:99` â `truncateBlock` formats count as `"N lines omitted"` for all N, producing "1 lines omitted" for a single-line omission. Grammatically incorrect for n==1; cosmetic only.
 - [ ] [2026-06-07 | "Implement Milestone m46: Replan detector body-grep + auto-advance commit-skip cascade"] `fix.go:160` / `continuation.go:158` â package-level seam vars (`fixAgentRunner`, `contextBuilder`, etc.) unguarded by a mutex. Sequential test execution is safe; future `t.Parallel()` adoption requires sync protection. Carry-forward from m38.2; recorded for m38.6 closure.
