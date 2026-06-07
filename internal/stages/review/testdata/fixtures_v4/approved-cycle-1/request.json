@@ -1,0 +1,9 @@
+{
+  "request": {
+    "stage": "review",
+    "task": "Add a new endpoint"
+  },
+  "env": {
+    "MAX_REVIEW_CYCLES": "3"
+  }
+}

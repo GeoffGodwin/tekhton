@@ -170,11 +170,10 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 		// m35.2: security stage ported to internal/stages/security/;
 		// lib/security_helpers.sh deleted alongside it. No bash helper sourced.
 		proto.StageSecurity: {},
-		// stages/review_helpers.sh is sourced globally in tekhton-legacy.sh
-		// (line 972) after stages/review.sh; stages/review.sh calls
-		// _route_specialist_rework() (line 368), which is defined in
-		// stages/review_helpers.sh.  The adapter must source it.
-		proto.StageReview: {"stages/review_helpers.sh"},
+		// m37.2: review stage ported to internal/stages/review/;
+		// stages/review.sh + stages/review_helpers.sh deleted alongside it.
+		// No bash helper sourced.
+		proto.StageReview: {},
 		proto.StageTester: {
 			"lib/test_audit_helpers.sh",
 			"lib/test_audit_detection.sh",

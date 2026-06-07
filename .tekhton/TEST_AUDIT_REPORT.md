@@ -1,47 +1,95 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 35 test functions
+Tests audited: 1 file, 22 test functions (`internal/tester/continuation_test.go`)
+Milestone: m38.3 — Tester Fix and Continuation Orchestrators
 Verdict: PASS
+
+The tester added one test (`TestExecGitDiffReporter_NonGitDirReturnsZero`) to
+`continuation_test.go`. The full file was read and evaluated against all seven
+rubric criteria. The implementation files exercised (`continuation.go`, `timing.go`)
+were read in full. The key fixture (`testdata/continuation/tester_report_with_remaining.md`)
+was read and the `FilesWritten=4` accumulate assertion was verified by tracing the
+`mergeAccumulate` logic in `timing.go` across two iterations.
+
+---
 
 ### Findings
 
-#### NAMING: synthesized_at_max blocker-count skip uses undocumented string-name guard
-- File: internal/review/parser_test.go:109-118
-- Issue: The `synthesized_at_max` fixture contains `"- None (reviewer did not report)"` — a line that does NOT match `noneSentinelRE` because the regex requires `\s*$` after "None" and " (reviewer did not report)" follows. So `HasComplexBlockers()` returns 1 for that fixture, not 0. The test skips the assertion via a string-name guard (`tc.name != "synthesized_at_max"`) rather than a dedicated struct field or explicit comment, while leaving `wantComplex: 0` (the zero default) in the table row — misleadingly suggesting the fixture has 0 complex blockers. The skip is functionally correct but is undocumented and fragile against fixture renames.
+#### NAMING: Misleading inline comment about control flow in non-git-dir test
+- File: `internal/tester/continuation_test.go:557-558`
+- Issue: The comment reads "Both gitWorktreeDirty probes fail (git exits non-zero),
+  so FilesChanged falls through to return 0." This misrepresents the actual control
+  path. When both `git diff --quiet` probes fail, `gitWorktreeDirty` returns `true`
+  (not `false`), so the early-return branch (`if !gitWorktreeDirty { return 0 }`) is
+  NOT taken. The function proceeds to `git diff --stat HEAD`, which also fails in a
+  non-git directory, and that failure is what causes the `return 0`. The assertion
+  `got == 0` is correct; only the comment's description of the path is wrong.
 - Severity: LOW
-- Action: Add a `skipBlockerAssert bool` field to `fixtureCase` and set it `true` for the `synthesized_at_max` row, replacing both string-name guard conditions. Alternatively, set `wantComplex: 1` in the row and remove the guard entirely. Add a brief comment explaining that the fixture's "None (reviewer did not report)" deliberately does not match the sentinel regex.
+- Action: Update the comment to: "In a non-git directory, `gitWorktreeDirty`
+  returns true (git exits non-zero on both probes), so `FilesChanged` proceeds
+  to `git diff --stat HEAD`, which also fails, returning 0." No assertion change needed.
 
-#### COVERAGE: DriftObservations and CoverageGaps fields not asserted under non-None content
-- File: internal/review/parser_test.go
-- Issue: The `changes_complex_only.md` fixture has a populated `## Coverage Gaps` section ("No fixture exercises the case where Verdict heading appears twice") and a `## Drift Observations: - None` section. No test case asserts `r.CoverageGaps` or `r.DriftObservations`. Code paths for those sections execute (they go through the same `bulletList` dispatch as ComplexBlockers), so statement coverage is not the gap — but a regression specific to those section names in `canonicalHeading` or the `parseBody` switch (e.g. typo in the `secCoverageGaps` constant) would not be caught by any assertion.
+#### ISOLATION: contLogger seam leaked after TestSetContinuationSeams_NilDoesNotReplace
+- File: `internal/tester/continuation_test.go:582-590`
+- Issue: `SetContinuationLogger(nil)` and then `SetContinuationLogger(&captureLogger{})`
+  are called but neither return value is captured or restored. After this test,
+  the package-level `contLogger` seam is left as `&captureLogger{}` rather than
+  whatever was installed before. In practice no subsequent test is harmed because
+  all orchestration tests use `installContSeams` to set and restore all seams
+  explicitly. However, the pattern is inconsistent with the cleanup discipline
+  (`defer restore()`) used everywhere else in the file.
 - Severity: LOW
-- Action: Extend the `changes_complex_only` fixture case in `TestParseReviewerReport_Fixtures` with `wantCoverageGapsAtLeast: 1` (and corresponding assertion), or add a `TestParseReader_SectionsRoundTrip` sub-test that verifies CoverageGaps and DriftObservations parse correctly from an inline body. No new fixture file needed.
+- Action: Capture the previous value and restore it: `prev := SetContinuationLogger(nil); defer SetContinuationLogger(prev)`. Mirrors the `SetContinuationAgentRunner(prev)` restore already present two lines above.
 
-#### NAMING: Duplicate test case in TestRouteSpecialistRework
-- File: internal/review/specialist_test.go:98-113
-- Issue: Cases `"blockers_exhausted"` (lines 98-103) and `"blockers_at_last_cycle_treated_as_exhausted"` (lines 105-113) have identical inputs — `env = "- something"`, `budget = CycleBudget{Current: 3, Max: 3}`, `want = SpecialistExhausted` — and exercise exactly the same `IsExhausted()` branch. The duplicate adds no coverage value.
-- Severity: LOW
-- Action: Remove `"blockers_at_last_cycle_treated_as_exhausted"`. If the goal is to document the bash review_helpers.sh:21 `>=` boundary, add a short inline comment to the surviving `"blockers_exhausted"` case rather than a separate table row.
+---
 
-#### INTEGRITY: None found
-- No assertions test hard-coded values not derived from implementation logic.
-- No trivially-true assertions: the receiver-invariance check in `TestCycleBudget_BumpFromUsage` (`c.Current != 1 || c.Max != 3` after a value-receiver call) is correct defensive programming — it would catch a future pointer-receiver refactor that adds mutation.
-- No mocked implementations standing in for real ones.
+### Rubric Detail
 
-#### EXERCISE: All tests call real implementations
-- `TestParseReviewerReport_Fixtures` and `TestParseReviewerReport_RawBody_RoundTrip` call `ParseReviewerReport` directly against real fixture files on disk.
-- `TestParseReader_InMemoryBody`, `TestInlineVerdictFallback_*`, `TestNoneSentinel*`, and `TestParseACPRows_LenientOnDashes` call `ParseReader` with in-memory bodies constructed to exercise specific code paths.
-- `TestCycleBudget_*` cover all five `CycleBudget` methods directly with table-driven cases including overrun and zero-value guards.
-- `TestHasSpecialistBlockers`, `TestFormatSpecialistSection_BashByteParity`, and `TestRouteSpecialistRework` call the exported specialist functions directly.
+**1. Assertion Honesty — PASS**
+All assertions derive from real function call outputs. The `FilesWritten=4` assertion
+in `TestRunContinuations_AccumulatesTimingPerIteration` was cross-checked against
+`timing.go::mergeAccumulate` and the fixture (`tester_report_with_remaining.md`
+has `Test files written: 2`; running=-1 (sentinel) on first merge → 2; running=2
+on second merge → 4). `CumulativeTurns=95` derives from `InitialTurnsUsed(50)` +
+agent turn 1 (`TurnsUsed: 20`) + agent turn 2 (`TurnsUsed: 25`). No hard-coded
+magic values unrelated to implementation logic found.
 
-#### ISOLATION: Clean — no mutable project state accessed
-- All tests use either checked-in fixture files under `internal/review/testdata/` or in-memory `strings.NewReader` inputs.
-- No test reads `.tekhton/*.md`, `.claude/logs/`, run artifacts, or any other mutable pipeline state file. Pass/fail outcomes are fully independent of prior pipeline runs or repo working-tree state.
+**2. Edge Case Coverage — PASS**
+The added test covers the "directory has never had git init" edge case in
+`execGitDiffReporter`. The pre-existing suite already covers disabled loop,
+git-diff zero gate, upstream-recoverable, max attempts exhausted, nil request,
+render error, and agent invocation error. The new test fills the gap between
+"clean repo" and "dirty repo" by adding the "no repo at all" branch.
 
-#### SCOPE: All references are current
-- All ten fixture files confirmed present under `internal/review/testdata/`.
-- All imported symbols (`ParseReviewerReport`, `ParseReader`, `CycleBudget`, `HasSpecialistBlockers`, `FormatSpecialistSection`, `RouteSpecialistRework`, verdict constants, ACP constants, `SpecialistDecision` enum values) exist in the current implementation.
-- `internal/stages/review/` does not exist (m37.2 deliverable, correctly absent).
-- `stages/review.sh` and `stages/review_helpers.sh` are not referenced in these test files.
-- No orphaned, stale, or misaligned references found.
+**3. Implementation Exercise — PASS**
+`TestExecGitDiffReporter_NonGitDirReturnsZero` calls the production
+`execGitDiffReporter` struct directly on a real temp directory without any mocking.
+`TestFileRemainingReader_ReadsCount` similarly exercises the production
+`fileRemainingReader`. Orchestration tests (`TestRunContinuations_*`) call the
+real `RunContinuations` body with targeted seam injection — the seams exist
+specifically for this purpose.
+
+**4. Test Weakening Detection — PASS**
+The tester made no modifications to any existing test function. The single change
+is the addition of `TestExecGitDiffReporter_NonGitDirReturnsZero`. No assertions
+were removed, broadened, or softened.
+
+**5. Test Naming and Intent — PASS**
+`TestExecGitDiffReporter_NonGitDirReturnsZero` encodes subject (struct), scenario
+(non-git directory), and expected outcome (returns zero). All 22 function names in
+the file follow the `TestSubject_ScenarioExpectation` convention. No generic names
+found.
+
+**6. Scope Alignment — PASS**
+No test references any of the deleted files (stages/review.sh, stages/review_helpers.sh,
+the four test_review_*.sh tests, or the three deleted milestone files). All imports
+resolve to live code. No orphaned references detected.
+
+**7. Test Isolation — PASS**
+All tests create their own state via `t.TempDir()`. The timing-accumulate test reads
+a committed fixture from `testdata/continuation/` (a static file, not a mutable
+pipeline artifact) and writes a copy into a temp dir before calling `RunContinuations`.
+`TestExecGitDiffReporter_*` tests each initialize a fresh git repo in a temp dir.
+No test reads `.tekhton/`, `.claude/logs/`, or any other mutable pipeline run
+artifact from the live project directory.

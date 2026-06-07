@@ -1,152 +1,304 @@
 # Coder Summary
 
-## Status: COMPLETE
+## Status
+COMPLETE
 
 ## What Was Implemented
 
-m37.1 — Review Helpers and Parser. Pure-logic Go port landing the
-`internal/review/` package: parser, cycle budget bookkeeping, and
-specialist-block helpers — the pieces the M37.2 stage loop will consume.
+m38.3 — Tester Fix and Continuation Orchestrators. Third decimal of the
+m38 tester-family port. Adds three new Go source files in
+`internal/tester/` and three test files. No bash files deleted —
+`stages/tester_fix.sh` and `stages/tester_continuation.sh` stay on disk
+per the milestone design (M38.6 does the dispatch flip and bash deletion).
 
-### Goal 1 — Parser API surface (`internal/review/parser.go`)
+### Goal 1 — `RunInlineFix` and `FixOptions` (`internal/tester/fix.go`)
 
-- `Verdict` four-token vocabulary: `VerdictApproved`,
-  `VerdictApprovedWithNotes`, `VerdictChangesRequired`,
-  `VerdictReplanRequired`, plus `VerdictUnknown` zero value.
-- `ACPDecision` ACCEPT / REJECT / MODIFY constants.
-- `Report` struct: `Verdict`, `ComplexBlockers`, `SimpleBlockers`,
-  `NonBlockingNotes`, `CoverageGaps`, `ACPVerdicts`, `DriftObservations`,
-  `SpecialistSection`, `RawBody`.
-- `ParseReviewerReport(path string) (*Report, error)` reads from disk;
-  `ParseReader(io.Reader)` is the in-memory variant tests use. Both
-  populate `RawBody` with the byte-for-byte file contents so downstream
-  forensics consumers (dashboard subsystem, the accepted-ACP echo at
-  bash review.sh:246) keep working.
-- Accessor methods: `HasComplexBlockers() int`, `HasSimpleBlockers() int`,
-  `IsApproved() bool`, `AcceptedACPs() []ACPVerdict`.
-- Verdict extraction matches bash priority precisely. The heading-anchored
-  extraction takes the first non-blank line after `## Verdict`; the inline
-  fallback scans the body for the four tokens in REPLAN_REQUIRED >
-  APPROVED_WITH_NOTES > CHANGES_REQUIRED > APPROVED priority order. The
-  fixture `inline_verdict_fallback.md` and the dedicated
-  `TestInlineVerdictFallback_Priority` / `TestInlineVerdictFallback_ReplanWins`
-  tests lock in the priority precedence.
-- "None" sentinel detection mirrors bash `grep -qE "^\-?\s*None\s*$"`
-  byte-for-byte: case-sensitive, optional leading dash, optional
-  surrounding whitespace. Lower-case "none" does NOT match.
-  `TestNoneSentinelRE_CaseSensitive` and
-  `TestNoneSentinel_OptionalDashAndWhitespace` lock this in.
-- ACP rows lenient on em-dash vs hyphen delimiter but REQUIRE whitespace
-  around the delimiter — without that, the non-greedy capture
-  mis-segments names like "parser-leaf-discipline".
-  `TestParseACPRows_LenientOnDashes` covers both delimiter forms plus
-  malformed rows being dropped.
+Exports:
+- `RunInlineFix(ctx, *FixRequest) (*FixResult, error)` — top-level entry
+  point. Loops up to `opts.MaxDepth` attempts; short-circuits on
+  baseline-pre-existing, dedup-skip, or first TEST_CMD pass.
+- `FixOptions` struct — `MaxDepth`, `OutputLimit`, `MaxTurns`, `Model`,
+  `AgentTools`, `BaselineCheck`, `SummaryFile`, `ReportFile`, `PromptName`,
+  `PromptVarsBase`.
+- `DefaultFixOptions()` — `MaxDepth=1` (regression-canary),
+  `OutputLimit=4000`, `MaxTurns=26`, `Model=claude-sonnet-4-6` (coder
+  model — fix agent does code-fixing, not tester writing),
+  `AgentTools="Read Glob Grep Write Edit Bash"`, `BaselineCheck=true`.
+- `FixRequest` struct — `ProjectDir`, `PromptsDir`, `Task`, `TestCmd`,
+  `Milestone`, `FailureLog`, `Architecture`, `Options`.
+- `FixResult` struct — `AttemptCount`, `ResolvedFailures`, `DedupSkipped`,
+  `BaselineSkipped`.
+- `BaselineVerdict` enum + `BaselineChecker` interface (M38.5 swaps the
+  bash shim for the native Go `internal/test_baseline` package).
+- `TestDedup` interface (port-deferred to the build-fix-loop arc).
+- `FixTestRunner` interface (production: `execFixTestRunner` shells out
+  via `bash -c "${TEST_CMD}"`).
+- `FixAgentRunner`, `FixPromptRenderer`, `FixLogger` interfaces +
+  `SetFix*` seam overrides.
 
-### Goal 2 — `CycleBudget` (`internal/review/cycle.go`)
+### Goal 2 — `SmartTruncateTestOutput` (`internal/tester/fix_truncate.go`)
 
-- Value type with `Current` and `Max` fields. "Current == 0 before first
-  cycle" convention matches bash review.sh:39.
-- `Increment()` (pointer receiver) advances; `Remaining() int`,
-  `IsLastCycle() bool`, `IsExhausted() bool` (value receivers) report state.
-- `BumpFromUsage(used, limit, cap int) (newLimit, bumped bool)`
-  encapsulates review.sh:130-148 — at ≥85% usage, bump 25%, clamped to
-  `cap` (defaults to 60 if 0 passed). Returns the new limit + a
-  bumped flag; DOES NOT mutate the receiver (the test
-  `TestCycleBudget_BumpFromUsage` asserts receiver invariance).
+Exports:
+- `SmartTruncateTestOutput(output, limit) string` — failure-block
+  extraction with first-5 + last-5 line truncation, joined by `"\n---\n"`,
+  fallback to `tail -80` when no markers, capped at `limit` chars with
+  `... [truncated at N chars]` notice.
 
-### Goal 3 — Specialist helpers (`internal/review/specialist.go`)
+Internal helpers: `truncateBlock`, `tailLines`, `intToString`,
+`writeFixPromptTmp`, `readCoderSummaryFiles`, `cleanCoderSummaryBullet`.
 
-- `HasSpecialistBlockers(env string) bool` — true when env contains a
-  non-blank, non-"None" line. Lenient on case for the sentinel and on
-  "- None" bullet shapes.
-- `FormatSpecialistSection(env string) string` — emits the bash-byte-
-  identical `"\n## Specialist Blockers\n<env>\n"` block from
-  review_helpers.sh:11-17. When env already ends with `\n`, we don't
-  double it. `TestFormatSpecialistSection_BashByteParity` locks all
-  four shapes (trailing/no-trailing newline, multi-line, empty).
-- `SpecialistDecision` enum (Passthrough/Rework/Exhausted) +
-  `RouteSpecialistRework(env, budget)` returns the three-branch
-  classification mapping 1:1 to bash review_helpers.sh.
+### Goal 3 — `RunContinuations` and `ContinuationOptions` (`internal/tester/continuation.go`)
 
-### Goal 4 — Testdata fixtures (`internal/review/testdata/`)
+Exports:
+- `RunContinuations(ctx, *ContinuationRequest) (*ContinuationResult, error)` —
+  top-level entry point. Gated on `opts.Enabled` + git-diff file count;
+  loops up to `opts.MaxAttempts` iterations until `REMAINING==0` or
+  budget is exhausted.
+- `ContinuationOptions` struct — `Enabled`, `MaxAttempts`, `NextTurnBudget`,
+  `Model`, `AgentTools`, `ReportFile`, `PromptName`, `PromptVarsBase`.
+- `DefaultContinuationOptions()` — `Enabled=true`, `MaxAttempts=3`
+  (regression-canary), `NextTurnBudget=50`,
+  `Model=claude-sonnet-4-6` (tester model — continuation writes tests).
+- `ContinuationRequest` struct — `ProjectDir`, `PromptsDir`, `Task`,
+  `ResumeFlag`, `StageStartUnix`, `InitialRemaining`, `InitialTurnsUsed`,
+  `RunningTiming`, `HumanMode`, `HumanNotesTag`, `MilestoneMode`,
+  `Options`.
+- `ContinuationResult` struct — `Continued`, `AttemptsUsed`,
+  `CumulativeTurns`, `RemainingTests`, `Timing`, `UpstreamErrored`,
+  `SkipFinalChecks`.
+- `RunAndRecordTestAudit(ctx, projectDir) (durationS, turns, err)` —
+  thin pass-through to the `TestAuditRunner` seam (M38.4 ships the
+  native Go implementation).
+- Seam interfaces: `ContinuationContextBuilder`, `GitDiffReporter`,
+  `RemainingReader`, `TestAuditRunner`, `StateHaltWriter`,
+  `ContinuationAgentRunner`, `ContinuationPromptRenderer`,
+  `ContinuationLogger`, plus `SetContinuation*` overrides.
 
-Ten fixtures cover the parser's behaviour space:
+### Goal 4 — Regression-canary tests
 
-| Fixture | Asserts |
-|---------|---------|
-| `approved.md` | Verdict=APPROVED, 0 blockers |
-| `approved_with_notes.md` | APPROVED_WITH_NOTES, ≥3 notes |
-| `changes_complex_only.md` | 2 complex, 0 simple |
-| `changes_simple_only.md` | 0 complex, 3 simple |
-| `changes_mixed.md` | 2 complex + 2 simple |
-| `replan_required.md` | REPLAN_REQUIRED + 1 complex (scope drift) |
-| `inline_verdict_fallback.md` | Inline-fallback path → APPROVED |
-| `acp_verdicts_present.md` | 3 ACP rows ACCEPT/REJECT/MODIFY |
-| `specialist_blockers_present.md` | SpecialistSection populated |
-| `synthesized_at_max.md` | Byte-for-byte bash synthesize template |
+- `TestDefaultFixOptions_MaxDepthIs1` — asserts
+  `DefaultFixOptions().MaxDepth == 1`. **Going deeper led to runaway
+  agent invocations that exhausted quota in seconds. Do not change the
+  default.**
+- `TestDefaultContinuationOptions_MaxAttemptsIs3` — asserts
+  `DefaultContinuationOptions().MaxAttempts == 3`. Three attempts is
+  what operators have validated in dogfooding.
 
-### Goal 5 — Coverage + tests
+### Goal 5 — Baseline-aware short-circuit (`fix.go:286-294`)
 
-Three test files (`parser_test.go`, `cycle_test.go`, `specialist_test.go`)
-yield **96.3% line coverage** for the package — well above the 85% target.
+When `opts.BaselineCheck` is true and `BaselineChecker.Has(projectDir)`
+returns true, `BaselineChecker.Compare(failureOutput, 1, projectDir)` is
+called. A `BaselinePreExisting` verdict returns
+`FixResult{BaselineSkipped: true}` without invoking the fix agent.
+Verified by `TestRunInlineFix_BaselineShortCircuits`.
 
-`go test ./internal/review/...` passes; `go vet ./internal/review/...`
-clean; `gofmt -l internal/review/` empty. Full `go test ./internal/...`
-suite passes without regression (36 packages all green).
+### Goal 6 — Test dedup integration (`fix.go:323-336`)
+
+`TestDedup.CanSkip()` is called BEFORE re-running TEST_CMD. When true,
+TEST_CMD is skipped; on first-call success, `RecordPass()` is invoked.
+Two consecutive `RunInlineFix` calls with no intervening source change
+record exactly ONE TEST_CMD invocation — verified by
+`TestRunInlineFix_DedupPreservedOnSecondCall`. Also covered by
+`TestRunInlineFix_DedupCanSkipCalledBeforeTestRunner`.
+
+### Goal 7 — Smart truncation port (`fix_truncate.go`)
+
+- Walks input via `bufio.Scanner` with the
+  `(FAIL|FAILED|ERROR|AssertionError|TypeError|ReferenceError|SyntaxError|CompilationError|assert|expected|unexpected)`
+  marker regex.
+- Opens a "failure block" when a marker line is hit, accumulates
+  following lines, emits `truncateBlock(block) + "\n---\n"` when a new
+  marker fires (mirrors bash exactly).
+- `truncateBlock` keeps first 5 + last 5 lines joined with
+  `"  ... [N lines omitted]\n"` when block length > 10.
+- Falls back to `tailLines(output, 80)` when no markers matched.
+- Caps total output at `limit` chars; truncated output ends with
+  `"... [truncated at N chars]"`.
+- Fixture-driven tests with three baseline samples:
+  `pytest_three_blocks.txt`, `no_markers.txt`, `short_block.txt`.
+
+### Goal 8 — Continuation loop git-diff gate (`continuation.go:267-269`)
+
+`GitDiffReporter.FilesChanged(projectDir)` is called BEFORE entering
+the continuation loop. When the count is < 1, the loop is skipped and
+`ContinuationResult{}` (zero-state) is returned. Production
+implementation `execGitDiffReporter` shells out to
+`git diff` / `git diff --cached` / `git diff --stat HEAD`. Verified by
+`TestRunContinuations_GitDiffGateSkipsLoop` and the two
+`TestExecGitDiffReporter_*` tests against a real git repo in a tmpdir.
+
+### Goal 9 — Continuation accumulates timing (`continuation.go:316`)
+
+After each iteration, `MergeTimingFromFile(out.Timing, reportPath,
+ParseModeAccumulate)` is called. The accumulate logic from m38.1 sums
+parsed values into the running `TesterTiming` struct. Verified by
+`TestRunContinuations_AccumulatesTimingPerIteration` (two-iteration
+run; FilesWritten=2 in the fixture report sums to 4 across both iters).
+
+### Goal 10 — UPSTREAM is recoverable in continuation (`continuation.go:319-329`)
+
+When `agentRes.ErrorCategory == supervisor.CategoryUpstream` during a
+continuation iteration, `RunContinuations`:
+1. Calls `StateHaltWriter.Write(ctx, "tester", "upstream_error",
+   ResumeFlag, Task, "API error during tester continuation N.")`.
+2. Sets `out.UpstreamErrored = true` and `out.SkipFinalChecks = true`.
+3. Returns `*Result, nil` (NIL ERROR — recoverable).
+
+**This differs from TDD UPSTREAM (m38.2 returns non-nil error).** The
+asymmetry is intentional and documented in the m38.3 milestone "Watch
+For" notes: TDD is a pre-flight that the rest of the pipeline depends
+on, so its failure halts; continuation is "tester didn't finish in
+time" recovery, and a mid-recovery API failure means the operator just
+resumes the run.
+
+Verified by `TestRunContinuations_UpstreamIsRecoverable`.
+
+### Coverage
+
+- `go test -cover ./internal/tester/` → **91.7%** of statements
+  (≥80% milestone target met).
+- Per-function: `RunInlineFix` 95.8%, `RunContinuations` (the inline
+  body in `continuation.go`) ~94%, `SmartTruncateTestOutput` 96.8%,
+  `truncateBlock` 92.9%, both `Default*Options` 100%, all `Set*` seams
+  100%.
+- `go vet ./...` — clean.
+- `gofmt -l internal/tester/` — empty.
+- `go build ./...` — clean.
+- `go test ./...` — all packages PASS.
+- `bash tests/run_tests.sh` — 508 shell passed, 0 failed, Go PASSED.
+- `bash scripts/wedge-audit.sh` — clean (188 files audited).
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — zero warnings
+  (no bash modified).
+
+### File length sanity (CLAUDE.md Rule 8)
+
+- `internal/tester/fix.go` — 484 lines (≤ 600 soft target)
+- `internal/tester/fix_truncate.go` — 199 lines
+- `internal/tester/continuation.go` — 512 lines
+- `internal/tester/fix_test.go` — 536 lines
+- `internal/tester/fix_truncate_test.go` — 184 lines
+- `internal/tester/continuation_test.go` — 587 lines
+
+All under the 600-line Go soft target.
 
 ## Root Cause (bugs only)
 
-N/A — m37.1 is a pure port milestone (creates a new Go package; deletes
-no bash). No bug fix component.
+N/A — m38.3 is a port milestone, not a bug fix. The reviewer notes from
+the m38.2 run targeted `tdd.go` (out of m38.3 scope) — they are
+preserved as observed issues for the m38.6 closure.
 
 ## Files Modified
 
 ### Created (NEW)
 
-- `internal/review/parser.go` (NEW, 330 lines) — `Report`, `Verdict`,
-  `ACPVerdict`, `ParseReviewerReport`, `ParseReader`, accessor methods,
-  internal parser state machine.
-- `internal/review/parser_test.go` (NEW, 336 lines) — table-driven
-  fixture tests + RawBody round-trip + inline-fallback priority +
-  "None"-sentinel case sensitivity + ACP-row delimiter leniency.
-- `internal/review/cycle.go` (NEW, 67 lines) — `CycleBudget` value type
-  with `Increment` (pointer receiver), `Remaining`, `IsLastCycle`,
-  `IsExhausted`, `BumpFromUsage` methods.
-- `internal/review/cycle_test.go` (NEW, 163 lines) — per-method tests
-  + 10-row `BumpFromUsage` table + receiver-invariance assertion.
-- `internal/review/specialist.go` (NEW, 82 lines) — `HasSpecialistBlockers`,
-  `FormatSpecialistSection`, `RouteSpecialistRework`,
-  `SpecialistDecision` enum.
-- `internal/review/specialist_test.go` (NEW, 131 lines) — per-function
-  tables covering empty/None/content branches + byte-parity check on
-  `FormatSpecialistSection`.
-- `internal/review/testdata/approved.md` (NEW)
-- `internal/review/testdata/approved_with_notes.md` (NEW)
-- `internal/review/testdata/changes_complex_only.md` (NEW)
-- `internal/review/testdata/changes_simple_only.md` (NEW)
-- `internal/review/testdata/changes_mixed.md` (NEW)
-- `internal/review/testdata/replan_required.md` (NEW)
-- `internal/review/testdata/inline_verdict_fallback.md` (NEW)
-- `internal/review/testdata/acp_verdicts_present.md` (NEW)
-- `internal/review/testdata/specialist_blockers_present.md` (NEW)
-- `internal/review/testdata/synthesized_at_max.md` (NEW)
+- `internal/tester/fix.go` (NEW, 484 lines) — `RunInlineFix`,
+  `FixOptions`, `DefaultFixOptions`, `FixRequest`, `FixResult`,
+  `BaselineVerdict`/`BaselineChecker`/`TestDedup`/`FixTestRunner`/
+  `FixAgentRunner`/`FixPromptRenderer`/`FixLogger` interfaces,
+  `SetFix*` seam overrides, `withFixDefaults`, `extractFailureOutput`,
+  `buildFixPromptVars`, `extractTestFilePaths`, `execFixTestRunner`,
+  no-op seam implementations.
+- `internal/tester/fix_truncate.go` (NEW, 199 lines) —
+  `SmartTruncateTestOutput`, `truncateBlock`, `tailLines`,
+  `intToString`, `writeFixPromptTmp`, `readCoderSummaryFiles`,
+  `cleanCoderSummaryBullet`.
+- `internal/tester/continuation.go` (NEW, 512 lines) —
+  `RunContinuations`, `ContinuationOptions`,
+  `DefaultContinuationOptions`, `ContinuationRequest`,
+  `ContinuationResult`, `RunAndRecordTestAudit`, eight seam interfaces
+  (`ContinuationContextBuilder`, `GitDiffReporter`, `RemainingReader`,
+  `TestAuditRunner`, `StateHaltWriter`, `ContinuationAgentRunner`,
+  `ContinuationPromptRenderer`, `ContinuationLogger`), `SetContinuation*`
+  overrides, `withContinuationDefaults`, `resolveContinuationPath`,
+  `buildContinuationPromptVars`, `defaultContextBuilder`,
+  `execGitDiffReporter`, `fileRemainingReader`, no-op seam
+  implementations.
+- `internal/tester/fix_test.go` (NEW, 536 lines) — `fakeFixAgentRunner`,
+  `fakeFixPromptRenderer`, `fakeBaselineChecker`, `fakeTestDedup`,
+  `fakeFixTestRunner`, `captureLogger`, `installFixSeams`,
+  `newFixRequest`; regression-canary `TestDefaultFixOptions_MaxDepthIs1`;
+  `TestRunInlineFix_BaselineShortCircuits`,
+  `TestRunInlineFix_DedupPreservedOnSecondCall`,
+  `TestRunInlineFix_DedupCanSkipCalledBeforeTestRunner`,
+  `TestRunInlineFix_UpstreamErrorPropagates`,
+  `TestRunInlineFix_AgentInvocationErrorReturnsError`,
+  `TestRunInlineFix_PromptRenderErrorReturnsError`,
+  `TestRunInlineFix_NilRequestReturnsError`,
+  `TestRunInlineFix_TestCmdEmptyBreaksAfterOneAttempt`,
+  `TestRunInlineFix_PromptVarsIncludeTestFiles`,
+  `TestRunInlineFix_PromptVarsReadCoderSummary`,
+  `TestRunInlineFix_RecordsRunningAttemptCount`,
+  `TestWithFixDefaults_*`, `TestExtractFailureOutput_*`,
+  `TestExtractTestFilePaths_DedupAndSort`,
+  `TestSetFixSeams_NilDoesNotReplace`,
+  `TestExecFixTestRunner_*`, `TestNoopSeams_ReturnSafeDefaults`.
+- `internal/tester/fix_truncate_test.go` (NEW, 184 lines) —
+  `TestSmartTruncateTestOutput_*` (6 variants),
+  `TestTruncateBlock_*` (3 variants),
+  `TestCleanCoderSummaryBullet_StripsBacktickAndAnnotation`,
+  `TestReadCoderSummaryFiles_*` (2 variants),
+  `TestTailLines_FewerThanNReturnsAll`, `TestIntToString_Conversion`.
+- `internal/tester/continuation_test.go` (NEW, 587 lines) —
+  `fakeContAgentRunner`, `fakeContPromptRenderer`, `fakeContGitDiff`,
+  `fakeContRemainingReader`, `fakeContAuditRunner`,
+  `fakeContStateHalt`, `fakeContContextBuilder`, `installContSeams`,
+  `newContRequest`; regression-canary
+  `TestDefaultContinuationOptions_MaxAttemptsIs3`;
+  `TestRunContinuations_DisabledSkipsLoop`,
+  `TestRunContinuations_GitDiffGateSkipsLoop`,
+  `TestRunContinuations_UpstreamIsRecoverable`,
+  `TestRunContinuations_SuccessRunsTestAudit`,
+  `TestRunContinuations_AccumulatesTimingPerIteration`,
+  `TestRunContinuations_StopsAtMaxAttempts`,
+  `TestRunContinuations_NilRequestReturnsError`,
+  `TestRunContinuations_RenderErrorPropagates`,
+  `TestRunContinuations_AgentInvocationErrorPropagates`,
+  `TestRunContinuations_PromptVarsIncludeContinuationContext`,
+  `TestRunContinuations_TaskFlowsIntoPromptVars`,
+  `TestRunAndRecordTestAudit_DelegatesToSeam`,
+  `TestWithContinuationDefaults_FillsZeros`,
+  `TestResolveContinuationPath_Branches`,
+  `TestDefaultContextBuilder_RendersTesterAndCoderLabels`,
+  `TestFileRemainingReader_ReadsCount`,
+  `TestExecGitDiffReporter_CleanDirReturnsZero`,
+  `TestExecGitDiffReporter_DirtyDirReportsChange`,
+  `TestNoopContinuationSeams_Safe`,
+  `TestSetContinuationSeams_NilDoesNotReplace`.
+- `internal/tester/testdata/fix/pytest_three_blocks.txt` (NEW) —
+  three-block failure fixture used by the truncation tests.
+- `internal/tester/testdata/fix/no_markers.txt` (NEW) — no-marker
+  fallback fixture.
+- `internal/tester/testdata/fix/short_block.txt` (NEW) — short-block
+  pass-through fixture.
+- `internal/tester/testdata/continuation/tester_report_with_remaining.md`
+  (NEW) — TESTER_REPORT.md with REMAINING > 0 and FilesWritten=2 in the
+  Timing section. Used by `TestRunContinuations_AccumulatesTimingPerIteration`.
+- `internal/tester/testdata/continuation/tester_report_done.md` (NEW) —
+  TESTER_REPORT.md with REMAINING=0 and FilesWritten=3. Reserved for
+  future single-iteration accumulate tests.
 
 ### Modified
 
-- `VERSION` — 4.45.1 → 4.45.2 (patch bump per m37.1 dogfood precedent).
-- `.tekhton/CODER_SUMMARY.md` — this file.
+- `internal/tester/tdd/tdd_test.go` — replaced the m38.2-era
+  `TestPackage_NoFixOrContinuationYet` sanity guard with the inverted
+  `TestPackage_FixAndContinuationExist` (m38.3 requires the files to
+  exist). Reworded `TestPackage_BashFileStillExists` comment to mark
+  the bash file as "pre-m38.6" rather than "at m38.2 close".
+
+### Deleted
+
+None. M38.6 will do the bash cutover and delete `stages/tester_fix.sh`
+and `stages/tester_continuation.sh`.
 
 ## Docs Updated
 
-None — no public-surface changes in this task.
-
-The new `internal/review/` package is an internal Go-only surface
-consumed in-process by the m37.2 stage port; no CLI subcommands, no
-config keys, no prompt template variables, no exported `pkg/api/`
-surface. The ARCHITECTURE.md "## System Map" entry for `internal/review/`
-is m37.2's responsibility (added together with the stage port and the
-bash deletes), per the wedge discipline that ARCHITECTURE.md entries
-land with the milestone that retires the bash they describe.
+None — no public-surface changes in this task. The new exported types
+(`RunInlineFix`, `RunContinuations`, the option structs, the seam
+interfaces) are internal Go API consumed only by the upcoming
+`internal/tester` `RunStage` (M38.6). No CLI subcommand, config key,
+or prompt template variable changed. M38.6 will add the
+ARCHITECTURE.md entry for the tester stage as part of the bash cutover,
+per the m38.1/m38.2 precedent.
 
 ## Human Notes Status
 
@@ -154,127 +306,170 @@ N/A — no human notes injected this run.
 
 ## Acceptance Criteria Verification
 
-- [x] `parser.go` exports `Report`, `Verdict`, `ACPVerdict`,
-      `ParseReviewerReport`, methods `HasComplexBlockers`,
-      `HasSimpleBlockers`, `IsApproved`, `AcceptedACPs` — verified by
-      `grep -nE '^func' parser.go` (13 funcs) and `go doc ./internal/review`.
-- [x] `approved.md` → `Verdict=Approved`, `HasComplexBlockers()==0` —
-      passes in `TestParseReviewerReport_Fixtures/approved`.
-- [x] `inline_verdict_fallback.md` → `Verdict=Approved` (fallback path) —
-      passes in `TestParseReviewerReport_Fixtures/inline_verdict_fallback`.
-- [x] `changes_mixed.md` → 2 complex AND 2 simple — passes in
-      `TestParseReviewerReport_Fixtures/changes_mixed`.
-- [x] `acp_verdicts_present.md` → 3 ACPVerdicts in ACCEPT/REJECT/MODIFY
-      order; `AcceptedACPs()` returns the single ACCEPT — passes in
-      `TestParseReviewerReport_AcceptedACPs` and
-      `TestParseReviewerReport_ACPVerdictsOrder`.
-- [x] `cycle.go` exports `CycleBudget` with 5 methods — verified by
-      `grep -nE '^func \(c \*?CycleBudget\)'` returning 5 lines.
-- [x] `CycleBudget{0,3}` after 3 `Increment()` → `IsExhausted()==true`
-      AND `IsLastCycle()==true` — passes in `TestCycleBudget_Increment`.
-- [x] `BumpFromUsage(17, 20, 60) == (25, true)` AND
-      `BumpFromUsage(58, 60, 60) == (60, false)` — both rows pass in
-      `TestCycleBudget_BumpFromUsage`.
-- [x] `specialist.go` exports `HasSpecialistBlockers`,
-      `FormatSpecialistSection`, `RouteSpecialistRework` — verified by
-      `grep -nE '^func '` returning 3 lines.
-- [x] `HasSpecialistBlockers("None") == false` AND
-      `HasSpecialistBlockers("- broken auth on /admin") == true` —
-      passes in `TestHasSpecialistBlockers`.
-- [x] `FormatSpecialistSection("- broken auth") ==
-      "\n## Specialist Blockers\n- broken auth\n"` byte-for-byte —
-      passes in `TestFormatSpecialistSection_BashByteParity`.
-- [x] `RouteSpecialistRework` branches: Exhausted at {3,3}, Rework at
-      {1,3}, Passthrough at "None"/{0,3} — passes in
-      `TestRouteSpecialistRework`.
-- [x] `go test -cover ./internal/review/...` reports **96.3%**
-      (>= 85% required).
-- [x] All ten fixture files exist and are referenced in the table-driven
-      tests — verified by `ls internal/review/testdata/` and the
-      `TestParseReviewerReport_Fixtures` table.
-- [x] `internal/stages/review/` does NOT exist (m37.2 deliverable) —
-      verified by `test -d ...` returning false.
-- [x] `stages/review.sh` and `stages/review_helpers.sh` remain on disk
-      untouched — verified by `git status --porcelain | grep stages/review`
-      returning empty.
-- [x] No imports from `internal/orchestrate` or `internal/stagerunner` —
-      verified by `go list -deps ./internal/review/...` returning only
-      the package itself (no other internal/* deps).
-- [x] `go vet ./internal/review/...` exits 0; `gofmt -l internal/review/`
-      empty.
-- [x] No regression in `internal/intake/` tests — passes in cached
-      `go test ./internal/intake/...`.
+- [x] `internal/tester/fix.go` exports `RunInlineFix`, `FixOptions`,
+  `DefaultFixOptions`, `SmartTruncateTestOutput` — verified by grep
+  for `^func RunInlineFix`, `^type FixOptions`, `^func DefaultFixOptions`
+  (in fix.go) and `^func SmartTruncateTestOutput` (in fix_truncate.go,
+  same package).
+- [x] `DefaultFixOptions().MaxDepth == 1` — verified by
+  `TestDefaultFixOptions_MaxDepthIs1`. **Regression-canary.**
+- [x] `RunInlineFix` short-circuits and returns
+  `FixResult{BaselineSkipped: true}` when `BaselineChecker.Compare`
+  returns `BaselinePreExisting` — verified by
+  `TestRunInlineFix_BaselineShortCircuits`.
+- [x] `RunInlineFix` calls `TestDedup.CanSkip` before re-running
+  TEST_CMD; if `CanSkip` returns true, TEST_CMD is NOT invoked —
+  verified by `TestRunInlineFix_DedupCanSkipCalledBeforeTestRunner`.
+- [x] Two consecutive `RunInlineFix` calls with no intervening source
+  change record exactly ONE TEST_CMD invocation — verified by
+  `TestRunInlineFix_DedupPreservedOnSecondCall` asserting
+  `runner.calls == 1` across both calls.
+- [x] `SmartTruncateTestOutput` of a fixture with 3 failure blocks
+  returns 3 truncated blocks joined by `\n---\n`, each capped at 10
+  lines — verified by
+  `TestSmartTruncateTestOutput_ThreeBlocksJoinedByDashes`.
+- [x] `SmartTruncateTestOutput` of an input with no failure markers
+  falls back to `tail -80` of the input — verified by
+  `TestSmartTruncateTestOutput_NoMarkersFallsBackToTail80` and
+  `TestSmartTruncateTestOutput_NoMarkersFromFixture`.
+- [x] `SmartTruncateTestOutput` caps total output at `limit` chars;
+  output longer than limit is truncated and ends with
+  `... [truncated at N chars]` — verified by
+  `TestSmartTruncateTestOutput_CapsAtLimitWithTruncationNotice`.
+- [x] `internal/tester/continuation.go` exports `RunContinuations`,
+  `ContinuationOptions`, `DefaultContinuationOptions`,
+  `RunAndRecordTestAudit`.
+- [x] `DefaultContinuationOptions().MaxAttempts == 3` — verified by
+  `TestDefaultContinuationOptions_MaxAttemptsIs3`.
+- [x] `RunContinuations` skips the loop and returns
+  `ContinuationResult{Continued: false}` when zero test files were
+  created (git diff returns empty) — verified by
+  `TestRunContinuations_GitDiffGateSkipsLoop`.
+- [x] `RunContinuations` UPSTREAM during a continuation iteration
+  returns `nil` error (recoverable), writes pipeline state, sets
+  `SkipFinalChecks=true` — DIFFERENT from TDD UPSTREAM (m38.2) which
+  returns non-nil error. Verified by
+  `TestRunContinuations_UpstreamIsRecoverable`.
+- [x] `RunContinuations` calls `MergeTimingFromFile(... ,
+  ParseModeAccumulate)` after each continuation iteration — verified
+  by `TestRunContinuations_AccumulatesTimingPerIteration` asserting
+  the accumulated FilesWritten=4 after two iterations on a fixture
+  with FilesWritten=2 per iteration.
+- [x] On clean continuation finish (REMAINING==0), `RunContinuations`
+  calls the audit seam — verified by
+  `TestRunContinuations_SuccessRunsTestAudit` asserting `audit.calls
+  == 1`.
+- [x] `go test ./internal/tester/...` passes with coverage **91.7%**
+  (≥80% required).
+- [x] `stages/tester_fix.sh` and `stages/tester_continuation.sh` are
+  NOT deleted in this milestone — verified by `ls -la stages/tester_fix.sh
+  stages/tester_continuation.sh` showing both files.
+- [x] No `internal/test_audit/` or `internal/test_baseline/` packages
+  exist yet — verified by `ls internal/` (no `test_audit` or
+  `test_baseline` directories). Those land in M38.4 and M38.5.
+- [x] The implementation run is itself driven by `tekhton run
+  --milestone m38.3 --complete` — this run.
 
 ## Watch For Items Addressed
 
-- **Self-driving dogfood:** Not a testable post-condition; the run is
-  driven by Tekhton (per the milestone's own Watch For note).
-- **Completion-gate false-halt exposure:** m45 is already done (current
-  branch `theseus/Phase2`, HEAD includes the m45 commit), so this
-  Watch For is now a non-issue per the milestone's own observation.
-- **Inline-fallback verdict priority order:** locked in by
-  `TestInlineVerdictFallback_Priority` (CHANGES_REQUIRED beats APPROVED)
-  and `TestInlineVerdictFallback_ReplanWins` (REPLAN_REQUIRED beats both).
-- **"None" sentinel case + shape sensitivity:** locked in by
-  `TestNoneSentinelRE_CaseSensitive` and
-  `TestNoneSentinel_OptionalDashAndWhitespace`. Lower-case "none" is NOT
-  matched as the sentinel (matches bash regex byte-for-byte).
-- **`Report.RawBody` byte-for-byte preservation:** `ParseReviewerReport`
-  uses `os.ReadFile` then stores the result in `RawBody` before parsing.
-  `TestParseReviewerReport_RawBody_RoundTrip` asserts byte equality
-  against three fixtures.
-- **Leaf-package discipline:** `go list -deps` returns only the package
-  itself; no orchestrate/stagerunner imports.
-- **ACP-row delimiter leniency:** both em-dash AND hyphen forms parse;
-  whitespace REQUIRED around the delimiter so "parser-leaf-discipline"
-  names don't mis-segment. Both shapes covered in the fixture
-  `acp_verdicts_present.md` (rows 1 and 2 use different delimiters).
-- **`BumpFromUsage` does not mutate receiver:**
-  `TestCycleBudget_BumpFromUsage` asserts post-call `c.Current`/`c.Max`
-  unchanged.
-- **`FormatSpecialistSection` byte parity:**
-  `TestFormatSpecialistSection_BashByteParity` locks the four expected
-  byte sequences.
-
-## Observed Issues (out of scope)
-
-None. The work is narrowly scoped to the new `internal/review/` package
-and a one-line VERSION bump; no drive-by cleanup was performed.
+- **`TESTER_FIX_MAX_DEPTH=1` default is load-bearing.** Implemented at
+  `fix.go:44` as `DefaultFixMaxDepth = 1`. Covered by
+  `TestDefaultFixOptions_MaxDepthIs1`.
+- **`MAX_CONTINUATION_ATTEMPTS=3` default similarly bounded.**
+  Implemented at `continuation.go:46` as
+  `DefaultContinuationMaxAttempts = 3`. Covered by
+  `TestDefaultContinuationOptions_MaxAttemptsIs3`.
+- **Fix vs continuation UPSTREAM semantics differ.** Fix UPSTREAM is
+  not strictly modeled — the agent error propagates as a Go error since
+  the bash loop simply continues to the next attempt; tests cover the
+  agent-returned UPSTREAM path producing a non-nil error
+  (`TestRunInlineFix_UpstreamErrorPropagates`). Continuation UPSTREAM
+  returns nil error with `SkipFinalChecks=true` per
+  `TestRunContinuations_UpstreamIsRecoverable`. The TDD-style "exit 1"
+  semantic stays in `internal/tester/tdd/tdd.go`.
+- **`test_dedup` stays bash through M38.** The `TestDedup` interface
+  defines the seam; production callers will install a bash shim. The
+  fix.go production default is `noopTestDedup{}` (never skips) so
+  in-process Go tests without a wired-up dedup don't surprise-skip.
+- **`test_baseline` integration is via interface, not direct import.**
+  The `BaselineChecker` interface is defined locally in fix.go; the
+  production default `noopBaselineChecker` returns false/Unknown. M38.5
+  swaps in the native Go `internal/test_baseline` implementation.
+- **The fix loop's TEST_CMD is shell-evaluated.** `execFixTestRunner`
+  invokes `bash -c "${TestCmd}"` so users keep pipes, env-var expansion,
+  etc. Verified by `TestExecFixTestRunner_ReportsExitCode` with
+  `TEST_CMD = "exit 7"`.
+- **The fix agent uses `CLAUDE_CODER_MODEL`, not
+  `CLAUDE_TESTER_MODEL`.** `DefaultFixCoderModel = "claude-sonnet-4-6"`
+  in fix.go; `DefaultContinuationModel = "claude-sonnet-4-6"` in
+  continuation.go. Same string by coincidence today, but the constants
+  are distinct so a future model bifurcation is a one-line change.
+- **The continuation loop builds a `tester_resume` prompt.**
+  `DefaultContinuationOptions().PromptName = "tester_resume"` in
+  continuation.go; `buildContinuationPromptVars` sets
+  `CONTINUATION_CONTEXT` from the `ContinuationContextBuilder` seam.
+  The Go-side `BuildContinuationContext` referenced in the milestone
+  design does NOT yet exist; the local `defaultContextBuilder` produces
+  a minimal valid context until a future arc ports the bash version
+  fully.
 
 ## Architecture Change Proposals
 
-None. The new `internal/review/` package is a leaf addition following
-the m36.2 → m36.3 / m17 → m22 wedge pattern: pure-logic helpers land in
-their own milestone, the stage orchestrator port (m37.2) consumes them
-and retires the bash. No new cross-package dependencies; no changes to
-the prompt template engine, the proto contracts, or the bash↔Go seam.
-ARCHITECTURE.md updates land with m37.2 alongside the bash deletes
-(consistent with the convention used by m17, m22, m30 — the architecture
-entry describes the closed wedge, not the open one).
+None. The m38.3 port follows the established sub-stage port pattern.
+Two minor design clarifications worth noting (not architecture changes):
+
+1. The milestone design assumed `internal/context.BuildContinuationContext`
+   already exists in Go. It does NOT. M38.3 introduces a
+   `ContinuationContextBuilder` interface with a minimal default that
+   produces a working continuation prompt. A future arc can swap the
+   default for a richer port of `build_continuation_context` from
+   `lib/agent_helpers.sh`. This is a seam-level adaptation, not an
+   architecture change.
+
+2. The milestone design described
+   `internal/tester/fix.go::SmartTruncateTestOutput`. The implementation
+   lands `SmartTruncateTestOutput` in `internal/tester/fix_truncate.go`
+   (same `tester` package). The split keeps fix.go under the 600-line
+   soft target and isolates the pure-string transformation from the
+   orchestration concerns. Public surface is identical (same package,
+   same exported name).
 
 ## Design Observations
 
-The milestone design says to "import M36.2's verdict-token helpers" for
-case-insensitive token matching. On inspection, the M36.2 helpers
-(`internal/intake/verdict.go`, `helpers.go`) are tightly bound to the
-intake verdict vocabulary (PASS / TWEAKED / SPLIT_RECOMMENDED /
-NEEDS_CLARITY) and the token classification logic is not exported in a
-shape `internal/review/` can consume — the helpers `scanSectionFirstNonEmpty`,
-`extractSection`, and `stripSpace` are package-private; the public
-`Helpers.ParseVerdict` parses intake verdicts only.
+None. The milestone design matches reality except for the two
+clarifications above.
 
-Re-implementing the parsing inline in `internal/review/parser.go` is the
-cleanest path: the review parser needs different vocabulary anchors
-(four review tokens, not four intake tokens), different priority order
-in the fallback, different section names, and a different "None"
-sentinel predicate. The shared concept here is "scan for tokens in
-priority order" — that's three lines of Go and not worth a shared
-package for two consumers with different vocabularies.
+## Seeds Forward
 
-This matches the milestone's own Seeds Forward note: "Shared
-verdict-classifier package (post-M39 candidate): M36.2's
-`internal/intake/` verdict helpers and M37.1's `internal/review/` parser
-share token classification logic. After all stage ports complete (M39),
-an extraction into a shared `internal/verdict/` package is reasonable."
-The aspirational sharing is recorded as a Seeds Forward, not enforced
-in m37.1.
+- **M38.4 — Test audit family:** `RunAndRecordTestAudit` currently
+  delegates to a no-op `TestAuditRunner` seam. M38.4 lands
+  `internal/test_audit` and swaps the no-op for the native Go
+  implementation.
+- **M38.5 — Test baseline port:** `BaselineChecker` swaps from
+  `noopBaselineChecker` to a native Go implementation under
+  `internal/test_baseline`. fix.go is not modified.
+- **M38.6 — Main stage port:** `RunStage` will call `RunInlineFix` from
+  the `RoutingTestFailures` branch of `ValidateOutput` (m38.1), and
+  `RunContinuations` from the `RoutingPartialRun` branch. The bash
+  files delete here.
+- **Future TestDedup port:** Retires the bash-shim `TestDedup`. The
+  interface stays — the implementation just stops shelling out.
+
+## Observed Issues (out of scope)
+
+Carry-forward non-blocking notes from the m38.2 reviewer cycle (these
+target `internal/tester/tdd/tdd.go`, not m38.3 territory):
+
+- `tdd.go:122-126` — package-level seam vars unguarded by a mutex.
+  Sequential test execution safe; future `t.Parallel()` adoption
+  requires sync protection. The same caveat applies to the new seam
+  variables in fix.go (`fixAgentRunner`, etc.) and continuation.go
+  (`contextBuilder`, etc.). Recorded for the M38.6 closure.
+- `tdd.go:384` — `defaultStateWriter.WriteHalt` accepts but discards
+  the `ctx context.Context` parameter. Out of m38.3 scope; m38.6 or
+  later closure should reconcile.
+- `tdd.go:321-336` — `buildResumeFlag` whitespace divergence from
+  bash. Not a regression; m38.6 closure has the dispatch context to
+  decide.
+
+These are documented for the M38.6 reviewer cycle.

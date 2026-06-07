@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+collected 12 items
+
+tests/test_users.py
+tests/test_auth.py
+tests/test_search.py
+
+=================================== test summary ===================================
+test_user_creation_works
+=================================== block one starts ============================
+FAIL test_user_creation_works at tests/test_users.py:42
+  Setup block one line a
+  Setup block one line b
+  Setup block one line c
+  Setup block one line d
+  Setup block one line e
+  Setup block one line f
+  Setup block one line g
+  Setup block one line h
+  Setup block one line i
+  Setup block one line j
+  Setup block one line k
+  Setup block one line l
+  Setup block one line m
+test_login_with_bad_pw
+=================================== block two starts ============================
+FAIL test_login_with_bad_pw at tests/test_auth.py:88
+  Stack trace one
+  Stack trace two
+  Stack trace three
+  Stack trace four
+  Stack trace five
+  Stack trace six
+  Stack trace seven
+  Stack trace eight
+test_search_returns_hits
+=================================== block three starts ============================
+FAIL test_search_returns_hits at tests/test_search.py:120
+  Body line A
+  Body line B
+  Body line C
+  Body line D
+  Body line E
+  Body line F
+  Body line G
+  Body line H
+  Body line I
+  Body line J
+  Body line K

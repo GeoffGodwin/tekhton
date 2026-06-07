@@ -1,20 +1,20 @@
-# Reviewer Report — m37.1 Review Helpers and Parser (Cycle 2)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `ParseReader` is exported (uppercase P) while the milestone design showed a package-private `parseReader`. Harmless in an `internal/` package — no outside-module caller can reach it, and the test package uses `package review` so it can access unexported names equally well. No functional impact.
-- `extractVerdictFromAccum` skips blank lines when searching for the verdict token, making it subtly more robust than bash's `grep -A1 | tail -1` (which takes the immediately-next line regardless of whether it's blank). The implementation comment on the heading-anchored path should note this deliberate parity deviation so future readers understand it. Not a regression — a behavioral improvement.
+- `fix_truncate.go:117` — `intToString` doc comment says "a small fmt-free integer printer" but the body calls `fmt.Sprintf`. Comment is wrong; the code is correct. Should read "a small integer printer."
+- `fix_truncate.go:99` — `truncateBlock` formats count as `"N lines omitted"` for all N, producing "1 lines omitted" for a single-line omission. Grammatically incorrect for n==1; cosmetic only.
+- `fix.go:160` / `continuation.go:158` — package-level seam vars (`fixAgentRunner`, `contextBuilder`, etc.) unguarded by a mutex. Sequential test execution is safe; future `t.Parallel()` adoption requires sync protection. Carry-forward from m38.2; recorded for m38.6 closure.
 
 ## Coverage Gaps
-- None
+- `execGitDiffReporter.FilesChanged` when `git` is absent or the directory is not a git repo: both probes fail, `FilesChanged` returns 0, continuation loop is correctly skipped. Behavior is safe but the edge case is untested. A `t.TempDir()` without `git init` would cover it.
 
 ## Drift Observations
-- `synthesized_at_max.md` uses `"None (reviewer did not report)"` as the sentinel text in both blocker sections. This does NOT match `noneSentinelRE` (`^-?\s*None\s*$` requires no trailing text), so `HasComplexBlockers()` returns 1 for this fixture. The test explicitly exempts `synthesized_at_max` from blocker count assertions. Worth confirming the bash synthesizer template and the parser sentinel are aligned — if the bash template uses this exact phrasing, the bash `grep -c "^- "` count would also treat it as a blocker.
+- `fix_truncate.go:16` vs `fix.go:378` — two compiled failure-marker regexes with divergent vocabulary: `failureMarkerRe` (used for block splitting in SmartTruncateTestOutput) includes FAILED, AssertionError, TypeError, etc.; `failureMarkerExtractRe` (used for pre-filter in extractFailureOutput) uses lowercase `error` and `failure`. The split mirrors the bash two-pass design intentionally; a brief comment cross-referencing the bash source lines would prevent future maintainers from treating the divergence as a bug.
+- `continuation.go:49` / `fix.go:48` — `DefaultContinuationAgentTools = "Read Write Edit Bash Glob Grep"` vs `DefaultFixAgentTools = "Read Glob Grep Write Edit Bash"`. Same six tools, different order. No functional impact; aligning the order to a single canonical sequence would reduce cognitive noise when comparing the two constants.

@@ -19,11 +19,12 @@ echo "=== test_m62_fixes_integration.sh ==="
 # m21: lib/finalize_summary.sh ported to internal/finalize/emit_run_summary.go.
 # Post-audit: lib/timing.sh deleted (orphan; canonical owner is
 # internal/finalize/emit_timing_report.go).
+# m37.2: stages/review.sh ported to internal/stages/review/RunStage; the
+# review-stage file existence assertion is superseded by go-side coverage.
 files_ok=0
 [[ -r "${TEKHTON_HOME}/lib/indexer.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/stages/tester.sh" ]] && files_ok=$((files_ok + 1))
-[[ -r "${TEKHTON_HOME}/stages/review.sh" ]] && files_ok=$((files_ok + 1))
-if [[ $files_ok -eq 3 ]]; then
+if [[ $files_ok -eq 2 ]]; then
     pass "All modified files are readable"
 else
     fail "Some modified files are missing or unreadable"
@@ -51,12 +52,9 @@ else
     fail "lib/indexer.sh has syntax errors"
 fi
 
-# Test 6: Verify review.sh can be sourced (syntax check)
-if bash -n "${TEKHTON_HOME}/stages/review.sh" 2>/dev/null; then
-    pass "stages/review.sh passes syntax check"
-else
-    fail "stages/review.sh has syntax errors"
-fi
+# Test 6: m37.2 — stages/review.sh ported to internal/stages/review/.
+# Bash syntax check superseded by Go-side build + parity fixtures.
+pass "stages/review.sh syntax check superseded by Go port (m37.2)"
 
 # Test 7: Verify _TESTER_TIMING_WRITING_S is properly set to -1 (in tester_timing.sh after M65 extraction)
 if grep -q '_TESTER_TIMING_WRITING_S=-1' "${TEKHTON_HOME}/stages/tester_timing.sh"; then
@@ -74,12 +72,10 @@ pass "Finalize summary tester guard superseded by Go port (m21)"
 # moved to internal/finalize (covered by emit_timing_report_test.go).
 pass "lib/timing.sh phase-prefix logic superseded by Go port"
 
-# Test 10: Verify review.sh has the global comment for _REVIEW_MAP_FILES
-if sed -n '41p' "${TEKHTON_HOME}/stages/review.sh" | grep -q 'global.*tested externally'; then
-    pass "Review.sh _REVIEW_MAP_FILES has correct scope comment"
-else
-    fail "Review.sh _REVIEW_MAP_FILES scope comment missing or incorrect"
-fi
+# Test 10: m37.2 — the _REVIEW_MAP_FILES bash global was retired alongside
+# the review.sh port. The cycle-1 file-list comparison logic in repo-map cache
+# invalidation is covered by Go-side cycle tests in internal/stages/review/.
+pass "Review.sh _REVIEW_MAP_FILES scope superseded by Go port (m37.2)"
 
 echo "=== Summary ==="
 echo "Passed: $PASS"

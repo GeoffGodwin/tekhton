@@ -1,0 +1,10 @@
+{
+  "verdict": "pass",
+  "exit_reason": "synthesized_at_max",
+  "agent_calls": 3,
+  "metadata": {
+    "verdict": "APPROVED_WITH_NOTES",
+    "commit_gate_tripped": "true",
+    "synthesized_report": "true"
+  }
+}

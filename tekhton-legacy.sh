@@ -1006,12 +1006,10 @@ source "${TEKHTON_HOME}/lib/orchestrate.sh"
 # m36.3: stages/intake.sh, lib/intake_helpers.sh, lib/intake_verdict_handlers.sh
 # deleted. Intake stage runs entirely via the GoImpl dispatch in stagerunner.
 source "${TEKHTON_HOME}/stages/coder.sh"
-# m34.1 + m35.2 + m36.1 + m36.3: the docs, security, architect, and intake
-# stages ported to Go (internal/stages/{docs,security,architect,intake}/).
-# All run via the GoImpl dispatch in stagerunner; there are no bash residues
-# to source here.
-source "${TEKHTON_HOME}/stages/review.sh"
-source "${TEKHTON_HOME}/stages/review_helpers.sh"
+# m34.1 + m35.2 + m36.1 + m36.3 + m37.2: the docs, security, architect,
+# intake, and review stages ported to Go (internal/stages/{docs,security,
+# architect,intake,review}/). All run via the GoImpl dispatch in stagerunner;
+# there are no bash residues to source here.
 source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit_detection.sh"
 source "${TEKHTON_HOME}/lib/test_audit_verdict.sh"

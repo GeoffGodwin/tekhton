@@ -1,0 +1,10 @@
+{
+  "request": {
+    "stage": "review",
+    "task": "Add feature requires replan"
+  },
+  "env": {
+    "MAX_REVIEW_CYCLES": "3"
+  },
+  "replan_decision": "continue"
+}

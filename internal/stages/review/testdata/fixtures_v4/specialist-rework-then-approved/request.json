@@ -1,0 +1,11 @@
+{
+  "request": {
+    "stage": "review",
+    "task": "Add login form"
+  },
+  "env": {
+    "MAX_REVIEW_CYCLES": "3"
+  },
+  "specialist_blockers": "- input not sanitized on /login\n",
+  "build_gate_behaviors": ["pass"]
+}

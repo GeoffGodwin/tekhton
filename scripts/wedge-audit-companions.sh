@@ -235,6 +235,34 @@ if [[ -d internal/stages/intake ]] || [[ -d internal/intake ]]; then
     unset _intake_threshold_hits
 fi
 
+# m37.2 (Phase 5, stage-port arc): stages/review.sh + stages/review_helpers.sh
+# ported to internal/stages/review/ on top of the m37.1 internal/review/ leaf
+# package. Re-introducing either bash file silently forks the review-stage
+# contract and breaks the StageDef.GoImpl dispatch precedence the m37 arc
+# closes. The parser, cycle budget, and specialist helpers live in
+# internal/review/ (m37.1); the stage entry + cycle loop + rework matrix +
+# post-loop specialist branch live in internal/stages/review/ (m37.2).
+for _review_bash in stages/review.sh stages/review_helpers.sh; do
+    if [[ -f "$_review_bash" ]]; then
+        printf 'wedge-audit: m37.2 violation — %s was ported in m37.2:\n' "$_review_bash" >&2
+        printf '  %s re-introduced\n' "$_review_bash" >&2
+        printf 'The review stage lives in internal/stages/review/; pure-logic helpers in\n' >&2
+        printf 'internal/review/. Bash callers reach it via the StageDef.GoImpl\n' >&2
+        printf 'dispatch wedge in internal/stagerunner/.\n' >&2
+        companion_failures=$(( companion_failures + 1 ))
+    fi
+done
+unset _review_bash
+
+# m37.2 (Phase 5): assert StageReview carries GoImpl and NOT Helpers. A
+# Helpers entry would cause a 127 exit if any fallback path ever reaches
+# bash (both bash files are deleted).
+if grep -nE 'StageReview' internal/stagerunner/helpers.go | grep -E 'Script:|Helpers:' >/dev/null 2>&1; then
+    printf 'wedge-audit: m37.2 violation — DefaultStageDefs[StageReview] still lists Script or Helpers.\n' >&2
+    printf '  Review is Go-native — drop both fields; GoImpl is the only valid entry.\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1

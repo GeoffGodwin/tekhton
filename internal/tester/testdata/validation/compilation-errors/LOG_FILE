@@ -1,0 +1,4 @@
+Tester agent log
+[error] Compilation failed for testPath=internal/foo/broken_test.go:42: unexpected identifier
+[error] Failed to load module internal/foo
+[error] Compilation failed for testPath=internal/foo/broken_test.go:99: type mismatch

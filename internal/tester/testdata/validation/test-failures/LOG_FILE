@@ -1,0 +1,5 @@
+Tester agent log
+   FAILED  test_login (auth_test.AuthTests)
+   -1: AssertionError: expected 200 but got 401
+   -2: AssertionError: missing token
+PASS test_health (flow_test.FlowTests)

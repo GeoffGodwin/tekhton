@@ -1,0 +1,3 @@
+Tester agent log
+Turn limit reached — agent terminated before producing TESTER_REPORT.md
+Files modified: internal/foo/foo_test.go, internal/bar/bar_spec.py

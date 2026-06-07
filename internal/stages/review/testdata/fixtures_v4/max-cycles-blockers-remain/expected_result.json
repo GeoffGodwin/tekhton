@@ -1,0 +1,13 @@
+{
+  "verdict": "fail",
+  "exit_reason": "blockers_remain",
+  "agent_calls": 5,
+  "next_action": "rework",
+  "metadata": {
+    "verdict": "CHANGES_REQUIRED",
+    "max_cycles": "3",
+    "cycles_done": "3",
+    "complex_blockers": "1",
+    "simple_blockers": "0"
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/stages/cleanup"
 	"github.com/geoffgodwin/tekhton/internal/stages/docs"
 	intakestage "github.com/geoffgodwin/tekhton/internal/stages/intake"
+	reviewstage "github.com/geoffgodwin/tekhton/internal/stages/review"
 	securitystage "github.com/geoffgodwin/tekhton/internal/stages/security"
 )
 
@@ -202,9 +203,11 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageSecurity: {
 		GoImpl: securitystage.RunStage,
 	},
+	// m37.2: review is the sixth Go-native stage. GoImpl takes the dispatch;
+	// Script and Helpers are dropped because the bash files (stages/review.sh
+	// + stages/review_helpers.sh) are deleted in the same milestone.
 	proto.StageReview: {
-		Script:  "stages/review.sh",
-		Helpers: []string{"stages/review_helpers.sh"},
+		GoImpl: reviewstage.RunStage,
 	},
 	proto.StageTester: {
 		Script: "stages/tester.sh",

@@ -86,7 +86,7 @@ in-process dispatch. LOC delta counts bash deleted (stage + helpers + shim).
 | **security** | **done — Go-native via `internal/stages/security/RunStage`; helpers in `internal/security/`; m35.3 ban + parity gate live** | **m35**   | **407** |
 | **architect** | **done — Go-native via `internal/stages/architect/RunStage`; plan parser + sr/jr router in package; m36.1 ban + parity gate live** | **m36.1**   | **414** |
 | **intake**    | **done — Go-native via `internal/stages/intake/RunStage`; helpers in `internal/intake/`; m36.3 ban + 8-scenario parity gate live; M36.2 CLI shim retired** | **m36.3** | **725 (377 stage + 267 helpers + 35 verdict + 46 prompts/passthrough tests)** |
-| review    | in flight                                             | m37       | TBD         |
+| **review**    | **done (m37 — review stage ported; 2 bash files deleted; cycle loop in-stage)** | **m37.2** | **463 (307 stage + 78 helpers + comments)** |
 | tester    | in flight                                             | m38       | TBD         |
 | coder     | in flight                                             | m39       | TBD         |
 

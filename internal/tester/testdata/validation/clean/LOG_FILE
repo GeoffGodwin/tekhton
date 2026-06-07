@@ -1,0 +1,4 @@
+Tester agent log
+All tests passed: 7/7
+PASS internal/foo
+PASS internal/bar

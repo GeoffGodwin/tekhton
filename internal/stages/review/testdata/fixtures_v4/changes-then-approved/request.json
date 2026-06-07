@@ -1,0 +1,10 @@
+{
+  "request": {
+    "stage": "review",
+    "task": "Refactor auth middleware"
+  },
+  "env": {
+    "MAX_REVIEW_CYCLES": "3"
+  },
+  "build_gate_behaviors": ["pass"]
+}

@@ -1,0 +1,9 @@
+{
+  "request": {
+    "stage": "review",
+    "task": "Add feature X"
+  },
+  "env": {
+    "MAX_REVIEW_CYCLES": "3"
+  }
+}

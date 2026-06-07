@@ -1,0 +1,10 @@
+{
+  "verdict": "pass",
+  "exit_reason": "approved",
+  "agent_calls": 1,
+  "next_action": "approve",
+  "metadata": {
+    "verdict": "APPROVED",
+    "cycles_done": "1"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "label": "Coder (rework cycle 1)",
+  "agent_result": {
+    "outcome": "success",
+    "exit_code": 0,
+    "turns_used": 20
+  }
+}

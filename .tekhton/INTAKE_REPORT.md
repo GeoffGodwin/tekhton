@@ -2,14 +2,17 @@
 PASS
 
 ## Confidence
-92
+93
 
 ## Reasoning
-- Scope is precisely defined: 11 Go files to create, 6 fixture directories, 3 files to modify, 2 files to delete — all with approximate LOC targets
-- Acceptance criteria are highly specific and machine-verifiable: grep commands, `go test -run TestParity`, coverage threshold ≥75%, `go vet`, `gofmt -l`, byte-for-byte diff assertions
-- Design section provides detailed pseudocode for every file (`run.go`, `cycle.go`, `rework.go`, `specialist.go`, `skip.go`) — two competent developers would land structurally identical implementations
-- Sequencing mandate (capture fixtures → wire GoImpl → delete bash) is unambiguous and repeated in both the Design section and the Watch For section
-- Key regressions are explicitly called out: off-by-one on MAX_REVIEW_CYCLES, coder_rework.prompt.md vs coder.prompt.md, state-file mutation prohibition, skip-heuristic bypass of specialist branch
-- Dependency on m37.1 is declared; the AgentInvoker seam pattern is referenced to an existing example (M36/intake stage)
-- No user-facing config keys, formats, or files are introduced — migration impact section is correctly absent
-- No UI components — UI testability criterion is not applicable
+- Scope is precisely bounded: six files to create, two bash files explicitly NOT deleted, two packages (internal/test_audit, internal/test_baseline) explicitly NOT created yet
+- Acceptance criteria are specific, testable, and named — regression-canary tests are called out by exact function name (TestDefaultFixOptions_MaxDepthIs1, TestDefaultContinuationOptions_MaxAttemptsIs3)
+- Go interface stubs provided inline for all four exported types (RunInlineFix, RunContinuations, BaselineChecker, TestDedup) with exact field names and default values
+- Bash equivalents are cited with line numbers, removing all ambiguity about what the Go port must replicate
+- The load-bearing UPSTREAM semantic difference (TDD=fatal/non-nil, continuation=recoverable/nil) is called out explicitly in both Design and Watch For, and an acceptance criterion verifies the recoverable path
+- The interface-shim pattern is cross-referenced to M32.1 precedent — no new patterns introduced
+- Dedup optimization preservation is verified by a concrete test (exactly ONE TEST_CMD invocation on consecutive calls with no source change)
+- No user-facing config or format changes; no Migration Impact section required
+- No UI components; UI testability criterion not applicable
+- Coverage floor (≥80%) stated explicitly
+- Watch For section covers the five highest-risk misimplementations (depth default, attempts default, UPSTREAM semantics, model selection fix vs continuation, prompt template selection)
