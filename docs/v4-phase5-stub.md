@@ -90,6 +90,52 @@ in-process dispatch. LOC delta counts bash deleted (stage + helpers + shim).
 | tester    | in flight                                             | m38       | TBD         |
 | coder     | in flight                                             | m39       | TBD         |
 
+### m47 — Envelope-over-error rule for every Go-impl stage
+
+m47 added a cross-stage contract every future GoImpl stage MUST follow:
+
+> Once the agent has produced a parseable verdict envelope, the stage MUST
+> return that envelope. Any post-parse sub-call failures attach to the
+> envelope as `Metadata["subprocess_warnings"]` JSON-list entries — they
+> do NOT short-circuit with a Go-level error.
+
+Two reserved Metadata keys on `proto.StageResultV1`:
+
+- `subprocess_warnings`: JSON-encoded `[]string` of post-verdict sub-call
+  failures (plural; multiple sub-calls can fail in one cycle — the build
+  gate AND the specialist rework can both error and both warnings survive).
+  Use `internal/stages/review.appendSubprocessWarning` as the canonical
+  appender; copy the shape into new stage packages.
+- `subprocess_warning`: single-string fallback the stagerunner adapter
+  writes when a GoImpl returns both a non-nil result AND a non-nil error.
+  This is defense-in-depth — Goal 1 stage-level classifications eliminate
+  the offending paths; the adapter gate catches future regressions before
+  they reach the operator.
+
+**Classification rule for return-err sites.** When porting a stage to Go, audit
+every `return nil, err` site. Each is either:
+
+- **Pre-parse infrastructure failure** — agent dispatch, prompt render,
+  report file read, replan dialog. These STAY as `return nil, err`. The
+  stage has no parseable verdict and the runner needs the structural
+  failure signal.
+- **Post-parse subprocess failure** — build gate, specialist runner, rework
+  build-fix escalation, post-rework reviewer cycle. These CONVERT to
+  envelope warnings: append the error message via
+  `appendSubprocessWarning(res, msg)` and return the originally-parsed
+  verdict's result with `err == nil`.
+
+Specific exception: when the post-parse verdict is itself CHANGES_REQUIRED
+(i.e. the parsed verdict is already a fail), a subprocess failure in the
+rework path remains a hard fail — the rule is "subprocess errors don't
+override the parsed verdict," not "subprocess errors are always warnings."
+
+**m38.6 (tester port) inherits this contract.** The tester stage MUST audit
+its return-err sites the same way. Implementers: copy
+`internal/stages/review/warnings.go` (44 lines, hermetic), classify each
+site, document the classification inline next to the `return nil, err` with
+an `// m47 classification: ...` comment.
+
 The security row flipped to **done** at m35.3 close (v4.35.0). The architect
 row flipped to **done** at m36.1 close (v4.43.0) — `stages/architect.sh`
 deleted, `internal/stages/architect/` ported with `RunStage`, plan parser,

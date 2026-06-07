@@ -399,6 +399,54 @@ func TestBashAdapter_Run_GoDispatch_StampsDuration(t *testing.T) {
 	}
 }
 
+// TestAdapter_GoImplBothResultAndErrorPrefersResult asserts the m47
+// envelope-over-error defense-in-depth gate: when a GoImpl returns BOTH a
+// non-nil *StageResultV1 (with a pass verdict) AND a non-nil error, the
+// adapter discards the error, records its message onto
+// result.Metadata["subprocess_warning"], and returns the result with err=nil.
+// Without this gate, a single failing sub-call inside a stage silently
+// overrode an APPROVED verdict (m38.4 + m46 manifest false-failure).
+func TestAdapter_GoImplBothResultAndErrorPrefersResult(t *testing.T) {
+	wantWarning := "downstream subprocess: exit status 1"
+	a := &BashAdapter{
+		BashBin: "/nonexistent/bash",
+		Stages: map[string]StageDef{
+			proto.StageReview: {
+				GoImpl: func(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error) {
+					return &proto.StageResultV1{
+						Proto:      proto.StageResultProtoV1,
+						Stage:      req.Stage,
+						Verdict:    proto.VerdictPass,
+						ExitReason: "approved",
+					}, errors.New(wantWarning)
+				},
+			},
+		},
+	}
+	req := &proto.StageRequestV1{
+		Proto:      proto.StageRequestProtoV1,
+		Stage:      proto.StageReview,
+		ResultFile: "/tmp/x",
+	}
+	res, err := a.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run: err=%v (m47 requires nil)", err)
+	}
+	if res == nil {
+		t.Fatal("Run: res=nil (m47 requires non-nil envelope)")
+	}
+	if res.Verdict != proto.VerdictPass {
+		t.Errorf("verdict=%q want pass (envelope must win)", res.Verdict)
+	}
+	if res.Metadata == nil {
+		t.Fatal("Metadata=nil; expected subprocess_warning")
+	}
+	got := res.Metadata["subprocess_warning"]
+	if got != wantWarning {
+		t.Errorf("Metadata[\"subprocess_warning\"]=%q want %q", got, wantWarning)
+	}
+}
+
 func TestStageDefForFallback(t *testing.T) {
 	a := &BashAdapter{}
 	if _, ok := a.stageDefFor(proto.StageCoder); !ok {

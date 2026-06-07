@@ -121,6 +121,17 @@ func (a *BashAdapter) stageDefFor(stage string) (StageDef, bool) {
 // tests can pin DurationSec; otherwise the stage's own duration (if set) is
 // preserved. Stamps the result envelope's proto tag and stage name so callers
 // of in-process stages see the same envelope shape as bash callers.
+//
+// m47 envelope-over-error rule (defense-in-depth): when a GoImpl returns BOTH
+// a non-nil *StageResultV1 AND a non-nil error, the result wins. The error is
+// recorded onto res.Metadata["subprocess_warning"] so it stays observable, but
+// the returned err is cleared to nil — downstream callers (runner, finalize
+// hook chain) read the envelope's Verdict as the source of truth. Without
+// this gate, a single failing sub-call inside a stage (build gate flake,
+// specialist runner exec error) silently overrode an APPROVED verdict and
+// produced the m38.4 + m46 manifest false-failure (auto-advance runs on
+// 2026-06-06 / 2026-06-07). Goal 1 in stage code eliminates the offending
+// sites; this gate catches future regressions before they reach an operator.
 func (a *BashAdapter) runGo(ctx context.Context, req *proto.StageRequestV1, def StageDef) (*proto.StageResultV1, error) {
 	now := a.Now
 	if now == nil {
@@ -136,6 +147,17 @@ func (a *BashAdapter) runGo(ctx context.Context, req *proto.StageRequestV1, def 
 			res.Stage = req.Stage
 		}
 		res.EnsureProto()
+	}
+	if res != nil && err != nil {
+		fmt.Fprintf(os.Stderr,
+			"stagerunner: %s emitted both StageResult (verdict=%s) and "+
+				"error (%v) — preferring envelope, discarding error\n",
+			req.Stage, res.Verdict, err)
+		if res.Metadata == nil {
+			res.Metadata = map[string]string{}
+		}
+		res.Metadata["subprocess_warning"] = err.Error()
+		err = nil
 	}
 	return res, err
 }

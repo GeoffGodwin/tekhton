@@ -2,6 +2,8 @@ package review
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -78,6 +80,53 @@ func TestAppendToFile_BytePreservation(t *testing.T) {
 	want := "ORIGINAL\n\n## Specialist Blockers\n- broken auth\n"
 	if body != want {
 		t.Errorf("byte-parity diff:\nwant:\n%q\ngot:\n%q", want, body)
+	}
+}
+
+// TestFinalizeApproved_SpecialistRunnerErrorDoesNotOverrideVerdict asserts
+// the m47 envelope-over-error rule for the specialist-runner-error branch:
+// when specialistRunner.Run returns a non-nil error, finalizeApproved MUST
+// return the approvedResult (verdict=pass) with the error recorded as a
+// subprocess_warnings entry — NOT a Go-level error that would override the
+// originally-parsed APPROVED verdict.
+func TestFinalizeApproved_SpecialistRunnerErrorDoesNotOverrideVerdict(t *testing.T) {
+	_, req := setupProject(t)
+	cfg := loadConfig(req)
+	report := &reviewparse.Report{Verdict: reviewparse.VerdictApprovedWithNotes}
+	budget := &reviewparse.CycleBudget{Current: 1, Max: 3}
+
+	specErr := errors.New("specialist runner exec failed")
+	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{}, nil,
+		&fakeSpecialist{Err: specErr})
+	defer restore()
+
+	res, err := finalizeApproved(context.Background(), req, &cfg, report, budget, 1, &nullLogger{})
+	if err != nil {
+		t.Fatalf("finalizeApproved: err=%v (m47 requires nil)", err)
+	}
+	if res == nil {
+		t.Fatal("finalizeApproved: res=nil (m47 requires non-nil approvedResult)")
+	}
+	if res.Verdict != proto.VerdictPass {
+		t.Errorf("verdict=%q want pass (APPROVED verdict must survive)", res.Verdict)
+	}
+	if res.ExitReason != "approved" {
+		t.Errorf("exit_reason=%q want approved", res.ExitReason)
+	}
+	// Subprocess warning recorded as JSON array (m47 plural-key contract).
+	raw := res.Metadata["subprocess_warnings"]
+	if raw == "" {
+		t.Fatalf("Metadata[\"subprocess_warnings\"] empty; expected the specialist runner error")
+	}
+	var warnings []string
+	if err := json.Unmarshal([]byte(raw), &warnings); err != nil {
+		t.Fatalf("subprocess_warnings not JSON: %v (raw=%q)", err, raw)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings len=%d want 1; got %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "specialist runner exec failed") {
+		t.Errorf("warning %q does not reference the specialist error", warnings[0])
 	}
 }
 

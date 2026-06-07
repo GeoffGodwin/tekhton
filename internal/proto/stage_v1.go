@@ -69,17 +69,27 @@ type StageRequestV1 struct {
 //   - tester: "fix" | "pass"
 //   - intake: "reject" | "accept" | "tweak"
 //   - other stages: empty
+//
+// Metadata carries machine-readable annotations the stage emits alongside the
+// verdict. m47 introduced two reserved keys:
+//   - "subprocess_warnings": JSON array string of post-verdict sub-call
+//     failures the stage continued past (build gate flake, specialist runner
+//     error, etc.). Each warning is appended; never replaced.
+//   - "subprocess_warning": single-string fallback the stagerunner adapter
+//     writes when a Go-impl stage returns both a non-nil result AND a non-nil
+//     error (envelope-over-error gate).
 type StageResultV1 struct {
-	Proto        string   `json:"proto"`
-	Stage        string   `json:"stage"`
-	Verdict      string   `json:"verdict"`
-	ExitReason   string   `json:"exit_reason"`
-	AgentCalls   int      `json:"agent_calls"`
-	FilesTouched []string `json:"files_touched,omitempty"`
-	NextAction   string   `json:"next_action,omitempty"`
-	DurationSec  int      `json:"duration_sec"`
-	HumanAction  bool     `json:"human_action_required"`
-	Error        string   `json:"error,omitempty"`
+	Proto        string            `json:"proto"`
+	Stage        string            `json:"stage"`
+	Verdict      string            `json:"verdict"`
+	ExitReason   string            `json:"exit_reason"`
+	AgentCalls   int               `json:"agent_calls"`
+	FilesTouched []string          `json:"files_touched,omitempty"`
+	NextAction   string            `json:"next_action,omitempty"`
+	DurationSec  int               `json:"duration_sec"`
+	HumanAction  bool              `json:"human_action_required"`
+	Error        string            `json:"error,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // ErrInvalidStageRequest is returned by Validate when the envelope is malformed.

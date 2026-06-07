@@ -59,6 +59,9 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 
 	agentRes, err := invokeReviewerAgent(ctx, cfg, budget.Current, limit, priorBlockers)
 	if err != nil {
+		// m47 classification: pre-parse infrastructure error. The reviewer
+		// agent could not be dispatched, so there is no verdict envelope to
+		// preserve. Propagate to the runner.
 		return nil, err
 	}
 	out := &cycleOutcome{
@@ -100,6 +103,9 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 		// Synthesize-at-max: build the bash-byte-identical fallback report,
 		// trip the commit gate, return synthesized-at-max.
 		if err := synthesizeMinimalReport(cfg.ReviewerReportFile, cfg.ReviewerReportFileRaw); err != nil {
+			// m47 classification: synthesize-at-max IS the envelope-emission
+			// step on this branch; if it fails, there is no envelope to
+			// preserve and the runner must record a synth-path failure.
 			return nil, fmt.Errorf("synthesize minimal report: %w", err)
 		}
 		if err := tripCommitGate(cfg, "reviewer_did_not_produce_report"); err != nil {
@@ -112,6 +118,9 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 	// 3. Parse the reviewer report.
 	report, err := reviewparse.ParseReviewerReport(cfg.ReviewerReportFile)
 	if err != nil {
+		// m47 classification: pre-parse error. Without a parsed verdict the
+		// stage has nothing to preserve — propagate so the runner records a
+		// structural failure.
 		return nil, fmt.Errorf("cycle %d: parse report: %w", budget.Current, err)
 	}
 	out.Report = report
@@ -121,6 +130,10 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 	if report.Verdict == reviewparse.VerdictReplanRequired {
 		decision, err := triggerReplan(ctx, cfg, cfg.ReviewerReportFile)
 		if err != nil {
+			// m47 classification: triggerReplan drives an out-of-band human
+			// dialog. A failure to run it is structural — the operator
+			// cannot have signalled intent, so we propagate rather than
+			// silently treating it as approved.
 			return nil, err
 		}
 		switch decision {
@@ -154,10 +167,14 @@ func invokeReviewerAgent(ctx context.Context, cfg *config, cycle, limit int, pri
 
 	body, err := prompt.Render(cfg.PromptsDir, "reviewer", vars)
 	if err != nil {
+		// m47 classification: pre-parse failure — the reviewer agent never
+		// runs without a rendered prompt.
 		return nil, fmt.Errorf("render reviewer prompt: %w", err)
 	}
 	promptFile, cleanup, err := writePromptTmpFile(body)
 	if err != nil {
+		// m47 classification: pre-parse failure — the reviewer agent never
+		// runs without a prompt file on disk.
 		return nil, fmt.Errorf("write reviewer prompt: %w", err)
 	}
 	defer cleanup()

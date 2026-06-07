@@ -4,113 +4,163 @@
 
 ## What Was Implemented
 
-Milestone **m46 — Replan Detector Body-Grep + Auto-Advance Commit-Skip Cascade**.
-Two narrow fixes that together restore auto-advance commit cadence in the
-face of the 2026-06-06 m37.2 false-positive that silently squashed ~10h of
-auto-advance work (m37.2, m38.1, m38.2, m38.3) into one manual commit.
+Milestone **m47 — Stage Verdict Envelope is the Source of Truth: Stop Letting
+Subprocess Errors Override a PASS Verdict**. Three changes that together
+prevent the m38.4 + m46 manifest false-failure pattern (auto-advance runs on
+2026-06-06 / 2026-06-07 where the reviewer emitted APPROVED_WITH_NOTES but
+the pipeline reported `disposition: failure / error_class: review` because a
+post-verdict sub-call returned a Go-level error that overrode the envelope).
 
-### Goal 1 — Heading-anchored `detect_replan_required`
+### Goal 1 — Source-level reclassification of return-err sites in review
 
-Replaced `lib/replan_midrun.sh::detect_replan_required`'s body-grep
-(`grep -qi "REPLAN_REQUIRED" "$file"`) with an awk-based heading-anchored
-verdict extractor. The new logic mirrors `internal/review/parser.go::extractVerdictFromAccum`:
+Audited every `return nil, err` site in `internal/stages/review/`. Each is
+either pre-parse infrastructure (stays as error return — runner needs the
+structural signal) or post-parse subprocess failure (converts to
+`Metadata["subprocess_warnings"]` envelope warning + returns the originally-
+parsed verdict's envelope with `err == nil`).
 
-- Handles both `## Verdict\nVALUE` (heading + next-non-blank-line) and
-  `## Verdict VALUE` (inline) shapes.
-- Case-insensitive on the value (matches the Go parser's
-  `strings.ToUpper` normalization).
-- Body-text mentions of REPLAN_REQUIRED in `## Non-Blocking Notes`,
-  `## Drift Observations`, `## Coverage Gaps`, etc., no longer trigger
-  the override dialog — fixes the 2026-06-06 false-positive at its root.
+**Converted site (the m47 culprit):** `specialist.go:111` — the post-
+specialist `runOneCycle` error inside the SpecialistRework branch. Pre-m47
+this overrode an originally-parsed APPROVED verdict whenever the specialist
+runner spawned a post-specialist reviewer cycle that itself failed. Post-m47
+it appends to `subprocess_warnings` and returns `approvedResult(report)` with
+nil error. The specialist runner error path (line 49) and the
+`invokeCoderRework` / `invokeBuildFixMinimal` failure paths in the rework
+branch are now also recorded as subprocess warnings (they were already log-
+only no-ops, now they leave a machine-readable trace).
 
-### Goal 2 — Operator override clears the commit-skip sentinels
+**Annotated pre-parse sites (no behavior change):** six sites in `cycle.go`
+(invokeReviewerAgent, synthesizeMinimalReport, ParseReviewerReport,
+triggerReplan, render reviewer prompt, write reviewer prompt) and one in
+`run.go` (runOneCycle err propagation in the main cycle loop). Each
+carries an `// m47 classification: pre-parse ...` comment so the contract
+is visible inline — m38.6 (tester port) inherits the same audit
+requirement.
 
-- Added `_clear_commit_skip_sentinels()` to `lib/replan_midrun.sh`. Removes
-  `.tekhton/.final_check_result`, `.tekhton/.final_check_reason`, and
-  `.tekhton/.commit_decision`. Idempotent (returns 0 even if no sentinels
-  exist) so the dispatcher never fails on a clean state.
-- Extracted the inline case dispatch from `trigger_replan` into a new
-  testable `handle_replan_choice CHOICE [RATIONALE]` function. Every
-  non-replan branch (`r`, `s`, `c`, `a`) now calls
-  `_clear_commit_skip_sentinels` before returning — so the operator's
-  intent ("ignore the false-positive verdict, proceed") implies "and
-  clear the sentinel that the false-positive set."
-- Added two new `warn` calls in `lib/finalize_commit.sh::_hook_commit`
-  — one at each silent-skip site (`exit_code != 0` branch and
-  FINAL_CHECK_RESULT-non-zero branch). Both warns contain the literals
-  `_hook_commit` and `skip` so the next failure of this shape surfaces
-  in operator-visible log output rather than taking ~10h to notice.
+**Hard fail preserved:** the `post-specialist-retry` build gate failure
+path at `specialist.go:104` is intentionally kept as `failResult(...)`
+per the m47 Watch For — when the build is broken AND a corrective coder
+pass failed to fix it, the only correct verdict is fail.
 
-### Goal 3 — Regression guards
+### Goal 2 — Adapter-level envelope-over-error gate (defense-in-depth)
 
-- **`tests/test_replan_detector_verdict_only.sh`** (new, 218 lines): Seven
-  scenarios exercising the heading-anchored detector — heading-then-value,
-  inline same-line, false-positive body mentions, missing verdict heading,
-  lowercase verdict, APPROVED baseline, REPLAN_ENABLED=false suppression.
-  Scenario 2 is the explicit regression guard for the 2026-06-06 bug.
-- **`tests/test_autoadvance_commit_after_override.sh`** (new, 188 lines):
-  Six scenarios driving the override-then-sentinel-clear path —
-  `[c]` lowercase, `[C]` uppercase, `[s]` Split, `[a]` Abort,
-  `_final_check_result_read` returning 0 after clear, and idempotent
-  clear when no sentinels exist.
-- **`tests/test_replan_detect.sh`** (modified, one scenario): flipped the
-  "REPLAN_REQUIRED in body should trigger" greedy-match scenario to
-  assert the opposite — the new heading-anchored detector ignores body
-  mentions.
+`internal/stagerunner/adapter.go::runGo()`: when a GoImpl returns BOTH a
+non-nil `*StageResultV1` AND a non-nil error, the adapter logs to stderr,
+records the error message on `result.Metadata["subprocess_warning"]`
+(singular — adapter-level), clears the error to nil, and returns the
+envelope. Future stage-code regressions can never silently override an
+emitted verdict — even if a stage author forgets to follow the Goal 1
+classification rule, the adapter catches the leak before the runner sees it.
+
+### Envelope schema
+
+Added `Metadata map[string]string` to `proto.StageResultV1` with two
+reserved keys documented in the type comment:
+
+- `subprocess_warnings` (plural — used by stage code via
+  `appendSubprocessWarning`): JSON-array string format; multiple warnings
+  append, never overwrite.
+- `subprocess_warning` (singular — used by the adapter gate): single-string
+  fallback for the defense-in-depth path.
+
+New file `internal/stages/review/warnings.go` (48 lines): the
+`appendSubprocessWarning(res, msg)` helper that future Go stages copy.
+Hermetic JSON marshalling — falls back to a scalar value if the prior
+field is malformed, so the field is always observable.
+
+### Goal 3 — Regression tests
+
+Four new tests:
+
+- **`TestRunStage_PreservesPassEnvelopeOnSpecialistReworkFailure`**
+  (run_test.go) — end-to-end RunStage drive: APPROVED verdict, specialist
+  blockers, build gate flake on post-specialist-rework then recover on
+  retry. Pre-m47 this combination returned `(nil, err)`; post-m47 it
+  returns the pass envelope.
+- **`TestRunStage_RecordsSubprocessWarningOnPostSpecialistCycleError`**
+  (run_test.go) — exercises the exact specialist.go:111 site the
+  classification table calls out. Reviewer cycle 1 = APPROVED, specialist
+  returns blockers, post-specialist reviewer cycle errors. Asserts
+  verdict=pass + `Metadata["subprocess_warnings"]` contains
+  `post_specialist_cycle` as a JSON-list entry.
+- **`TestFinalizeApproved_SpecialistRunnerErrorDoesNotOverrideVerdict`**
+  (specialist_test.go) — directly drives `finalizeApproved` with a
+  specialist runner that errors. Asserts the approved verdict survives
+  and the runner error is recorded as a single subprocess_warnings entry.
+- **`TestAdapter_GoImplBothResultAndErrorPrefersResult`**
+  (adapter_test.go) — drives the adapter-level gate. GoImpl returns both
+  a pass result and an error; asserts the adapter clears err to nil and
+  populates `Metadata["subprocess_warning"]`.
+
+Plus the shim-boundary test:
+
+- **`tests/test_stage_envelope_overrides_subprocess_err.sh`** (new, 165
+  lines, shellcheck-clean, skips cleanly when the binary isn't built) —
+  drives `tekhton stage emit` to verify the envelope JSON shape carries
+  the new Metadata field; hand-authors a Metadata-bearing envelope to
+  verify the m47 plural-key contract (subprocess_warnings as a JSON-array
+  string) parses cleanly; back-compat check that envelopes without
+  Metadata still round-trip. 9 assertions, all pass.
 
 ## Root Cause (bugs only)
 
-**Bug 1 — Body-grep false-positive.** `lib/replan_midrun.sh:22`'s
-`grep -qi "REPLAN_REQUIRED" "$report_file"` was a case-insensitive
-substring search against the full report body. The 2026-06-06 m37.2
-reviewer report had verdict `APPROVED_WITH_NOTES` but mentioned
-`REPLAN_REQUIRED` three times in `## Non-Blocking Notes` (the reviewer
-was discussing the replan handler implementation). Substring-only match
-collapsed verdict-declaration semantics into body-mention semantics,
-falsely tripping the override dialog.
-
-**Bug 2 — Commit-skip sentinel survives operator override.** The dialog
-trigger upstream of `trigger_replan` wrote `1` to
-`.tekhton/.final_check_result`. The operator's `[c] Continue` was
-intended to override the verdict, but the dispatcher returned 0 without
-clearing the sentinel. On every subsequent auto-advance iteration,
-`lib/finalize_commit.sh::_hook_commit` (line 186) read the persisted
-sentinel via `_final_check_result_read`, hit `_write_commit_decision
-"skipped"` at line 196, and returned 0 with no operator-visible signal.
-Four full pipeline cycles ran cleanly (causal log records `pipeline_end
-exit_code=0` for each), but zero commits landed — 9,139 lines of new Go
-accumulated in the working tree until the operator manually squashed.
+The Go-side review stage (`internal/stages/review/` — ported in m37.2) had
+eight `return nil, err` sites. The runner translates a non-nil Go error
+into `disposition: failure / error_class: review`. After cycle 1 produces
+an APPROVED verdict, the `finalizeApproved` path runs the specialist post-
+loop branch. If that branch needs a post-specialist reviewer cycle and that
+cycle hits any error (agent dispatch failure, render error, transient
+infra), `specialist.go:111`'s `return nil, err` propagated the failure up
+through stagerunner as `ErrSubprocess`, the runner recorded `disposition:
+failure`, and the manifest entry for the milestone never flipped to done —
+even though the originally-parsed verdict was clean APPROVED_WITH_NOTES.
+Two consecutive auto-advance dogfood runs (m38.4 on 2026-06-06, m46 on
+2026-06-07) tripped this and required manual milestone flips.
 
 ## Files Modified
 
-- `lib/replan_midrun.sh` — replace body-grep with awk heading-anchored
-  extractor; add `_clear_commit_skip_sentinels` helper; extract
-  `handle_replan_choice` from `trigger_replan` and add
-  `_clear_commit_skip_sentinels` call to every non-replan branch
-  (`r`, `s`, `c`, `a`).
-- `lib/finalize_commit.sh` — add `warn` at both `_hook_commit` skip
-  sites (exit_code-nonzero branch and FINAL_CHECK_RESULT-nonzero branch).
-- `tests/test_replan_detector_verdict_only.sh` (NEW) — 7-scenario
-  regression guard for the heading-anchored detector.
-- `tests/test_autoadvance_commit_after_override.sh` (NEW) — 6-scenario
-  guard for the operator-override sentinel-clear path.
-- `tests/test_replan_detect.sh` — flipped the body-text scenario to
-  match the new heading-anchored semantics (one scenario inverted; the
-  other 20 scenarios still pass unchanged).
+- `internal/proto/stage_v1.go` — add `Metadata map[string]string` field
+  to `StageResultV1` with the two reserved-key documentation.
+- `internal/stages/review/warnings.go` (NEW, 48 lines) — `appendSubprocessWarning`
+  helper for the m47 plural-key envelope contract.
+- `internal/stages/review/specialist.go` — convert the post-specialist
+  `runOneCycle` err return into a warning + approvedResult; record other
+  sub-call failures (append section, coder rework, build_fix_minimal) as
+  subprocess_warnings; preserve the post-specialist-retry hard-fail path.
+- `internal/stages/review/cycle.go` — annotation-only: add `// m47
+  classification: pre-parse ...` comments to the six pre-parse return-err
+  sites confirming intentional retention.
+- `internal/stages/review/run.go` — annotation-only: add same comment to
+  the cycle-loop runOneCycle err propagation.
+- `internal/stagerunner/adapter.go` — add the envelope-over-error
+  defense-in-depth gate in `runGo()`.
+- `internal/stages/review/run_test.go` — two new RunStage end-to-end tests
+  for the m47 contract.
+- `internal/stages/review/specialist_test.go` — new finalizeApproved test
+  for the specialist-runner-error path.
+- `internal/stagerunner/adapter_test.go` — new test for the adapter gate.
+- `tests/test_stage_envelope_overrides_subprocess_err.sh` (NEW, 165 lines)
+  — shim-boundary integration test, 9 assertions, shellcheck-clean.
+- `docs/v4-phase5-stub.md` — document the envelope-over-error principle
+  under the Stage-Port Matrix so m38.6 (tester port) and m39 (coder port)
+  inherit the classification rule.
 
 ## Docs Updated
 
-None — no public-surface changes in this task. `_clear_commit_skip_sentinels`,
-`handle_replan_choice`, and `detect_replan_required` are all internal
-bash helpers; the operator-facing CLI surface is unchanged. The behavioral
-fix (false-positive replan dialogs no longer surface, commit-skip cascade
-no longer happens) is the user-observable change but is not a documented
-contract.
+- `docs/v4-phase5-stub.md` — new "m47 — Envelope-over-error rule for
+  every Go-impl stage" subsection under Stage-Port Matrix. Documents the
+  two reserved Metadata keys, the pre-parse vs post-parse classification
+  rule, the hard-fail exception, and the explicit m38.6 (tester) inheritance
+  requirement.
+
+`StageResultV1`'s new `Metadata` field is part of the public
+`internal/proto/` surface (cross-language envelope contract), documented
+inline via the type doc comment. No external CLI flags changed.
 
 ## Human Notes Status
 
-No actionable human notes were attached to this task. The CLARIFICATIONS.md
-content shown in the run context contains only stale clarification
-sessions from prior unrelated runs (Watchtower dashboard, NON_BLOCKING_LOG,
-brownfield --init flow) that the human had self-answered with restatements
-of the questions. None applied to m46.
+N/A — no actionable human notes were attached to this task. The
+CLARIFICATIONS.md content shown in the run context contains only stale
+clarification sessions from prior unrelated runs (Watchtower dashboard,
+NON_BLOCKING_LOG, brownfield --init flow) that the human had self-answered
+with restatements of the questions. None applied to m47.

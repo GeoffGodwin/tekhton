@@ -91,6 +91,11 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 
 		cycleOut, err := runOneCycle(ctx, &cfg, &budget, bumpedReviewerTurns, log)
 		if err != nil {
+			// m47 classification: this propagates the cycle.go pre-parse
+			// error sites (reviewer agent infra failure, prompt-render
+			// failure, parse failure, replan-trigger failure). No verdict
+			// envelope was produced for this cycle, so the runner needs
+			// the Go-level error to record a structural failure.
 			return nil, err
 		}
 		agentCalls += cycleOut.AgentCalls
