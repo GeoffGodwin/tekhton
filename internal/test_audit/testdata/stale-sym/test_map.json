@@ -1,0 +1,6 @@
+{
+  "files": {
+    "tests/test_foo.py": ["FooClass", "GoneSym"],
+    "tests/test_bar.py": ["BarFunc"]
+  }
+}

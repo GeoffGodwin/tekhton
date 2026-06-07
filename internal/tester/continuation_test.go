@@ -564,7 +564,9 @@ func TestExecGitDiffReporter_NonGitDirReturnsZero(t *testing.T) {
 }
 
 func TestNoopContinuationSeams_Safe(t *testing.T) {
-	if _, _, err := (noopTestAuditRunner{}).Run(context.Background(), ""); err != nil {
+	// m38.4: noopTestAuditRunner was removed when the default seam flipped
+	// to nativeTestAuditRunner. Empty projectDir still short-circuits.
+	if _, _, err := (nativeTestAuditRunner{}).Run(context.Background(), ""); err != nil {
 		t.Errorf("audit err: %v", err)
 	}
 	if err := (noopStateHaltWriter{}).Write(context.Background(), "", "", "", "", ""); err != nil {

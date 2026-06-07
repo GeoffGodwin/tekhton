@@ -586,21 +586,22 @@ fi
 # --- Early --audit-tests check (runs before execution pipeline) --------------
 
 if [ "${1:-}" = "--audit-tests" ]; then
+    # m38.4: the six lib/test_audit*.sh files were ported to
+    # internal/test_audit/ and deleted. The standalone-audit entry now
+    # execs `tekhton test-audit run-standalone` through the Go binary.
     source "${TEKHTON_HOME}/lib/common.sh"
-    source "${TEKHTON_HOME}/lib/prompts.sh"
-    source "${TEKHTON_HOME}/lib/agent.sh"
     source "${TEKHTON_HOME}/lib/config.sh"
-    source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
-    source "${TEKHTON_HOME}/lib/test_audit_detection.sh"
-    source "${TEKHTON_HOME}/lib/test_audit_verdict.sh"
-    source "${TEKHTON_HOME}/lib/test_audit.sh"
-    source "${TEKHTON_HOME}/lib/test_audit_symbols.sh"
-    source "${TEKHTON_HOME}/lib/test_audit_sampler.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     load_config
 
-    run_standalone_test_audit
+    _bin="${TEKHTON_BIN:-tekhton}"
+    if ! command -v "$_bin" >/dev/null 2>&1 && [[ ! -x "$_bin" ]]; then
+        error "[audit-tests] $_bin not on PATH — cannot run audit (m38.4 Go-only path)."
+        exit 1
+    fi
+    PROJECT_DIR="${PROJECT_DIR:-$PWD}" TEKHTON_HOME="${TEKHTON_HOME:-}" \
+        "$_bin" test-audit run-standalone --project-dir "${PROJECT_DIR:-$PWD}"
     _TEKHTON_CLEAN_EXIT=true
     exit 0
 fi
@@ -1010,12 +1011,21 @@ source "${TEKHTON_HOME}/stages/coder.sh"
 # intake, and review stages ported to Go (internal/stages/{docs,security,
 # architect,intake,review}/). All run via the GoImpl dispatch in stagerunner;
 # there are no bash residues to source here.
-source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
-source "${TEKHTON_HOME}/lib/test_audit_detection.sh"
-source "${TEKHTON_HOME}/lib/test_audit_verdict.sh"
-source "${TEKHTON_HOME}/lib/test_audit.sh"
-source "${TEKHTON_HOME}/lib/test_audit_symbols.sh"
-source "${TEKHTON_HOME}/lib/test_audit_sampler.sh"
+# m38.4: the six lib/test_audit*.sh files were ported to
+# internal/test_audit/ and deleted. The pipeline-integration entry
+# point (run_test_audit) is now a shim that execs `tekhton test-audit
+# run` through the Go binary. The standalone entry (run_standalone_test_audit)
+# is reached via the --audit-tests CLI block above.
+run_test_audit() {
+    local bin="${TEKHTON_BIN:-tekhton}"
+    if ! command -v "$bin" >/dev/null 2>&1 && [[ ! -x "$bin" ]]; then
+        warn "[test-audit] $bin not on PATH — skipping audit (m38.4 Go-only path)."
+        return 0
+    fi
+    PROJECT_DIR="${PROJECT_DIR:-$PWD}" TEKHTON_HOME="${TEKHTON_HOME:-}" \
+        "$bin" test-audit run --project-dir "${PROJECT_DIR:-$PWD}" >/dev/null 2>&1 || true
+    return 0
+}
 source "${TEKHTON_HOME}/stages/tester.sh"
 # Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
 # tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.

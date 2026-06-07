@@ -34,9 +34,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/supervisor"
+	"github.com/geoffgodwin/tekhton/internal/test_audit"
 )
 
 // Default values for ContinuationOptions fields.
@@ -160,7 +162,7 @@ var (
 	contextBuilder   ContinuationContextBuilder = defaultContextBuilder{}
 	gitDiff          GitDiffReporter            = execGitDiffReporter{}
 	remainingReader  RemainingReader            = fileRemainingReader{}
-	testAuditRunner  TestAuditRunner            = noopTestAuditRunner{}
+	testAuditRunner  TestAuditRunner            = nativeTestAuditRunner{}
 	stateHaltWriter  StateHaltWriter            = noopStateHaltWriter{}
 	contAgentRunner  ContinuationAgentRunner    = noopContinuationAgent{}
 	contPromptRender ContinuationPromptRenderer = noopContinuationRenderer{}
@@ -367,6 +369,10 @@ func RunContinuations(ctx context.Context, req *ContinuationRequest) (*Continuat
 // stages/tester_continuation.sh::_run_and_record_test_audit. Called both
 // from RunContinuations (on success) and from RunStage (on clean
 // finish; landing at m38.6).
+//
+// m38.4 rewires the default seam to nativeTestAuditRunner, which calls
+// test_audit.Run directly — no bash shim, no subprocess. Tests can
+// still override the seam with SetContinuationTestAuditRunner.
 func RunAndRecordTestAudit(ctx context.Context, projectDir string) (durationS, turns int, err error) {
 	return testAuditRunner.Run(ctx, projectDir)
 }
@@ -483,10 +489,60 @@ func (fileRemainingReader) Read(reportPath string) int {
 
 // no-op seam implementations -------------------------------------------
 
-type noopTestAuditRunner struct{}
+// nativeTestAuditRunner is the m38.4 default: it calls test_audit.Run
+// directly, in-process. No subprocess, no bash, no python — the bash
+// `run_test_audit` shim is gone. Returns the wall-clock duration in
+// seconds and the agent-call count so callers can record per-stage
+// timing in PIPELINE_STATE's StageDurations map.
+type nativeTestAuditRunner struct{}
 
-func (noopTestAuditRunner) Run(_ context.Context, _ string) (int, int, error) {
-	return 0, 0, nil
+func (nativeTestAuditRunner) Run(ctx context.Context, projectDir string) (int, int, error) {
+	if projectDir == "" {
+		return 0, 0, nil
+	}
+	start := time.Now()
+	res, err := test_audit.Run(ctx, buildAuditRequestFromEnv(projectDir))
+	dur := int(time.Since(start).Seconds())
+	if res == nil {
+		return dur, 0, err
+	}
+	return dur, res.AgentCalls, err
+}
+
+// buildAuditRequestFromEnv resolves the test_audit.Request from the
+// current process env. Keeps the surface compatible with the legacy
+// bash callers, which set PROJECT_DIR / TEKHTON_HOME / TESTER_REPORT_FILE
+// before invoking the audit. Env keys mirror the bash variable names.
+func buildAuditRequestFromEnv(projectDir string) *test_audit.Request {
+	envOr := func(key, fallback string) string {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		return fallback
+	}
+	resolve := func(path string) string {
+		if path == "" || filepath.IsAbs(path) {
+			return path
+		}
+		return filepath.Join(projectDir, path)
+	}
+	home := envOr("TEKHTON_HOME", "")
+	promptsDir := envOr("PROMPTS_DIR", "")
+	if promptsDir == "" && home != "" {
+		promptsDir = filepath.Join(home, "prompts")
+	}
+	tekhtonDir := envOr("TEKHTON_DIR", ".tekhton")
+	return &test_audit.Request{
+		ProjectDir:       projectDir,
+		TekhtonHome:      home,
+		PromptsDir:       promptsDir,
+		TesterReportFile: resolve(envOr("TESTER_REPORT_FILE", filepath.Join(tekhtonDir, "TESTER_REPORT.md"))),
+		CoderSummaryFile: resolve(envOr("CODER_SUMMARY_FILE", filepath.Join(tekhtonDir, "CODER_SUMMARY.md"))),
+		AuditReportFile:  resolve(envOr("TEST_AUDIT_REPORT_FILE", filepath.Join(tekhtonDir, "TEST_AUDIT_REPORT.md"))),
+		NonBlockingFile:  resolve(envOr("NON_BLOCKING_LOG_FILE", filepath.Join(tekhtonDir, "NON_BLOCKING_LOG.md"))),
+		TestMapFile:      envOr("TEST_SYMBOL_MAP_FILE", ""),
+		TagsFile:         envOr("TEST_SYMBOL_TAGS_FILE", ""),
+	}
 }
 
 type noopStateHaltWriter struct{}

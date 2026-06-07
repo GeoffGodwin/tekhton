@@ -106,11 +106,7 @@ tekhton/
 │   ├── indexer_history.sh  # Task→file association tracking (JSONL)
 │   ├── causality.sh        # Causal event log infrastructure + query layer
 │   ├── causality_query.sh  # Causal log query helpers
-│   ├── test_audit.sh       # Test integrity audit orchestration
-│   ├── test_audit_helpers.sh # Pre-audit file collection + context assembly
-│   ├── test_audit_detection.sh # Shell-based orphan + weakening detection
-│   ├── test_audit_verdict.sh # Audit verdict parsing + routing
-│   ├── test_audit_symbols.sh # Symbol-level stale reference detection (M88)
+│   # test_audit subsystem ported to internal/test_audit/ in m38.4 — six bash files deleted
 │   ├── test_baseline.sh    # Test baseline capture + pre-existing failure detection
 │   ├── test_dedup.sh       # Test run deduplication via working-tree fingerprint (M105)
 │   ├── mcp.sh              # MCP server lifecycle management (Serena)

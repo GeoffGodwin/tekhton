@@ -1,0 +1,16 @@
+{
+  "src/foo.py": {
+    "tags": {
+      "definitions": [
+        {"name": "FooClass"}
+      ]
+    }
+  },
+  "src/bar.py": {
+    "tags": {
+      "definitions": [
+        {"name": "BarFunc"}
+      ]
+    }
+  }
+}

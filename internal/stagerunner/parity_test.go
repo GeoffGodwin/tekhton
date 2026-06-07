@@ -174,14 +174,11 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 		// stages/review.sh + stages/review_helpers.sh deleted alongside it.
 		// No bash helper sourced.
 		proto.StageReview: {},
-		proto.StageTester: {
-			"lib/test_audit_helpers.sh",
-			"lib/test_audit_detection.sh",
-			"lib/test_audit_verdict.sh",
-			"lib/test_audit.sh",
-			"lib/test_audit_symbols.sh",
-			"lib/test_audit_sampler.sh",
-		},
+		// m38.4: test-audit family ported to internal/test_audit/; the
+		// six lib/test_audit*.sh files were deleted. The audit runs
+		// in-process via test_audit.Run from continuation.go's
+		// nativeTestAuditRunner. No bash helper is sourced.
+		proto.StageTester: {},
 		proto.StageCleanup: {},
 		// m34.1: docs stage ported to internal/stages/docs/; lib/docs_agent.sh
 		// deleted alongside it. The DefaultStageDefs entry no longer lists any

@@ -209,16 +209,13 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageReview: {
 		GoImpl: reviewstage.RunStage,
 	},
+	// m38.4: test-audit family ported to internal/test_audit/. The six
+	// bash files (lib/test_audit*.sh) were deleted; the audit runs
+	// in-process via test_audit.Run. The tester stage itself still
+	// ships as bash (stages/tester.sh) — m38.6 will port that and
+	// drop the Script field too.
 	proto.StageTester: {
 		Script: "stages/tester.sh",
-		Helpers: []string{
-			"lib/test_audit_helpers.sh",
-			"lib/test_audit_detection.sh",
-			"lib/test_audit_verdict.sh",
-			"lib/test_audit.sh",
-			"lib/test_audit_symbols.sh",
-			"lib/test_audit_sampler.sh",
-		},
 	},
 	// m34.2: cleanup is the second Go-native stage (after docs in m34.1).
 	// Script stays set as the audit-trail signal — the dispatcher prefers
