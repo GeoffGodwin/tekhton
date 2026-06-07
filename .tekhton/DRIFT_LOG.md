@@ -4,15 +4,19 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 206
+- Runs since audit: 208
 =======
-- Runs since audit: 206
+- Runs since audit: 208
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 206
+- Runs since audit: 208
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-07 | "Implement Milestone m38.4: Test Audit Family"] `fix_truncate.go:16` vs `fix.go:378` â two compiled failure-marker regexes with divergent vocabulary: `failureMarkerRe` (used for block splitting in SmartTruncateTestOutput) includes FAILED, AssertionError, TypeError, etc.; `failureMarkerExtractRe` (used for pre-filter in extractFailureOutput) uses lowercase `error` and `failure`. The split mirrors the bash two-pass design intentionally; a brief comment cross-referencing the bash source lines would prevent future maintainers from treating the divergence as a bug.
+- [ ] [2026-06-07 | "Implement Milestone m38.4: Test Audit Family"] `continuation.go:49` / `fix.go:48` â `DefaultContinuationAgentTools = "Read Write Edit Bash Glob Grep"` vs `DefaultFixAgentTools = "Read Glob Grep Write Edit Bash"`. Same six tools, different order. No functional impact; aligning the order to a single canonical sequence would reduce cognitive noise when comparing the two constants.
+- [ ] [2026-06-06 | "Implement Milestone m38.4: Test Audit Family"] `fix_truncate.go:16` vs `fix.go:378` â two compiled failure-marker regexes with divergent vocabulary: `failureMarkerRe` (used for block splitting in SmartTruncateTestOutput) includes FAILED, AssertionError, TypeError, etc.; `failureMarkerExtractRe` (used for pre-filter in extractFailureOutput) uses lowercase `error` and `failure`. The split mirrors the bash two-pass design intentionally; a brief comment cross-referencing the bash source lines would prevent future maintainers from treating the divergence as a bug.
+- [ ] [2026-06-06 | "Implement Milestone m38.4: Test Audit Family"] `continuation.go:49` / `fix.go:48` â `DefaultContinuationAgentTools = "Read Write Edit Bash Glob Grep"` vs `DefaultFixAgentTools = "Read Glob Grep Write Edit Bash"`. Same six tools, different order. No functional impact; aligning the order to a single canonical sequence would reduce cognitive noise when comparing the two constants.
 - [ ] [2026-06-03 | "unknown"] `CLARIFICATIONS.md` echo corruption: the injected clarifications block echoed question text as answers, removing all task signal. This is a data-plumbing issue in how the pipeline populates `CLARIFICATIONS.md` before render â worth a targeted investigation to prevent future null runs caused by missing task signal.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go` now partially overlaps with the new `internal/notes` mutation helpers (`CountOpen` vs. `UnresolvedCount`, `ResolveByModifiedFiles` vs. `SelectCleanupBatch+MarkResolved`). Noted in CODER_SUMMARY as an m40 candidate; included here so the drift log counts it.
 - [2026-05-31 | "unknown"] `engine.go` `ReadContext`: the `c.CauseChain = ""` stub has no inline comment tying it to the missing `cause_chain_summary` port. Carry forward from cycle 1.

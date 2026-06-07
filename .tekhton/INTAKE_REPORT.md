@@ -5,12 +5,11 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined: seven Go files to create, two to modify, six bash files to delete, one script to extend — no ambiguity about what is in and out of scope
-- Acceptance criteria are highly specific and mechanical: grep commands, named test functions, coverage thresholds (≥75%), fixture-based table tests, and exact env-variable gate conditions
-- Watch For section proactively resolves the most likely misinterpretations (implicit 4th verdict, rework loop max of 1, one-package constraint, python shell-out prohibition, `_record_audit_history` timing invariant)
-- Design section supplies concrete Go struct definitions, function signatures, and JSONL schema — a developer can translate these directly to code without design decisions
-- Seeds Forward section correctly marks future work (TypeScript LSP, V5 policy customization) as out of scope, preventing scope creep
-- No user-facing config keys are introduced; existing env variables are preserved byte-for-byte — no migration impact section needed
-- No UI components; UI testability criterion not applicable
-- One minor implicit assumption: the `*Request` type referenced in `Run`, `CollectAuditContext`, and `RunAndRecordTestAudit` is not defined within this milestone — it is presumed to exist from the m38 arc's earlier work (`internal/tester` package). A competent developer following the m38 arc will locate it without guidance, so this does not warrant a TWEAKED verdict
-- The `lib/test_audit_sampler.sh` file listed for deletion does not appear in the CLAUDE.md bash tree (only five of the six files appear there); the developer should verify existence before `git rm` but this is a trivial implementation check, not a clarity gap
+- Scope is precisely defined: seven Go files to create, two to modify, six bash files to delete, one script to extend — every file is named with its change type
+- Acceptance criteria are specific and mechanically verifiable: grep patterns, named test functions, coverage floor (≥75%), fixture-based table tests, and exact env-variable gate conditions
+- Go struct and function signatures are provided in the Design section, leaving minimal room for two developers to interpret differently
+- Watch For section proactively resolves the most likely misinterpretations: implicit 4th verdict outcome, rework-loop depth of 1 (not 3), one-package constraint to avoid import cycles, python-shell-out prohibition with a grep guard, and the `_record_audit_history` timing invariant
+- Seeds Forward section cleanly marks future work (TypeScript LSP extensions, V5 policy customization, standalone CLI wiring) as out of scope
+- No new user-facing config keys introduced; all referenced env vars already exist in the V4 env contract — no Migration Impact section required
+- No UI components — UI testability criterion is not applicable
+- One implicit assumption: the `*Request` type referenced in `Run`, `CollectAuditContext`, and `RunAndRecordTestAudit` is not defined within this milestone — it is presumed to exist from earlier m38 arc deliverables (`internal/tester` package). A developer following the arc will locate it without guidance; this does not warrant a TWEAKED verdict
