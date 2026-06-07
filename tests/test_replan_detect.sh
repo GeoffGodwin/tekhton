@@ -146,8 +146,12 @@ fi
 
 # ============================================================
 # detect_replan_required — REPLAN_REQUIRED in body, not just verdict line
+# m46: detector consults the parsed `## Verdict` section only. Incidental
+# mentions of REPLAN_REQUIRED elsewhere in the body must NOT trigger the
+# override dialog (regression guard for the 2026-06-06 m37.2 false-positive
+# that silently skipped 4 auto-advance commits across ~10h of work).
 # ============================================================
-echo "=== detect_replan_required — in body text ==="
+echo "=== detect_replan_required — body mention is ignored (m46) ==="
 
 REPORT_BODY="${TMPDIR}/report_body.md"
 cat > "$REPORT_BODY" << 'EOF'
@@ -158,12 +162,10 @@ APPROVED_WITH_NOTES
 - Consider using REPLAN_REQUIRED if scope grows further
 EOF
 
-# This still returns 0 because REPLAN_REQUIRED appears anywhere in file
-# (grep -qi "REPLAN_REQUIRED"). This is the designed behavior.
-if detect_replan_required "$REPORT_BODY" 2>/dev/null; then
-    pass "Detects REPLAN_REQUIRED anywhere in file (expected greedy match)"
+if ! detect_replan_required "$REPORT_BODY" 2>/dev/null; then
+    pass "m46: Body-mention of REPLAN_REQUIRED does not trigger (verdict is APPROVED_WITH_NOTES)"
 else
-    fail "Should detect REPLAN_REQUIRED in body text per grep implementation"
+    fail "REGRESSION: body-mention of REPLAN_REQUIRED falsely triggered the detector"
 fi
 
 # ============================================================

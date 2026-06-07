@@ -7,23 +7,93 @@ set -euo pipefail
 # Expects: common.sh, state.sh, plan.sh (for _call_planning_batch), prompts.sh
 # =============================================================================
 
-# detect_replan_required — Returns 0 if REPLAN_REQUIRED found, 1 otherwise.
+# detect_replan_required — Returns 0 iff the parsed `## Verdict` section
+# resolves to the REPLAN_REQUIRED token, 1 otherwise. m46: heading-anchored
+# extraction replaces the prior full-body substring search that
+# false-triggered on incidental verdict-token mentions in non-blocking
+# notes, drift observations, and coverage gaps.
+# Mirrors internal/review/parser.go::extractVerdictFromAccum — handles BOTH
+# `## Verdict\nVALUE` (next non-blank line) and `## Verdict VALUE` (inline)
+# shapes. Case-insensitive on the value via strings.ToUpper equivalent.
 detect_replan_required() {
     local report_file="$1"
+    [[ "${REPLAN_ENABLED:-true}" != "true" ]] && return 1
+    [[ ! -f "$report_file" ]] && return 1
 
-    if [[ "${REPLAN_ENABLED:-true}" != "true" ]]; then
-        return 1
+    local verdict
+    verdict=$(awk '
+        /^## Verdict[[:space:]]+[^[:space:]]/ {
+            sub(/^## Verdict[[:space:]]+/, "")
+            print
+            exit
+        }
+        /^## Verdict[[:space:]]*$/ { found=1; next }
+        found && /^## / { exit }
+        found && NF { print; exit }
+    ' "$report_file" 2>/dev/null | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+
+    [[ "$verdict" == "REPLAN_REQUIRED" ]]
+}
+
+# _clear_commit_skip_sentinels — Remove sentinel files that cause
+# finalize_commit::_hook_commit to silently skip commits in auto-advance
+# chains. Called from every non-replan arm of handle_replan_choice (m46).
+# Always returns 0 so the dispatcher never fails on missing sentinels.
+_clear_commit_skip_sentinels() {
+    local dir="${TEKHTON_DIR:-.tekhton}"
+    if [[ "$dir" != /* ]] && [[ -n "${PROJECT_DIR:-}" ]]; then
+        dir="${PROJECT_DIR}/${dir}"
     fi
+    rm -f -- "${dir}/.final_check_result" 2>/dev/null || true
+    rm -f -- "${dir}/.final_check_reason" 2>/dev/null || true
+    rm -f -- "${dir}/.commit_decision"    2>/dev/null || true
+    return 0
+}
 
-    if [[ ! -f "$report_file" ]]; then
-        return 1
-    fi
+# handle_replan_choice CHOICE [RATIONALE]
+# Dispatches a single replan-dialog choice — extracted from trigger_replan
+# so the case-arm semantics (m46: clear commit-skip sentinels on every
+# non-replan branch) are unit-testable without driving the interactive flow.
+handle_replan_choice() {
+    local choice="$1"
+    local rationale="${2:-}"
 
-    if grep -qi "REPLAN_REQUIRED" "$report_file" 2>/dev/null; then
-        return 0
-    fi
-
-    return 1
+    case "$choice" in
+        r|R)
+            _clear_commit_skip_sentinels
+            log "Initiating single-milestone replan..."
+            _run_midrun_replan "$rationale"
+            return $?
+            ;;
+        s|S)
+            _clear_commit_skip_sentinels
+            log "Saving state for manual task split..."
+            write_pipeline_state \
+                "review" \
+                "replan_split" \
+                "${MILESTONE_MODE:+--milestone }--start-at review" \
+                "${TASK:-}" \
+                "Reviewer requested REPLAN_REQUIRED. User chose to split task manually. Rationale: ${rationale}"
+            warn "State saved. Split the task in CLAUDE.md, then re-run."
+            return 1
+            ;;
+        c|C)
+            _clear_commit_skip_sentinels
+            log "Continuing despite replan recommendation."
+            return 0
+            ;;
+        a|A|*)
+            _clear_commit_skip_sentinels
+            log "Aborting on replan request."
+            write_pipeline_state \
+                "review" \
+                "replan_abort" \
+                "${MILESTONE_MODE:+--milestone }--start-at review" \
+                "${TASK:-}" \
+                "Reviewer requested REPLAN_REQUIRED. User aborted. Rationale: ${rationale}"
+            return 1
+            ;;
+    esac
 }
 
 # trigger_replan — Show rationale, present menu: [r] Replan [s] Split [c] Continue [a] Abort.
@@ -68,38 +138,7 @@ trigger_replan() {
     read -r choice < "$input_fd" || { warn "End of input"; choice="a"; }
     choice="${choice//$'\r'/}"
 
-    case "$choice" in
-        r|R)
-            log "Initiating single-milestone replan..."
-            _run_midrun_replan "$rationale"
-            return $?
-            ;;
-        s|S)
-            log "Saving state for manual task split..."
-            write_pipeline_state \
-                "review" \
-                "replan_split" \
-                "${MILESTONE_MODE:+--milestone }--start-at review" \
-                "${TASK:-}" \
-                "Reviewer requested REPLAN_REQUIRED. User chose to split task manually. Rationale: ${rationale}"
-            warn "State saved. Split the task in CLAUDE.md, then re-run."
-            return 1
-            ;;
-        c|C)
-            log "Continuing despite replan recommendation."
-            return 0
-            ;;
-        a|A|*)
-            log "Aborting on replan request."
-            write_pipeline_state \
-                "review" \
-                "replan_abort" \
-                "${MILESTONE_MODE:+--milestone }--start-at review" \
-                "${TASK:-}" \
-                "Reviewer requested REPLAN_REQUIRED. User aborted. Rationale: ${rationale}"
-            return 1
-            ;;
-    esac
+    handle_replan_choice "$choice" "$rationale"
 }
 
 # _run_midrun_replan — Execute single-milestone replan via _call_planning_batch().

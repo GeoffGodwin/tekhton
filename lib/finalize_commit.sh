@@ -171,6 +171,11 @@ _hook_commit() {
         # downstream completion hooks (mark_done / cleanup_milestone /
         # clear_state) on the same "skipped" sentinel so the manifest
         # is not mutated on failure paths either.
+        # m46: emit a stderr warning so operators see the skip rather
+        # than inferring it post-hoc. The 2026-06-06 auto-advance run
+        # silently skipped 4 commits across ~10 hours of work because
+        # this branch returned 0 with no visible signal.
+        warn "[_hook_commit] skipped — finalize received exit_code=${exit_code} (pipeline disposition was non-success)"
         _write_commit_decision "skipped"
         return 0
     fi
@@ -193,6 +198,11 @@ _hook_commit() {
         log_verbose "[_hook_commit] FINAL_CHECK_RESULT=${FINAL_CHECK_RESULT:-0} persisted=${_fcr_persisted} reason=${_fcr_reason:-<none>}"
         warn "Resolve the failures shown above, then commit manually with: git add -A && git commit"
         warn "To skip the gate intentionally, run: tekhton finalize --commit-on-test-failure (TBD)."
+        # m46: tagged warn carrying both "_hook_commit" and "skip" so log
+        # scrapers see the silent-skip cascade signal at both code paths.
+        # When the sentinel is tripped by a false-positive replan dialog,
+        # lib/replan_midrun_choice.sh::handle_replan_choice clears it.
+        warn "[_hook_commit] skipped commit — FINAL_CHECK_RESULT sentinel still set; if this is a false-positive, the operator-override path should have cleared ${_sentinel_path}"
         _write_commit_decision "skipped"
         return 0
     fi
