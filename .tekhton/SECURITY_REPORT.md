@@ -1,8 +1,7 @@
 ## Summary
-This change adds milestone ID carry-over logic to the bash state writer (`lib/state_helpers.sh`) and two fixture-driven Go round-trip tests (`internal/runner/resume_test.go`). The surface is entirely internal: no user input, no network communication, no authentication changes, and no cryptographic operations. The bash changes touch variable expansion and JSON serialization in the existing bash-fallback writer; the Go changes add read-only test fixtures in temp directories. No new security-relevant attack surface is introduced.
+m46 introduces two targeted bug fixes: an awk-based heading-anchored verdict extractor replacing a full-body grep in `detect_replan_required`, and a sentinel-clear path in `handle_replan_choice` that removes three internal state files when the operator overrides a false-positive replan dialog. The changes are narrow, touch only internal pipeline state and log output, involve no authentication, cryptography, external network calls, or direct user-controlled input handling. The two new test files exercise the same code paths in isolated temp directories using `mktemp -d`. No security issues were found.
 
 ## Findings
-
 None
 
 ## Verdict
