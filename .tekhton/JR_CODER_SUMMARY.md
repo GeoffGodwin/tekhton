@@ -1,9 +1,8 @@
-# JR Coder Summary — m37.1 Review Helpers and Parser
-
 ## What Was Fixed
 
-- `internal/review/parser.go:122-125` — Deleted the dead `inlineVerdictRE` variable (3-line comment block + `var` declaration). The variable was declared but never referenced; `inlineVerdictFallback` uses `strings.Contains` priority ordering instead. The `regexp` import remains valid (used by `noneSentinelRE` and `acpRowRE`). Fixes the `staticcheck U1000` / `golangci-lint` violation per CLAUDE.md Rule 3.
+- **[SECURITY HIGH] `dumpStageEnvPreExec` — credential exposure in `/tmp`**: Gated the entire function body behind `os.Getenv("TEKHTON_DEBUG_ENV") != ""` so the pre-exec env dump is opt-in only. Changed file permissions from `0o644` (world-readable) to `0o600` (owner-only).
+- **[SECURITY MEDIUM] `buildBashScript` — post-sourcing env dump in bash wrapper**: Gated the `env | sort > /tmp/tekhton_stage_env_*_post.txt` line behind `os.Getenv("TEKHTON_DEBUG_ENV") != ""` so the post-exec dump is also opt-in only.
 
 ## Files Modified
 
-- `internal/review/parser.go`
+- `internal/stagerunner/adapter.go`

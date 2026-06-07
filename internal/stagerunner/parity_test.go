@@ -178,7 +178,7 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 		// six lib/test_audit*.sh files were deleted. The audit runs
 		// in-process via test_audit.Run from continuation.go's
 		// nativeTestAuditRunner. No bash helper is sourced.
-		proto.StageTester: {},
+		proto.StageTester:  {},
 		proto.StageCleanup: {},
 		// m34.1: docs stage ported to internal/stages/docs/; lib/docs_agent.sh
 		// deleted alongside it. The DefaultStageDefs entry no longer lists any

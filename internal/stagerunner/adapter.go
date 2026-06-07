@@ -335,6 +335,9 @@ func (a *BashAdapter) buildEnv(req *proto.StageRequestV1, requestFile string) []
 // Path: /tmp/tekhton_stage_env_<stage>_pre.txt
 // Format: one KEY=VALUE per line, sorted for stable diffs across runs.
 func dumpStageEnvPreExec(stage string, env []string) {
+	if os.Getenv("TEKHTON_DEBUG_ENV") == "" {
+		return
+	}
 	if stage == "" {
 		return
 	}
@@ -342,7 +345,7 @@ func dumpStageEnvPreExec(stage string, env []string) {
 	sorted := append([]string(nil), env...)
 	sort.Strings(sorted)
 	data := strings.Join(sorted, "\n") + "\n"
-	_ = os.WriteFile(path, []byte(data), 0o644)
+	_ = os.WriteFile(path, []byte(data), 0o600)
 }
 
 // envKey returns the key portion of a "K=V" environment string.
@@ -466,7 +469,10 @@ func buildBashScript(tekhtonHome, projectDir, scriptPath, stage string, libHelpe
 	// includes every variable lib/*.sh exported on top of the Go-side env)
 	// so we can replay what the stage actually sees vs what stagerunner
 	// handed over. Best-effort; failure never aborts the stage.
-	fmt.Fprintf(&b, "env | sort > /tmp/tekhton_stage_env_%s_post.txt 2>/dev/null || true\n", stage)
+	// Gated on TEKHTON_DEBUG_ENV to prevent credential exposure in /tmp.
+	if os.Getenv("TEKHTON_DEBUG_ENV") != "" {
+		fmt.Fprintf(&b, "env | sort > /tmp/tekhton_stage_env_%s_post.txt 2>/dev/null || true\n", stage)
+	}
 	fmt.Fprintf(&b, "%s\n", stageEntryFunc(stage))
 	return b.String()
 }

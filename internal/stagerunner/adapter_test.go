@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -445,6 +447,57 @@ func TestAdapter_GoImplBothResultAndErrorPrefersResult(t *testing.T) {
 	if got != wantWarning {
 		t.Errorf("Metadata[\"subprocess_warning\"]=%q want %q", got, wantWarning)
 	}
+}
+
+// TestDumpStageEnvPreExec_DebugEnvGate asserts the TEKHTON_DEBUG_ENV gate on
+// dumpStageEnvPreExec: the diagnostic file MUST NOT be written when the var is
+// unset (credential-exposure guard), and MUST be written with sorted content
+// when the var is set to "1". This gates the m47 drift note: the two dump sites
+// in adapter.go are now correctly gated but could silently regress.
+func TestDumpStageEnvPreExec_DebugEnvGate(t *testing.T) {
+	// Use a unique stage name to avoid colliding with parallel test runs or
+	// leftover files from a prior failed run.
+	stage := fmt.Sprintf("gate_test_%d", os.Getpid())
+	path := fmt.Sprintf("/tmp/tekhton_stage_env_%s_pre.txt", stage)
+
+	t.Run("no_file_when_TEKHTON_DEBUG_ENV_unset", func(t *testing.T) {
+		t.Setenv("TEKHTON_DEBUG_ENV", "")
+		_ = os.Remove(path) // ensure clean state before the call
+		dumpStageEnvPreExec(stage, []string{"SECRET=hunter2", "HOME=/root"})
+		if _, err := os.Stat(path); err == nil {
+			_ = os.Remove(path)
+			t.Errorf("dumpStageEnvPreExec wrote %s when TEKHTON_DEBUG_ENV is unset", path)
+		}
+	})
+
+	t.Run("file_written_when_TEKHTON_DEBUG_ENV_is_1", func(t *testing.T) {
+		t.Setenv("TEKHTON_DEBUG_ENV", "1")
+		t.Cleanup(func() { _ = os.Remove(path) })
+		env := []string{"FOO=bar", "AAA=zzz", "ZZZZZ=aaa"}
+		dumpStageEnvPreExec(stage, env)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("expected dump file at %s: %v", path, err)
+		}
+		got := string(data)
+		// All env entries must appear.
+		for _, entry := range env {
+			if !strings.Contains(got, entry) {
+				t.Errorf("dump file missing entry %q; content:\n%s", entry, got)
+			}
+		}
+		// File must end with a newline.
+		if !strings.HasSuffix(got, "\n") {
+			t.Errorf("dump file does not end with newline; content:\n%q", got)
+		}
+		// Entries must be sorted (AAA before FOO before ZZZZZ).
+		lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+		for i := 1; i < len(lines); i++ {
+			if lines[i] < lines[i-1] {
+				t.Errorf("dump file not sorted at index %d: %q < %q", i, lines[i], lines[i-1])
+			}
+		}
+	})
 }
 
 func TestStageDefForFallback(t *testing.T) {
