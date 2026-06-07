@@ -83,6 +83,13 @@ rm -f /tmp/tekhton_stage_env_*_post.txt /tmp/tekhton_stage_env_*_pre.txt
 export TEKHTON_AGENT_BINARY="$FAKE_AGENT"
 export FAKE_AGENT_MODE=happy
 
+# m47 gated the per-stage env dump behind TEKHTON_DEBUG_ENV (credential
+# exposure in /tmp). Signal 2 below depends on the post-source dump file
+# existing, so opt in explicitly. The dump path is /tmp/tekhton_stage_env_*
+# and is written by internal/stagerunner/adapter.go (dumpStageEnvPreExec +
+# the post-source `env | sort > ...` line in buildBashScript).
+export TEKHTON_DEBUG_ENV=1
+
 # defaultStageOrder() in internal/runner/single.go, restricted to the
 # stages whose adapter is still the BashAdapter. Go-native stages (docs
 # m34.1, cleanup m34.2, security m35.2, architect m36.1, intake m36.3,
