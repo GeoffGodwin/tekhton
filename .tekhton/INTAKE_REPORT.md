@@ -5,13 +5,10 @@ PASS
 95
 
 ## Reasoning
-- Scope is tightly defined: three files listed (two modified, one created), no scope creep
-- Problem is grounded in a concrete historical incident (bf46f8f chain, 9,852 lines in a single squash commit) — zero ambiguity about what broke and why
-- Design section provides complete function signatures and implementations for all three new functions (`clearAutoAdvanceIterationState`, `emitAutoAdvanceCommitBanner`, `readGitHead`)
-- Call sites are precisely specified (before `buildRunner`, after `r.RunSingle`) — two developers would place these identically
-- Three Go unit tests are named and described with explicit setup, call, and assertion steps
-- Shim-boundary test (`test_autoadvance_per_milestone_commits.sh`) specifies fixture shape, stub strategy, invocation flags, and all three assertions; self-skip pattern is called out
-- Acceptance criteria are all binary and grep/test-verifiable — no vague "works correctly" items
-- Watch For section covers the only realistic implementation pitfalls (sentinel list not being exhaustive, conflation with RUN_RESULT.json, commit-subject prefix dependency, non-fatal warn case)
-- No user-facing config keys, file formats, or migration concerns introduced
-- UI testability not applicable (backend Go/bash change)
+- Scope is tightly bounded: two narrow fixes to `internal/security/findings.go`, seven test fixtures, one new integration test, one modified test file — all listed explicitly
+- Both bugs are described with root-cause precision (H3 `### ...` starts with `##` so the old break triggered early; empty file list → `(true, nil)` was fail-open)
+- Acceptance criteria are fully testable: grep commands, specific test case names, exact CLI tools (`shellcheck`, `golangci-lint`, `go vet`, `go test ./...`), and a pass/fail integration test
+- Near-complete Go code is provided for all changed logic — two developers reading this would produce essentially identical implementations
+- No new user-facing config keys, no format changes, no migration impact section needed
+- The "Seeds Forward" and "Watch For" sections surface risks without expanding scope
+- No UI components involved; UI testability criterion is not applicable
