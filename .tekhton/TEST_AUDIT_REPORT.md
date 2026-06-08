@@ -1,61 +1,41 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 11 test functions
-(5 pre-existing in orchestrator_test.go + 6 new; 5 cases in bash test)
-Verdict: CONCERNS
+Tests audited: 4 files, ~36 test functions (1 primary + 3 freshness samples)
+Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: _coder_declared_files falls back to mutable project file
-- File: tests/test_is_path_allowed_manifest.sh:35-47
-- Issue: The subshell calls `unset CODER_SUMMARY_FILE` so that
-  `_coder_declared_files` contributes nothing to the allowlist. However,
-  with `CODER_SUMMARY_FILE` unset, the function's fallback path is
-  `.tekhton/CODER_SUMMARY.md` relative to the working directory
-  (`local f="${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"`). If that
-  file exists (it is a normal pipeline output artifact — `.tekhton/stage_results/`
-  is already present in the working tree, confirming the pipeline has run),
-  any paths it contains will silently expand the allowlist. Tests 4
-  (`random_file.txt` must be denied) and 5 (`.claude/milestones/OTHER.cfg`
-  must be denied) both depend on the absence of that file from the live repo
-  state. If `.tekhton/CODER_SUMMARY.md` is present and happens to list either
-  path, both "deny" assertions flip to FAIL; conversely, if a future change
-  makes those paths legitimately appear in coder summaries the tests silently
-  stop exercising the guard they were added to cover. The test comment claims
-  "only the bookkeeping globs contribute to the allowlist" — that claim is not
-  enforced by the implementation.
-- Severity: HIGH
-- Action: Replace `unset CODER_SUMMARY_FILE` with
-  `export CODER_SUMMARY_FILE=/dev/null` inside the subshell. The fallback
-  `[ -f "$f" ] || return 0` in `_coder_declared_files` will then hit a
-  non-existent path and return empty unconditionally, making the isolation
-  guarantee explicit and independent of working-tree state.
+#### COVERAGE: Partial-result-with-error path untested
+- File: internal/provider/claude/parity_test.go (exercises internal/provider/claude/claude.go:111)
+- Issue: `claude.go:109-114` has two branches when `supErr != nil`: one where `v1 == nil` (returns nil result + wrapped error) and one where `v1 != nil` (returns a translated result *and* an error). The parity test only exercises the `v1 == nil` path (via `context_cancelled`). The `v1 != nil && supErr != nil` path — returning a partial result alongside an error — is not covered by any test in either `claude_test.go` or `parity_test.go`. Callers that branch on `err != nil` without checking `result != nil` would silently see a result they didn't expect if this path fires.
+- Severity: MEDIUM
+- Action: Add a parity sub-test or `claude_test.go` unit test with a `stubSup` that returns both a non-nil `AgentResultV1` and a non-nil error, then assert both the returned `Result` is non-nil and the error is non-nil.
 
-#### COVERAGE: Header lists tests/ prefix but no test case exercises it
-- File: tests/test_is_path_allowed_manifest.sh:16
-- Issue: The file header enumerates four covered bookkeeping dirs:
-  ".tekhton/, internal/, cmd/, tests/". The test body has cases 3a
-  (.tekhton/), 3b (internal/), and 3c (cmd/), but no case 3d for `tests/`.
-  The glob entry `tests/` in `_pipeline_bookkeeping_globs` is untested.
+#### COVERAGE: RawProviderData content not spot-checked
+- File: internal/provider/claude/parity_test.go:92-94
+- Issue: `RawProviderData` is asserted non-empty (`len == 0` guard) but its JSON content is not verified. A regression in `translateResult` that serialized a zero-value struct would still pass this check. The fixture files provide known `exit_code`, `outcome`, and `turns_used` values that could be spot-checked.
 - Severity: LOW
-- Action: Add a case 3d:
-  `_is_allowed_in_subshell "tests/test_is_path_allowed_manifest.sh"`
-  and assert the result is "allowed". Brings the implementation in line with
-  the header comment and adds a non-redundant test vector.
+- Action: For at least one scenario (e.g., `upstream_error`), unmarshal `RawProviderData` into `proto.AgentResultV1` and assert a fixture-specific field (e.g., `ExitCode == 1`) to verify content fidelity.
 
-#### COVERAGE: No-op smoke test has zero behavioral assertions
-- File: internal/finalize/orchestrator_test.go:225-230
-  (TestOrchestrator_FinalizeActiveSentinel_NoProjectDir)
-- Issue: The test comment explicitly states "No assertion needed — failure is
-  a panic or sentinel file appearing somewhere unexpected." The test cannot
-  detect incorrect behavior such as the function silently writing the sentinel
-  to a relative path inside the real working directory — the exact scenario
-  the test name implies it guards against.
+#### COVERAGE: Translated result fields not asserted
+- File: internal/provider/claude/parity_test.go:86-94
+- Issue: `translateResult` populates `TurnsUsed`, `ExitCode`, `ErrorCategory`, `ErrorMessage`, and `ErrorSubcategory` but the parity test only checks `Outcome`, `NullRun`, and `RawProviderData`. The `upstream_error` fixture carries `error_category: "UPSTREAM"` and `error_message: "API rate limit exceeded; retry after 60s"` that flow through `FromProto` but are never asserted.
 - Severity: LOW
-- Action: Add a post-call assertion that
-  `os.Stat(".tekhton/.finalize_active")` returns `os.ErrNotExist`,
-  anchoring the "no file written to a relative CWD path" contract. The
-  sentinel lives under `in.ProjectDir` so with an empty ProjectDir there
-  is nowhere to write it — but pinning this with an explicit check protects
-  against future refactors that change the write path.
+- Action: Assert `ErrorCategory` for `upstream_error` and `TurnsUsed` for `multi_turn_with_tools` to pin the full translation contract beyond Outcome classification alone.
+
+---
+
+### Freshness Sample Review (no findings)
+
+**cmd/tekhton/config_test.go** — 9 test functions. All create fixtures in `t.TempDir()`. `clearCIEnvTest` correctly restores env vars via `t.Cleanup`. Error paths (missing file, missing required key, strict-mode promotion) covered. Assertions grounded in real CLI command output. No scope misalignment. PASS.
+
+**cmd/tekhton/dag_test.go** — 24 test functions. Fixtures created in temp dirs. Both happy paths and error paths covered (invalid transition, unknown ID, empty manifest, corrupt dep reference). `loadDagState` env-var fallback path tested. All referenced symbols align with current codebase. PASS.
+
+**internal/coder/prerun/parity_test.go** — `TestParity_Fixtures` with 3 sub-tests. Uses `recordingDeps` fake and `wireCombinedStream` to capture call sequences against committed `bash_baseline.txt` fixtures. No mutable project-state reads. Note: `deps.RunAgent` still accepts `*proto.AgentRequestV1` directly — correct for m01; stages migrate to `provider.Provider` in m02. No scope misalignment for current milestone. PASS.
+
+---
+
+### Tester Claim Verification
+
+The tester report claims: "assert Result is nil alongside error for context_cancelled (pre-first-turn cancellation contract)." This claim is **accurate**. `parity_test.go:78-80` adds `if got != nil { t.Errorf(...) }` inside the `wantErr` branch, directly addressing the coverage gap the reviewer flagged in cycle 1. The nil-Result check is present and correct.

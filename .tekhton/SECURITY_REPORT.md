@@ -1,11 +1,8 @@
 ## Summary
-
-This is a no-op verification run for milestone m01.1.1 (Go Module Bootstrap). No source files were modified — the coder agent confirmed that the five target files (`go.mod`, `internal/version/version.go`, `cmd/tekhton/main.go`, `Makefile`, and test files) already satisfy all acceptance criteria from the parent m01.1 milestone. The security surface is minimal: a CLI entry point with no network communication, no authentication, no cryptography, no user-controlled input beyond Cobra-parsed flags, and no database access. The build tooling uses `-trimpath` and strips debug symbols, which reduces binary information exposure. No hardcoded secrets or injection vectors are present.
+The V5 m01 coder stage failed before producing any implementation files (`internal/provider/`, `docs/v5-provider-seam.md` do not exist). No security-relevant code was introduced by this run. The only changed artifacts are pipeline runtime files (INTAKE_REPORT.md, PREFLIGHT_REPORT.md, RUN_RESULT.json) and a VERSION bump (5.0.4 → 5.0.5). The file listed in the commit message as changed, `lib/finalize_commit_staging.sh`, has no substantive line-level diff. A review of that file's current state identified one low-severity concern; no other findings.
 
 ## Findings
-
-- [LOW] [category:A06] [go.mod:8] fixable:yes — `golang.org/x/sys` is pinned at `v0.13.0` (released 2023-Q3), an indirect dependency pulled in by `fsnotify`. Current upstream is v0.21+. While no known exploitable CVE targets this transitive path in a CLI tool, running `go get golang.org/x/sys@latest && go mod tidy` would close the gap. Low severity given indirect usage and absence of network/privilege paths in this binary.
+- [LOW] [category:A01] [lib/finalize_commit_staging.sh:22-31] fixable:yes — `_coder_declared_files` extracts backtick-delimited paths from `CODER_SUMMARY.md`, which is written by the AI coder agent. These paths flow into the staging allowlist and ultimately into `git add` calls in `finalize_commit.sh`. A path containing `../` traversal components (e.g. `../../.ssh/authorized_keys`) would be accepted as a declared file and staged if it happened to be dirty in the working tree. Adding a `grep -v '\.\.'` filter on the extracted paths in `_coder_declared_files` would close this without affecting normal operation.
 
 ## Verdict
-
 FINDINGS_PRESENT

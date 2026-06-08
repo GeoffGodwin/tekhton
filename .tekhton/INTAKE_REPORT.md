@@ -5,12 +5,11 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely bounded: seven files to create, one to modify, zero stage/supervisor files touched — and all three constraints are verifiable via `git diff`
-- Acceptance criteria are exceptionally specific: each criterion includes its own verification method (grep command, `go test` invocation, `go doc` check, `reflect.TypeOf` assertion)
-- Design section provides actual Go code for the interface, event type, Claude wrapper, and parity test — two developers would produce nearly identical implementations
-- Non-goals are explicit: no stage changes, no supervisor modifications, no ToolSchema definition, no supervisor refactor
-- Arc context table anchors this milestone in the V5 sequence, making scope boundaries clear against adjacent milestones
-- Watch For section pre-empts the most likely implementation mistakes (supervisor mutation, Result field gaps, channel direction, BumpFromUsage signal)
-- No new config keys or user-facing format changes are introduced, so no Migration Impact section is needed
-- No UI components are produced, so UI testability criteria are not applicable
-- Minor: `ToolSchema` is declared as a placeholder type (`[]ToolSchema` in `Request.Tools`) but its concrete definition for m01 is left as "probably an empty struct." This is acknowledged and intentional (m04 owns the typed definition). A competent developer can define `type ToolSchema struct{}` and move on — not a blocker.
+- Scope is tightly defined: explicit file list with LOC estimates, explicit non-goals ("Zero stage code is modified", "internal/supervisor/ is NOT modified"), and a sequencing note that explains why m01 is additive-only
+- Acceptance criteria are highly specific and mechanically verifiable: `go doc` listing checks, compile-time interface assertions (`var _ provider.Provider = (*claude.Provider)(nil)`), `git diff HEAD~ internal/stages/` emptiness checks, named test functions to run
+- Design section provides actual Go code snippets for all four core types (`Provider`, `Request`, `Result`, `Outcome`) and both translation functions (`translateOutcome`, `adaptSupervisorEvents`) — two developers would produce near-identical implementations
+- `ToolSchema` placeholder is explicitly called out in both the design and Watch For sections; no ambiguity about deferring its definition to m04
+- Watch For section proactively addresses the highest-risk failure modes: accidental supervisor modification, Result field set contract, Event channel ownership, `OutcomeUnknown` as a safety net
+- No new user-facing config keys or pipeline.conf fields introduced — no Migration Impact section required
+- No UI components — UI testability criterion not applicable
+- The parity test fixture strategy (mock the supervisor, not the CLI) is spelled out, removing a common ambiguity in this type of wrapper test

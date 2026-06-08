@@ -1,0 +1,11 @@
+{
+  "proto": "tekhton.agent.response.v1",
+  "label": "multi_turn_with_tools",
+  "exit_code": 0,
+  "turns_used": 5,
+  "duration_ms": 9500,
+  "outcome": "success",
+  "terminal_reason": "completed",
+  "result_subtype": "success",
+  "stdout_tail": ["Task complete."]
+}

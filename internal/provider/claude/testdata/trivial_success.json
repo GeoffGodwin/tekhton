@@ -1,0 +1,10 @@
+{
+  "proto": "tekhton.agent.response.v1",
+  "label": "trivial_success",
+  "exit_code": 0,
+  "turns_used": 1,
+  "duration_ms": 1200,
+  "outcome": "success",
+  "terminal_reason": "completed",
+  "result_subtype": "success"
+}
