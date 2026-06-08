@@ -1,0 +1,12 @@
+{
+  "comment": "Happy-path orchestration: prerun returns clean, scout skipped (notes_should_claim=false, scout_cached=true), coder agent succeeds, completion + build gates pass.",
+  "prerun_status": "clean",
+  "scout_invoked": false,
+  "agent_invoked": true,
+  "agent_template": "coder",
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": false,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

@@ -1,0 +1,12 @@
+{
+  "comment": "Pre-run fix succeeds — prerun reports Status=fixed, BaselineReCaptured=true, attempts=1. Orchestrator proceeds to coder agent which completes. Completion + build gates pass.",
+  "prerun_status": "fixed",
+  "prerun_attempts": 1,
+  "scout_invoked": false,
+  "agent_invoked": true,
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": false,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

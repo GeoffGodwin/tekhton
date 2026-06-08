@@ -197,7 +197,9 @@ echo "=== T10: No lib/, stages/, prompts/, tools/ modifications ==="
 # by checking they don't contain any Go-specific content that would signal
 # unwanted cross-contamination.
 assert_file_exists "T10a lib/common.sh exists"   "${TEKHTON_HOME}/lib/common.sh"
-assert_file_exists "T10b stages/coder.sh exists" "${TEKHTON_HOME}/stages/coder.sh"
+# m39.4: stages/coder.sh deleted (Phase 5 stage-port arc close). Coder stage
+# is the Go-native dispatch through internal/stages/coder.
+assert_file_exists "T10b internal/stages/coder/coder.go exists" "${TEKHTON_HOME}/internal/stages/coder/coder.go"
 assert_file_exists "T10c prompts/coder.prompt.md exists" "${TEKHTON_HOME}/prompts/coder.prompt.md"
 
 # =============================================================================

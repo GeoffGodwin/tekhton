@@ -1,0 +1,14 @@
+{
+  "comment": "Build gate fails post-coder; buildfix.Run invoked with mixed-uncertain raw errors. ClassificationRequired=true → save_exit after one failed attempt.",
+  "prerun_status": "clean",
+  "scout_invoked": false,
+  "agent_invoked": true,
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": true,
+  "buildfix_decision": "mixed_uncertain",
+  "buildfix_outcome": "save_exit",
+  "buildfix_attempts": 1,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

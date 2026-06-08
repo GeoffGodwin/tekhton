@@ -514,3 +514,54 @@ func TestStageDefForFallback(t *testing.T) {
 		t.Fatalf("override path lost: %q ok=%v", def.Script, ok)
 	}
 }
+
+// TestDefaultStageDef_CoderIsGoNative is the m39.4 regression canary: the
+// default StageDef for proto.StageCoder MUST have a non-nil GoImpl and a
+// zero Script. After the m39.4 close the bash dispatch path is gone; any
+// regression that re-introduces Script: "stages/coder.sh" would silently
+// route the coder stage back through the deleted bash file and fail with
+// exit 127. This test fails red the moment that regression is committed.
+func TestDefaultStageDef_CoderIsGoNative(t *testing.T) {
+	def, ok := DefaultStageDefs[proto.StageCoder]
+	if !ok {
+		t.Fatalf("DefaultStageDefs missing proto.StageCoder")
+	}
+	if def.GoImpl == nil {
+		t.Fatal("DefaultStageDefs[proto.StageCoder].GoImpl is nil — coder must dispatch Go-native after m39.4")
+	}
+	if def.Script != "" {
+		t.Fatalf("DefaultStageDefs[proto.StageCoder].Script = %q; want empty (bash file deleted in m39.4)", def.Script)
+	}
+}
+
+// TestBashAdapter_CoderDispatchesGoNative drives a real BashAdapter with the
+// production DefaultStageDefs and a sentinel BashBin that would fail with
+// ENOENT if the bash path executed. A successful pass result proves the
+// coder stage dispatched Go-native — the m39.4 wedge invariant. Companion
+// to TestDefaultStageDef_CoderIsGoNative — that test asserts the
+// definition; this one asserts the dispatcher honors it.
+func TestBashAdapter_CoderDispatchesGoNative(t *testing.T) {
+	tmpDir := t.TempDir()
+	resultFile := tmpDir + "/result.json"
+	a := &BashAdapter{
+		BashBin:     "/nonexistent/bash",
+		TekhtonHome: tmpDir,
+		ProjectDir:  tmpDir,
+	}
+	req := &proto.StageRequestV1{
+		Proto:      proto.StageRequestProtoV1,
+		Stage:      proto.StageCoder,
+		ResultFile: resultFile,
+		Task:       "coder-dispatch-test",
+	}
+	res, err := a.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res == nil {
+		t.Fatal("Run returned nil result — Go-native dispatch should always populate envelope")
+	}
+	if res.Stage != proto.StageCoder {
+		t.Errorf("Stage=%q; want %q", res.Stage, proto.StageCoder)
+	}
+}

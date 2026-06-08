@@ -1,0 +1,15 @@
+{
+  "comment": "Build gate fails post-coder; buildfix.Run invoked. Errors stay constant across attempts → ProgressSignal=unchanged at attempt 2 → no_progress bail with ProgressGateFailures=1.",
+  "prerun_status": "clean",
+  "scout_invoked": false,
+  "agent_invoked": true,
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": true,
+  "buildfix_decision": "code_dominant",
+  "buildfix_outcome": "no_progress",
+  "buildfix_attempts": 2,
+  "buildfix_progress_gate_failures": 1,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

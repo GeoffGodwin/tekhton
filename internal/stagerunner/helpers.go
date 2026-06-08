@@ -6,6 +6,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	architectstage "github.com/geoffgodwin/tekhton/internal/stages/architect"
 	"github.com/geoffgodwin/tekhton/internal/stages/cleanup"
+	coderstage "github.com/geoffgodwin/tekhton/internal/stages/coder"
 	"github.com/geoffgodwin/tekhton/internal/stages/docs"
 	intakestage "github.com/geoffgodwin/tekhton/internal/stages/intake"
 	reviewstage "github.com/geoffgodwin/tekhton/internal/stages/review"
@@ -194,8 +195,15 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageIntake: {
 		GoImpl: intakestage.RunStage,
 	},
+	// m39.4: coder is the eighth and final Go-native stage. GoImpl takes
+	// the dispatch; Script and Helpers are dropped because the four bash
+	// files (stages/coder.sh + stages/coder_buildfix.sh +
+	// stages/coder_buildfix_helpers.sh + stages/coder_prerun.sh) are
+	// deleted in the same milestone. After m39.4 closes, stages/ is empty
+	// and every proto.Stage* constant resolves to a Go function — the
+	// Phase 5 stage-port arc closes here.
 	proto.StageCoder: {
-		Script: "stages/coder.sh",
+		GoImpl: coderstage.RunStage,
 	},
 	// m35.2: security is the third Go-native stage (after docs in m34.1 and
 	// cleanup in m34.2). GoImpl takes the dispatch; Script and Helpers are

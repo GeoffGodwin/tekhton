@@ -1,0 +1,13 @@
+{
+  "comment": "Scout returns large complexity (RecommendedCoder=120, above split threshold). Orchestrator-level: scout invoked, agent invoked with scaled-up budget. The split orchestration itself is mediated by milestone_split outside this stage; this fixture asserts the orchestrator delivers the scout-scaled budget without erroring.",
+  "prerun_status": "clean",
+  "scout_invoked": true,
+  "scout_recommended_coder": 120,
+  "agent_invoked": true,
+  "agent_template": "coder",
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": false,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

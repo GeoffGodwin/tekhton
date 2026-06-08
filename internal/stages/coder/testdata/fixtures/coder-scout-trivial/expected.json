@@ -1,0 +1,13 @@
+{
+  "comment": "Scout returns trivial complexity — coder budget at floor (Coder=20). Scout invoked because human_note_count>0 + notes_should_claim=true + dynamic_turns_enabled=true. After scout, coder agent invoked with the scaled budget; completion + build gates pass.",
+  "prerun_status": "clean",
+  "scout_invoked": true,
+  "scout_recommended_coder": 20,
+  "agent_invoked": true,
+  "agent_template": "coder",
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": false,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

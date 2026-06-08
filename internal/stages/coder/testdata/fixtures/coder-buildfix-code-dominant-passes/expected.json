@@ -1,0 +1,14 @@
+{
+  "comment": "Build gate fails post-coder; buildfix.Run invoked with raw errors that classify code_dominant. Loop runs attempt 1, agent fixes, gate passes — Outcome=passed.",
+  "prerun_status": "clean",
+  "scout_invoked": false,
+  "agent_invoked": true,
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": true,
+  "buildfix_decision": "code_dominant",
+  "buildfix_outcome": "passed",
+  "buildfix_attempts": 1,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}

@@ -1,0 +1,12 @@
+{
+  "comment": "Pre-run fix exhausts attempts — prerun reports Status=fix_failed, attempts=1, AbortReason=max_attempts. Orchestrator warns and proceeds (prerun errors are non-fatal); coder agent still invoked.",
+  "prerun_status": "fix_failed",
+  "prerun_attempts": 1,
+  "scout_invoked": false,
+  "agent_invoked": true,
+  "completion_gate_invoked": true,
+  "build_gate_invoked": true,
+  "buildfix_invoked": false,
+  "verdict": "pass",
+  "exit_reason": "complete"
+}
