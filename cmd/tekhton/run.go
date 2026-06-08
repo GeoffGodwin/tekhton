@@ -731,6 +731,15 @@ func clearAutoAdvanceIterationState(projectDir string) error {
 // _hook_commit fired (see lib/milestone_ops.sh::get_milestone_commit_prefix).
 // The number is the bare form ("38.5"), so we strip the "m" prefix from
 // milestoneID before building the expected prefix.
+//
+// m50 — Additionally surfaces a `⚠ MANIFEST.cfg committed by non-finalize
+// source` line when HEAD touched .claude/milestones/MANIFEST.cfg under a
+// subject that does NOT match the milestone-commit prefix. The bash
+// pre-commit guard (lib/finalize_commit.sh::_check_manifest_write_guard)
+// is the hard enforcer; this banner is observability for the
+// belt-and-suspenders case where a future regression bypasses the bash
+// guard (e.g. a code path that calls git commit directly without sourcing
+// lib/finalize_commit.sh).
 func emitAutoAdvanceCommitBanner(w io.Writer, projectDir, milestoneID string) {
 	headHash, headSubject, err := readGitHead(projectDir)
 	if err != nil || headHash == "" {
@@ -742,12 +751,54 @@ func emitAutoAdvanceCommitBanner(w io.Writer, projectDir, milestoneID string) {
 	expectedPrefix := fmt.Sprintf("[MILESTONE %s ✓]", strings.TrimPrefix(milestoneID, "m"))
 	if strings.HasPrefix(headSubject, expectedPrefix) {
 		fmt.Fprintf(w, "✓ %s committed as %s\n", milestoneID, headHash[:8])
+		emitManifestWriteAuditBanner(w, projectDir, milestoneID, headSubject, expectedPrefix)
 		return
 	}
 	fmt.Fprintf(w,
 		"⚠ %s finalize skipped commit — HEAD subject is %q (expected %q prefix). "+
 			"Inspect .tekhton/.commit_decision and .tekhton/.final_check_result.\n",
 		milestoneID, headSubject, expectedPrefix)
+	emitManifestWriteAuditBanner(w, projectDir, milestoneID, headSubject, expectedPrefix)
+}
+
+// emitManifestWriteAuditBanner is the m50 defense-in-depth observability
+// hop layered on top of the per-iteration commit banner. Emits a warning
+// line when the HEAD commit touched .claude/milestones/MANIFEST.cfg AND the
+// commit subject does not match the milestone-commit prefix (i.e. the
+// commit was NOT initiated by the finalize chain). Pure observability —
+// the bash pre-commit guard does the hard enforcement; this only fires
+// retrospectively if a future regression bypasses the guard.
+func emitManifestWriteAuditBanner(w io.Writer, projectDir, milestoneID, headSubject, expectedPrefix string) {
+	// Finalize-initiated commits legitimately mutate MANIFEST.cfg via
+	// _hook_mark_done; only flag commits that did NOT come from finalize.
+	if strings.HasPrefix(headSubject, expectedPrefix) {
+		return
+	}
+	if !headCommitTouchedManifest(projectDir) {
+		return
+	}
+	fmt.Fprintf(w,
+		"⚠ %s MANIFEST.cfg committed by non-finalize source — "+
+			"inspect HEAD and verify lib/finalize_commit.sh::_check_manifest_write_guard fired\n",
+		milestoneID)
+}
+
+// headCommitTouchedManifest returns true when `git show --name-only HEAD`
+// lists .claude/milestones/MANIFEST.cfg. Errors swallowed — observability
+// is opportunistic, never blocking.
+func headCommitTouchedManifest(projectDir string) bool {
+	c := exec.Command("git", "show", "--name-only", "--format=", "HEAD")
+	c.Dir = projectDir
+	out, err := c.Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == ".claude/milestones/MANIFEST.cfg" {
+			return true
+		}
+	}
+	return false
 }
 
 // readGitHead returns the HEAD commit hash and subject for the repo rooted

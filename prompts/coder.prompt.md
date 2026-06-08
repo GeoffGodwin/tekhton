@@ -194,6 +194,24 @@ NOW — do not leave them for the reviewer:
 2. `{{ARCHITECTURE_FILE}}` — already injected above, use it to navigate. Do NOT grep blindly.
 3. Only the files identified by the scout or directly named in your task
 Do NOT read {{PROJECT_RULES_FILE}} or other project docs speculatively — only if a specific decision requires it.
+
+### File Boundaries
+
+The following files are managed by the finalize chain and MUST NOT be
+written by the coder agent under any circumstance:
+
+- `.claude/milestones/MANIFEST.cfg` — the milestone state manifest. The
+  finalize chain (`_hook_mark_done`, `tekhton dag advance`) owns every
+  write. If your milestone needs to add or modify a manifest entry,
+  surface this in `## Drift Observations` so the operator can perform
+  the change manually.
+
+Writes to these files are intercepted by a pre-commit guard
+(`lib/finalize_commit.sh::_check_manifest_write_guard`); the rest of the
+commit will proceed but the manifest change will be unstaged with a
+warning. The auto-advance per-iteration banner additionally surfaces
+`⚠ MANIFEST.cfg committed by non-finalize source` if a regression
+bypasses the guard.
 {{IF:INLINE_CONTRACT_PATTERN}}
 
 ## Inline Contract Pattern (mandatory for new or modified public classes)

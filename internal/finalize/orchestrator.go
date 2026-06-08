@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -182,6 +183,16 @@ func (o *Orchestrator) Run(ctx context.Context, in *Input) Summary {
 	if in.Log == nil {
 		in.Log = o.log
 	}
+	// m50 — Mark the finalize chain as active. Pre-commit guards (in both
+	// bash lib/finalize_commit.sh::_check_manifest_write_guard and the Go
+	// observability defense in cmd/tekhton/run.go) consult this sentinel
+	// to allow MANIFEST.cfg writes that legitimately come from
+	// _hook_mark_done. Cleared in the deferred tail so a panic mid-finalize
+	// doesn't poison subsequent runs by leaving the sentinel set and
+	// silently legitimizing a rogue stage-time commit.
+	if cleanup := writeFinalizeActiveSentinel(in); cleanup != nil {
+		defer cleanup()
+	}
 	start := o.now()
 	sum := Summary{Hooks: make([]HookResult, 0, len(o.hooks))}
 	for _, h := range o.hooks {
@@ -199,4 +210,43 @@ func (o *Orchestrator) Run(ctx context.Context, in *Input) Summary {
 	}
 	sum.Duration = o.now().Sub(start)
 	return sum
+}
+
+// writeFinalizeActiveSentinel writes the .tekhton/.finalize_active sentinel
+// at the top of Orchestrator.Run and returns a cleanup closure that removes
+// it (callers wire the closure into defer so a panic mid-finalize doesn't
+// strand the sentinel). The sentinel marks the active window during which
+// MANIFEST.cfg writes are legitimate; the bash pre-commit guard in
+// lib/finalize_commit.sh and the Go-side defense in cmd/tekhton/run.go
+// consult it to distinguish finalize-initiated commits from stage-initiated
+// commits (the m48 / 51aff09 incident class).
+//
+// Returns nil when ProjectDir is empty — that's the debug-subcommand case
+// where there's no on-disk repo to write to. Non-fatal failures are logged
+// to in.Log and the function still returns a cleanup closure so the deferred
+// remove still runs (no-op if the file never landed).
+func writeFinalizeActiveSentinel(in *Input) func() {
+	if in == nil || in.ProjectDir == "" {
+		return nil
+	}
+	sentinelPath := filepath.Join(in.ProjectDir, ".tekhton", ".finalize_active")
+	if err := os.MkdirAll(filepath.Dir(sentinelPath), 0o755); err != nil {
+		if in.Log != nil {
+			fmt.Fprintf(in.Log, "finalize: warning: mkdir %s: %v\n", filepath.Dir(sentinelPath), err)
+		}
+		return nil
+	}
+	payload := in.Timestamp
+	if payload == "" {
+		payload = "active"
+	}
+	if err := os.WriteFile(sentinelPath, []byte(payload+"\n"), 0o644); err != nil {
+		if in.Log != nil {
+			fmt.Fprintf(in.Log, "finalize: warning: write %s: %v\n", sentinelPath, err)
+		}
+		return nil
+	}
+	return func() {
+		_ = os.Remove(sentinelPath)
+	}
 }

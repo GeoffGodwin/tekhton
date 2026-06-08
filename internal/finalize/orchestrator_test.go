@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -178,6 +180,53 @@ func TestOrchestratorRun_FillsLogIfNil(t *testing.T) {
 	if !called {
 		t.Fatalf("hook never ran")
 	}
+}
+
+// TestOrchestrator_SetsAndClearsFinalizeActiveSentinel is the m50
+// acceptance test for the .tekhton/.finalize_active sentinel. The
+// finalize chain writes the sentinel at the top of Run and must clear
+// it on return (via deferred cleanup so a panic mid-finalize doesn't
+// leave the sentinel set and silently legitimize a subsequent rogue
+// commit). The pre-commit guards in lib/finalize_commit.sh and
+// cmd/tekhton/run.go consult this file to distinguish finalize-initiated
+// commits from stage-initiated commits.
+func TestOrchestrator_SetsAndClearsFinalizeActiveSentinel(t *testing.T) {
+	projectDir := t.TempDir()
+	sentinelPath := filepath.Join(projectDir, ".tekhton", ".finalize_active")
+
+	// A hook that asserts the sentinel exists at the moment Run is
+	// executing it — proves the sentinel was written BEFORE the chain
+	// started executing user-visible work.
+	var sawSentinelDuringRun bool
+	probeHook := &captureLogHook{name: "_hook_probe", onRun: func(in *Input) {
+		if _, err := os.Stat(sentinelPath); err == nil {
+			sawSentinelDuringRun = true
+		}
+	}}
+
+	o := &Orchestrator{log: &bytes.Buffer{}, now: time.Now, hooks: []Hook{probeHook}}
+	_ = o.Run(context.Background(), &Input{
+		ProjectDir: projectDir,
+		Timestamp:  "20260608_120000",
+	})
+
+	if !sawSentinelDuringRun {
+		t.Errorf("expected .tekhton/.finalize_active to exist during hook execution; it did not")
+	}
+	if _, err := os.Stat(sentinelPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected .tekhton/.finalize_active to be cleaned up after Run; stat err=%v", err)
+	}
+}
+
+// TestOrchestrator_FinalizeActiveSentinel_NoProjectDir verifies the
+// sentinel logic is a no-op when ProjectDir is empty (the debug
+// subcommand path). Run must not panic, and no sentinel can be written
+// to a relative path inside the working directory.
+func TestOrchestrator_FinalizeActiveSentinel_NoProjectDir(t *testing.T) {
+	o := &Orchestrator{log: &bytes.Buffer{}, now: time.Now, hooks: nil}
+	_ = o.Run(context.Background(), &Input{})
+	// No assertion needed — failure is a panic or sentinel file appearing
+	// somewhere unexpected. Smoke coverage only.
 }
 
 // recordingHook decorates a Hook to record the call order in an external

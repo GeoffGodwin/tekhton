@@ -36,7 +36,8 @@ tekhton/
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
-│   ├── finalize_commit.sh  # Commit hook + _do_git_commit helpers
+│   ├── finalize_commit.sh  # Commit hook + _do_git_commit helpers + m50 _check_manifest_write_guard
+│   ├── finalize_commit_helpers.sh # m50 split — _write_commit_decision / _run_commit_bookkeeping / _tag_milestone_if_complete
 │   ├── finalize_commit_sentinel.sh # m41 sentinel readers (_final_check_result_read / _final_check_reason_read)
 │   ├── finalize_aux.sh     # Aux finalize hooks (express, baseline, M129 reset)
 │   ├── finalize_dashboard_hooks.sh # Dashboard/causal-log/TUI finalize hooks

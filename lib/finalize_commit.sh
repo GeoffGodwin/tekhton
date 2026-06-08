@@ -24,6 +24,8 @@ set -euo pipefail
 source "${TEKHTON_HOME:-}/lib/finalize_commit_staging.sh"
 # shellcheck source=lib/finalize_commit_sentinel.sh
 source "${TEKHTON_HOME:-}/lib/finalize_commit_sentinel.sh"
+# shellcheck source=lib/finalize_commit_helpers.sh
+source "${TEKHTON_HOME:-}/lib/finalize_commit_helpers.sh"
 
 # _do_git_commit MSG
 # Stages pipeline-declared files only (coder-declared ∪ bookkeeping
@@ -82,6 +84,9 @@ _do_git_commit() {
     fi
 
     git add -- "${expected[@]}" > /dev/null 2>&1
+    # m50 — Pre-commit guard: refuse a stage-time MANIFEST.cfg write.
+    # See _check_manifest_write_guard below.
+    _check_manifest_write_guard
     local git_output
     git_output=$(git commit -m "$msg" 2>&1) || true
     # Show only the summary line (e.g. "[branch abc1234] feat: message")
@@ -90,73 +95,48 @@ _do_git_commit() {
     log "$summary"
 }
 
-# _write_commit_decision DECISION
-# Writes the commit decision sentinel that downstream completion hooks
-# (mark_done, cleanup_milestone, clear_state) read to decide whether to
-# fire. Values: "committed" (user said y/e), "declined" (user said n or
-# anything else), "skipped" (commit was bypassed by an earlier gate).
-# Each finalize hook runs in its own bash subprocess under the Go shim,
-# so an in-memory variable will not survive — the sentinel file is the
-# only reliable carrier.
-_write_commit_decision() {
-    local decision="$1"
-    local dir="${TEKHTON_DIR:-.tekhton}"
-    if [[ "$dir" != /* ]] && [[ -n "${PROJECT_DIR:-}" ]]; then
-        dir="${PROJECT_DIR}/${dir}"
-    fi
-    mkdir -p "$dir" 2>/dev/null || {
-        warn "_write_commit_decision: could not create ${dir}"
-        return 1
-    }
-    printf '%s\n' "$decision" > "${dir}/.commit_decision" || {
-        warn "_write_commit_decision: could not write ${dir}/.commit_decision"
-        return 1
-    }
-}
-
-# _run_commit_bookkeeping
-# Invokes `tekhton commit-bookkeeping` to run mark_done + cleanup_milestone +
-# clear_state BEFORE _do_git_commit. Without this pre-commit invocation, the
-# same three hooks run via the Go finalize chain AFTER _hook_commit (per the
-# 2026-05 reorder gating them on the commit_decision sentinel), but by then
-# the commit is already made — the manifest mutation + file deletion show up
-# as uncommitted working-tree changes, breaking the "clean state after
-# success" contract operators expect.
+# _check_manifest_write_guard
+# m50 — Pre-commit guard: refuse to commit MANIFEST.cfg from any stage that
+# is not the finalize chain. The finalize chain marks itself active by
+# writing the sentinel .tekhton/.finalize_active in
+# internal/finalize/orchestrator.go::Run; its absence here means a stage
+# agent (coder/reviewer/tester/security/etc.) is the one attempting the
+# write — exactly the m48 / 51aff09 scenario where the coder ran the
+# milestone-split subroutine against m01 as a fixture and silently
+# corrupted MANIFEST.cfg with 69 spurious lines.
 #
-# Best-effort: bookkeeping failures (e.g. tekhton binary missing) emit a
-# warning and let _do_git_commit proceed. The Go-chain hooks fire again
-# afterward and pick up anything that didn't land here.
-_run_commit_bookkeeping() {
-    local bin="${TEKHTON_BIN:-tekhton}"
-    if ! command -v "$bin" >/dev/null 2>&1; then
-        warn "_run_commit_bookkeeping: ${bin} not on PATH — skipping pre-commit bookkeeping (post-commit chain will retry)"
+# Behavior: warn, unstage MANIFEST.cfg, continue with the rest of the
+# changeset. The intent is "the rest of the changeset is probably
+# legitimate, just the manifest write isn't" — aborting the whole commit
+# would lose the legitimate stage work, which is what m46 spent its
+# budget preventing.
+#
+# Operator escape hatch: TEKHTON_MANIFEST_WRITE_OVERRIDE=1 keeps the
+# stage-time MANIFEST.cfg write staged (used by milestone-authoring
+# tools and manual recovery flows like the b7b5e25 restore).
+_check_manifest_write_guard() {
+    local manifest_path=".claude/milestones/MANIFEST.cfg"
+    local tekhton_dir="${TEKHTON_DIR:-.tekhton}"
+    if [[ "$tekhton_dir" != /* ]] && [[ -n "${PROJECT_DIR:-}" ]]; then
+        tekhton_dir="${PROJECT_DIR}/${tekhton_dir}"
+    fi
+    local sentinel="${tekhton_dir}/.finalize_active"
+
+    if ! git diff --cached --name-only 2>/dev/null \
+            | grep -qx "$manifest_path"; then
         return 0
     fi
-    [[ "${MILESTONE_MODE:-false}" = "true" ]] || return 0
-    [[ -n "${_CURRENT_MILESTONE:-}" ]] || return 0
-    "$bin" commit-bookkeeping \
-        --project-dir "${PROJECT_DIR:-$(pwd)}" \
-        --home "${TEKHTON_HOME:-}" \
-        --milestone "${_CURRENT_MILESTONE:-}" \
-        --milestone-mode "true" \
-        --milestone-disposition "${_CACHED_DISPOSITION:-COMPLETE_AND_CONTINUE}" \
-        --exit-code 0 \
-        2>&1 | while IFS= read -r _line; do
-            log "[commit-bookkeeping] $_line"
-        done || true
-}
-
-# _tag_milestone_if_complete
-# Creates the milestone tag once the commit has landed. Reads
-# _CACHED_DISPOSITION so it behaves correctly even after _hook_clear_state
-# has removed MILESTONE_STATE.md.
-_tag_milestone_if_complete() {
-    [[ "${MILESTONE_MODE:-false}" != true ]] && return 0
-    [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
-    local disposition="${_CACHED_DISPOSITION:-}"
-    if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then
-        tag_milestone_complete "${_CURRENT_MILESTONE:-}"
+    if [[ -f "$sentinel" ]]; then
+        return 0
     fi
+    if [[ "${TEKHTON_MANIFEST_WRITE_OVERRIDE:-}" = "1" ]]; then
+        warn "[manifest-guard] override set (TEKHTON_MANIFEST_WRITE_OVERRIDE=1) — proceeding with ${manifest_path} write"
+        return 0
+    fi
+    warn "[manifest-guard] Refusing to commit ${manifest_path} from stage (${STAGE_LABEL:-unknown}): file is finalize-owned. Unstaging."
+    warn "[manifest-guard] If this is intentional (e.g. a milestone-authoring tool), set TEKHTON_MANIFEST_WRITE_OVERRIDE=1 in the environment."
+    git restore --staged -- "$manifest_path" 2>/dev/null || true
+    return 0
 }
 
 # _hook_commit EXIT_CODE — auto-commit on success + clean final checks.

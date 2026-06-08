@@ -438,3 +438,76 @@ func TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit(t *testing.T) {
 		t.Errorf("unexpected success banner emitted on skip path: %q", got)
 	}
 }
+
+// TestEmitAutoAdvanceCommitBanner_ManifestWriteByNonFinalizeSource is the
+// m50 acceptance test for the Go-side defense-in-depth check. When a
+// HEAD commit touched .claude/milestones/MANIFEST.cfg AND the subject
+// does NOT match the milestone-commit prefix, the banner must surface
+// "⚠ MANIFEST.cfg committed by non-finalize source". The bash pre-commit
+// guard is the hard enforcer; this banner is observability for the case
+// where a future regression bypasses the guard.
+func TestEmitAutoAdvanceCommitBanner_ManifestWriteByNonFinalizeSource(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	projectDir := t.TempDir()
+	gitInit := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = projectDir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	gitInit("init", "-q")
+	gitInit("config", "user.email", "test@example.com")
+	gitInit("config", "user.name", "Test")
+	gitInit("config", "commit.gpgsign", "false")
+
+	// Seed a generic-subject commit that touches MANIFEST.cfg — exactly
+	// the m48 / 51aff09 regression shape.
+	manifestPath := filepath.Join(projectDir, ".claude", "milestones", "MANIFEST.cfg")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatalf("mkdir manifest dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("m01|done\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	gitInit("add", ".claude/milestones/MANIFEST.cfg")
+	gitInit("commit", "-q", "-m", "feat: clearAutoAdvanceIterationState helper")
+
+	var buf bytes.Buffer
+	emitAutoAdvanceCommitBanner(&buf, projectDir, "m50")
+	got := buf.String()
+	if !strings.Contains(got, "MANIFEST.cfg committed by non-finalize source") {
+		t.Errorf("missing manifest non-finalize warning in output: %q", got)
+	}
+
+	// Negative case: a milestone-prefixed commit that touches MANIFEST.cfg
+	// is the legitimate finalize path — banner must NOT flag it.
+	if err := os.WriteFile(manifestPath, []byte("m01|done\nm02|done\n"), 0o644); err != nil {
+		t.Fatalf("write manifest update: %v", err)
+	}
+	gitInit("add", ".claude/milestones/MANIFEST.cfg")
+	gitInit("commit", "-q", "-m", "[MILESTONE 50 ✓] block MANIFEST.cfg stage-time writes")
+	buf.Reset()
+	emitAutoAdvanceCommitBanner(&buf, projectDir, "m50")
+	got = buf.String()
+	if strings.Contains(got, "MANIFEST.cfg committed by non-finalize source") {
+		t.Errorf("manifest banner falsely fired on finalize commit: %q", got)
+	}
+
+	// Negative case: a commit that does NOT touch MANIFEST.cfg must not
+	// trigger the manifest banner regardless of subject.
+	if err := os.WriteFile(filepath.Join(projectDir, "c.txt"), []byte("c\n"), 0o644); err != nil {
+		t.Fatalf("write c.txt: %v", err)
+	}
+	gitInit("add", "c.txt")
+	gitInit("commit", "-q", "-m", "feat: unrelated change")
+	buf.Reset()
+	emitAutoAdvanceCommitBanner(&buf, projectDir, "m50")
+	got = buf.String()
+	if strings.Contains(got, "MANIFEST.cfg committed by non-finalize source") {
+		t.Errorf("manifest banner falsely fired on commit that did not touch manifest: %q", got)
+	}
+}
