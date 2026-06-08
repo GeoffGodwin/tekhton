@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 220
+- Runs since audit: 221
 =======
-- Runs since audit: 220
+- Runs since audit: 221
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 220
+- Runs since audit: 221
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `.claude/milestones/` continues to accumulate stale sub-splits of m01.1 (`m01.1.1.*`, `m01.1.1.1.*`, etc.) from repeated self-host loops. The parent m01.1 reviewer noted this; it remains uncleaned. A hygiene pass to prune orphaned milestone files is warranted.
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
 - [ ] [2026-06-08 | "Implement Milestone m50: MANIFEST.cfg is finalize-owned: block stage-agent writes via a pre-commit guard"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
 
 ## Resolved
