@@ -176,11 +176,6 @@ func (h *Handler) handleContinuationExhausted(ctx context.Context, info Escalati
 func (h *Handler) handleMissingButSubstantive(_ context.Context, _ EscalationInfo) (*EscalationResult, error) {
 	_ = h.o.reconstructSummary("COMPLETE")
 	if h.o.deps.TripCommitGate != nil {
-		reason := "coder_did_not_produce_summary"
-		if h.o.cfg.CurrentMilestone != "" {
-			reason = fmt.Sprintf("milestone_block_unavailable_%s", h.o.cfg.CurrentMilestone)
-		}
-		_ = reason // reserved for the future m46 commit-gate plumb-through
 		h.o.deps.TripCommitGate("coder_did_not_produce_summary")
 	}
 	// Reconstructed — orchestrator proceeds to review.

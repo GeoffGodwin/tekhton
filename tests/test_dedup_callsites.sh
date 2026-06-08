@@ -125,36 +125,27 @@ _check_callsite "4.1 milestone_acceptance"  "lib/milestone_acceptance.sh"
 _check_callsite "4.3 orchestrate_iteration" "lib/orchestrate_iteration.sh"
 _check_callsite "4.4 orchestrate_preflight" "lib/orchestrate_preflight.sh"
 _check_callsite "4.5 hooks_final_checks"    "lib/hooks_final_checks.sh"
-# M112: new call sites — pre-coder initial check, pre-coder fix verification,
-# tester-fix retest loop.
-_check_callsite "4.6 coder_prerun"          "stages/coder_prerun.sh"
+# m39.4: stages/coder_prerun.sh ported to internal/coder/prerun/. The
+# M105 dedup hooks (test_dedup_can_skip / test_dedup_record_pass) now
+# live on the package-level seams — exercised by
+# internal/coder/prerun/prerun_test.go. Skipping the bash assertion
+# preserves the rest of Suite 4 coverage (same pattern as the m31.1 /
+# m38.3 retirements above).
 # m38.3: stages/tester_fix.sh ported to internal/tester/fix.go. The M105
 # dedup hook now lives on the package-level fixTestDedup seam — exercised
 # by internal/tester/fix_test.go::TestRunInlineFix_DedupSkipsRetest.
 # Skipping the bash assertion preserves the rest of Suite 4 coverage.
 
 # =============================================================================
-# Suite 4.8: M112 — coder_prerun has BOTH paths covered
-# (initial check + fix-loop verification)
+# Suite 4.8: M112 — coder prerun dedup (Go port)
+#
+# m39.4 deleted stages/coder_prerun.sh. The pre-run clean-sweep ported to
+# internal/coder/prerun/. The dedup short-circuits (TestDedupCanSkip +
+# TestDedupRecordPass) live on the Deps seam — the production wiring is
+# the m39.4 orchestrator's prerun.Config + prerun.Deps construction.
+# Coverage of the two paths is now in internal/coder/prerun/*_test.go;
+# the bash assertion is retired.
 # =============================================================================
-echo ""
-echo "=== Suite 4.8: coder_prerun has both dedup call sites (M112) ==="
-
-prerun_file="${TEKHTON_HOME}/stages/coder_prerun.sh"
-prerun_skip_count=$(grep -c 'test_dedup_can_skip' "$prerun_file" || echo "0")
-prerun_record_count=$(grep -c 'test_dedup_record_pass' "$prerun_file" || echo "0")
-
-if [[ "$prerun_skip_count" -ge 2 ]]; then
-    pass "4.8.1: coder_prerun.sh has ${prerun_skip_count} can_skip calls (initial + fix-loop)"
-else
-    fail "4.8.1: coder_prerun.sh should have >=2 can_skip calls, found ${prerun_skip_count}"
-fi
-
-if [[ "$prerun_record_count" -ge 2 ]]; then
-    pass "4.8.2: coder_prerun.sh has ${prerun_record_count} record_pass calls (initial + fix-loop)"
-else
-    fail "4.8.2: coder_prerun.sh should have >=2 record_pass calls, found ${prerun_record_count}"
-fi
 
 # =============================================================================
 # Suite 5: orchestrate.sh — test_dedup_reset at loop entry

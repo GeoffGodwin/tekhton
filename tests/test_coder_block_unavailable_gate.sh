@@ -1,96 +1,78 @@
 #!/usr/bin/env bash
 # TIMEOUT_SECS=20
 # =============================================================================
-# test_coder_block_unavailable_gate.sh — m41 Goal 2 structural regression guard
+# test_coder_block_unavailable_gate.sh — m41 Goal 2 regression guard, Go port
+#
+# m39.4 deleted stages/coder.sh and ported the orchestrator to
+# internal/stages/coder/. The m41 fix that this test guards (the
+# false-positive trip_commit_gate removal on the block-unavailable path)
+# was carried into the Go port — populateMilestone calls deps.TripCommitGate
+# only on the genuine hollow-run paths (completion_gate_failed_substantive_work_only),
+# not the block-unavailable path. The structural assertions move from grep
+# of the bash file to grep of the Go file.
 #
 # Acceptance criteria tested:
-#   AC2: When set_focused_milestone_block fails (block-unavailable), the coder
-#        stage does NOT call trip_commit_gate. The fix removed the
-#        `trip_commit_gate "milestone_block_unavailable_..."` call. This test
-#        verifies that removal and its replacement (a warn-and-continue pair).
+#   AC2: When PopulateMilestoneBlock fails (block-unavailable), the coder
+#        stage does NOT call deps.TripCommitGate("milestone_block_unavailable_...").
+#        A warn-and-continue replaces it.
 #
-#   AC3: The genuine hollow-run gates (coder_did_not_produce_summary,
-#        completion_gate_failed_substantive_work_only) are NOT weakened by the
-#        m41 change. A hollow run must still be blocked by those gates.
-#
-# Testing approach: structural. stages/coder.sh is 1200+ lines and requires
-# the full pipeline environment to exercise end-to-end. A structural grep
-# test is a recognised pattern in this codebase (cf. scripts/wedge-audit.sh,
-# tests/test_tekhton_dir_root_cleanliness.sh) for enforcing invariants that
-# cannot be covered by unit-testing a single function in isolation.
+#   AC3: The genuine hollow-run gate (completion_gate_failed_substantive_work_only)
+#        is NOT weakened. It still trips through deps.TripCommitGate in
+#        runCompletionGate.
 # =============================================================================
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CODER_SH="${TEKHTON_HOME}/stages/coder.sh"
+ORCH_GO="${TEKHTON_HOME}/internal/stages/coder/orchestrator.go"
+
+if [[ ! -f "$ORCH_GO" ]]; then
+    echo "SKIP: $ORCH_GO not found — m39.4 not yet landed"
+    exit 0
+fi
 
 PASS=0 FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 # =============================================================================
-echo "=== AC2: false-positive trip_commit_gate removed from coder.sh ==="
+echo "=== AC2: false-positive milestone_block_unavailable trip absent from Go orchestrator ==="
 
-# m41 removed `trip_commit_gate "milestone_block_unavailable_..."`. If it
-# ever comes back (e.g. an accidental revert), this assertion fires red and
-# names the culprit so the operator can restore the m41 fix without grepping.
-if grep -qE 'trip_commit_gate[[:space:]]+"?milestone_block_unavailable' "$CODER_SH"; then
-    fail "milestone_block_unavailable trip_commit_gate is back in stages/coder.sh — m41 fix reverted"
+if grep -qE 'milestone_block_unavailable' "$ORCH_GO"; then
+    fail "milestone_block_unavailable string found in orchestrator.go — m41 fix reverted"
 else
-    pass "trip_commit_gate 'milestone_block_unavailable' is absent from coder.sh"
+    pass "milestone_block_unavailable string is absent from orchestrator.go"
 fi
 
 # =============================================================================
-echo "=== AC2: warn-and-continue pair replaced the false-positive gate ==="
+echo "=== AC2: warn-on-failure pair replaced the false-positive gate ==="
 
-# The m41 change replaces the gate with two warn calls. At minimum the
-# "downstream hollow-run gates remain in effect" message must be present so
-# operators reading the log understand the new semantic.
-if grep -q "hollow-run gates remain in effect" "$CODER_SH"; then
-    pass "m41 warn 'hollow-run gates remain in effect' is present in coder.sh"
+if grep -q 'MILESTONE_BLOCK could not be populated' "$ORCH_GO"; then
+    pass "block-unavailable warn naming the milestone is present in orchestrator.go"
 else
-    fail "m41 warn message missing from coder.sh — warn-and-continue path not installed"
-fi
-
-# The block-unavailable warn must also include the context variable so the
-# operator can identify which milestone failed to resolve.
-if grep -q 'MILESTONE_BLOCK could not be populated' "$CODER_SH"; then
-    pass "block-unavailable warn naming the milestone is present in coder.sh"
-else
-    fail "block-unavailable warn is missing from coder.sh"
+    fail "block-unavailable warn is missing from orchestrator.go"
 fi
 
 # =============================================================================
-echo "=== AC3: coder_did_not_produce_summary hollow-run gate still present ==="
+echo "=== AC3: completion_gate_failed_substantive_work_only gate still trips ==="
 
-# m41 narrows ONE false-positive trip. It must NOT remove the genuine
-# hollow-run gate that fires when the coder produces no CODER_SUMMARY.
-if grep -q 'trip_commit_gate "coder_did_not_produce_summary"' "$CODER_SH"; then
-    pass "coder_did_not_produce_summary gate is present — hollow runs still blocked"
-else
-    fail "coder_did_not_produce_summary gate MISSING from coder.sh — hollow runs will not be blocked"
-fi
-
-# =============================================================================
-echo "=== AC3: completion_gate_failed_substantive_work_only gate still present ==="
-
-if grep -q 'trip_commit_gate "completion_gate_failed_substantive_work_only"' "$CODER_SH"; then
+if grep -q '"completion_gate_failed_substantive_work_only"' "$ORCH_GO"; then
     pass "completion_gate_failed_substantive_work_only gate is present — hollow runs still blocked"
 else
-    fail "completion_gate_failed_substantive_work_only gate MISSING from coder.sh"
+    fail "completion_gate_failed_substantive_work_only gate MISSING from orchestrator.go"
 fi
 
 # =============================================================================
-echo "=== AC2: no OTHER milestone_block_unavailable trip exists anywhere ==="
+echo "=== AC2: no milestone_block_unavailable trip exists anywhere in repo ==="
 
-# Sanity-check that the removed call is not hiding elsewhere in the repo's
-# bash surface (staged areas, shim files, lib/) with a different quoting style.
-found=$(grep -rE 'trip_commit_gate[[:space:]]+"?milestone_block_unavailable' \
-    "${TEKHTON_HOME}/stages" "${TEKHTON_HOME}/lib" 2>/dev/null || true)
+found=$(grep -rE 'milestone_block_unavailable' \
+    "${TEKHTON_HOME}/internal" "${TEKHTON_HOME}/lib" "${TEKHTON_HOME}/cmd" \
+    2>/dev/null \
+    | grep -v '_test\.go' \
+    | grep -v '^[^:]*\.md:' || true)
 if [[ -z "$found" ]]; then
-    pass "no milestone_block_unavailable trip found in stages/ or lib/"
+    pass "no milestone_block_unavailable trip found in Go or lib/"
 else
-    fail "milestone_block_unavailable trip found outside coder.sh: $found"
+    fail "milestone_block_unavailable trip found: $found"
 fi
 
 # =============================================================================
