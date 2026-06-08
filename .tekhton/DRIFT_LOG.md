@@ -4,17 +4,18 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 217
+- Runs since audit: 218
 =======
-- Runs since audit: 217
+- Runs since audit: 218
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 217
+- Runs since audit: 218
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
 
 ## Resolved
+- [x] [2026-06-08 | "Implement Milestone m01.1: Go Module Bootstrap and Cobra Root"] `.claude/milestones/` contains approximately 40 files for `m01.1` variants produced by repeated dogfooding/self-host loops that re-split and re-issued the same milestone. The canonical file is `m01.1-go-module-bootstrap-and-cobra-root.md`; all others are stale artifacts. A cleanup pass should prune duplicate manifest rows and delete the corresponding milestone files, retaining only the canonical `m01.1` entry. This does not affect runtime correctness but adds noise to every future milestone query.
 - [x] [2026-05-29 | "unknown"] `internal/dashboard/dashboard.go:154â168`: `jsonEscape` is defined but never called in the package. Dead code from an earlier draft; actual escaping is handled by `json.Marshal` in `jsfile.go`.
 - [x] [2026-05-26 | "unknown"] `internal/runner/single.go:buildStageEnv` (lines 124â152) allocates `len(defaultStageOrder())` independent copies of the same flat map. For a five-stage pipeline this is negligible; if the order list grows significantly a shared read-only map (copy-on-write per stage for overrides only) would be more memory-efficient. Flag for future cleanup pass.
 - [x] [2026-05-18 | "unknown"] [internal/preflight/ui_audit.go:255] — Dead `strings.Join` call with incorrect "satisfy import" comment; should be deleted in the next cleanup pass.
