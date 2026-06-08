@@ -276,6 +276,110 @@ func TestClearAutoAdvanceIterationState_GracefulOnMissing(t *testing.T) {
 	}
 }
 
+// TestReadGitHead_ParsesHashAndSubject directly tests the readGitHead helper
+// with a real git repo. Pins the hash-length invariant (40 hex chars for
+// %H) and the full multi-word subject capture via SplitN(..., 2).
+func TestReadGitHead_ParsesHashAndSubject(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	projectDir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = projectDir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	run("config", "commit.gpgsign", "false")
+
+	// Multi-word subject with a bracket token in the middle — verifies SplitN
+	// captures everything after the first space as the subject.
+	wantSubject := "port test_baseline subsystem [MILESTONE 38.5 ✓]"
+	if err := os.WriteFile(filepath.Join(projectDir, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	run("add", "a.txt")
+	run("commit", "-q", "-m", wantSubject)
+
+	hash, subject, err := readGitHead(projectDir)
+	if err != nil {
+		t.Fatalf("readGitHead: unexpected error: %v", err)
+	}
+	if len(hash) != 40 {
+		t.Errorf("hash length = %d, want 40; hash = %q", len(hash), hash)
+	}
+	if subject != wantSubject {
+		t.Errorf("subject = %q, want %q", subject, wantSubject)
+	}
+}
+
+// TestReadGitHead_ReturnsErrorNotGitRepo verifies readGitHead propagates the
+// git error when the working directory is not inside any git repository.
+// Works with or without git on PATH: no git → exec error; git present but
+// no repo → git exits non-zero — both satisfy err != nil.
+func TestReadGitHead_ReturnsErrorNotGitRepo(t *testing.T) {
+	dir := t.TempDir() // /tmp/... — not a git repo
+	hash, subject, err := readGitHead(dir)
+	if err == nil {
+		t.Fatalf("expected error for non-git directory; got hash=%q subject=%q", hash, subject)
+	}
+}
+
+// TestEmitAutoAdvanceCommitBanner_HeadReadFails covers the third banner
+// branch: when readGitHead fails (non-git directory), emitAutoAdvanceCommitBanner
+// must emit the "HEAD read failed" line — not the success or skip banners.
+// This branch is distinct from the skip branch (git succeeds, wrong prefix)
+// tested by TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit.
+func TestEmitAutoAdvanceCommitBanner_HeadReadFails(t *testing.T) {
+	dir := t.TempDir() // not a git repo — readGitHead will return an error
+	var buf bytes.Buffer
+	emitAutoAdvanceCommitBanner(&buf, dir, "m42")
+	got := buf.String()
+	if !strings.Contains(got, "finalize completed but HEAD read failed") {
+		t.Errorf("expected HEAD-read-failed banner; got: %q", got)
+	}
+	if strings.Contains(got, "committed as") {
+		t.Errorf("unexpected success banner in output: %q", got)
+	}
+	if strings.Contains(got, "finalize skipped commit") {
+		t.Errorf("unexpected skip banner in output: %q", got)
+	}
+}
+
+// TestClearAutoAdvanceIterationState_PartialSentinels asserts robustness when
+// only some of the sentinel files exist. The two present ones must be removed;
+// the absent third must not produce an error (idempotent ErrNotExist handling).
+func TestClearAutoAdvanceIterationState_PartialSentinels(t *testing.T) {
+	projectDir := t.TempDir()
+	tekhtonDir := filepath.Join(projectDir, ".tekhton")
+	if err := os.MkdirAll(tekhtonDir, 0o755); err != nil {
+		t.Fatalf("mkdir .tekhton: %v", err)
+	}
+	present := []string{".final_check_result", ".commit_decision"}
+	for _, name := range present {
+		if err := os.WriteFile(filepath.Join(tekhtonDir, name), []byte("stale"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	// .final_check_reason intentionally absent — simulates a run where only
+	// two of the three sentinels were written by the previous iteration.
+
+	if err := clearAutoAdvanceIterationState(projectDir); err != nil {
+		t.Fatalf("unexpected error with partial sentinels: %v", err)
+	}
+	for _, name := range present {
+		path := filepath.Join(tekhtonDir, name)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("sentinel %s still present after reset (err=%v)", name, err)
+		}
+	}
+}
+
 // TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit drives a real git
 // repo and asserts the banner correctly distinguishes a milestone commit
 // (subject begins `[MILESTONE <id> ✓]`) from a generic commit. The expected
