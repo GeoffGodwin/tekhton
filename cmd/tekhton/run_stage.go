@@ -7,8 +7,18 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/geoffgodwin/tekhton/internal/provider/claude"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	stagearchitect "github.com/geoffgodwin/tekhton/internal/stages/architect"
+	stagecleanup "github.com/geoffgodwin/tekhton/internal/stages/cleanup"
+	stagecoder "github.com/geoffgodwin/tekhton/internal/stages/coder"
+	stagedocs "github.com/geoffgodwin/tekhton/internal/stages/docs"
+	stageintake "github.com/geoffgodwin/tekhton/internal/stages/intake"
+	stagereview "github.com/geoffgodwin/tekhton/internal/stages/review"
+	stagesecurity "github.com/geoffgodwin/tekhton/internal/stages/security"
+	stagetester "github.com/geoffgodwin/tekhton/internal/stages/tester"
 	"github.com/geoffgodwin/tekhton/internal/stagerunner"
+	"github.com/geoffgodwin/tekhton/internal/supervisor"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +66,22 @@ func newRunStageCmd() *cobra.Command {
 				wd, _ := os.Getwd()
 				proj = wd
 			}
+
+			// Wire the default provider into every Go-native stage package.
+			// `tekhton run` does this through buildRunner; `tekhton run-stage`
+			// is the parity/test entry point and must do the same or stages
+			// that call provider.RunAgent crash with a nil-pointer panic.
+			// Tests rely on TEKHTON_AGENT_BINARY to redirect supervisor execs
+			// (e.g. to /bin/false or a fake agent script).
+			prov := claude.New(supervisor.New(nil, nil))
+			stageintake.SetProvider(prov)
+			stagecleanup.SetProvider(prov)
+			stagedocs.SetProvider(prov)
+			stagesecurity.SetProvider(prov)
+			stagearchitect.SetProvider(prov)
+			stagereview.SetProvider(prov)
+			stagetester.SetProvider(prov)
+			stagecoder.SetProvider(prov)
 
 			adapter := &stagerunner.BashAdapter{
 				TekhtonHome: home,
