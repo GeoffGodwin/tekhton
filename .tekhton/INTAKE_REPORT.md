@@ -2,16 +2,14 @@
 PASS
 
 ## Confidence
-91
+93
 
 ## Reasoning
-- Scope is precisely defined: 6 new Go files, 8 test files, 8 fixture directories, 2 file modifications, 4 deletions, 3 doc updates, 1 VERSION bump — all enumerated with approximate LOC
-- Explicit out-of-scope callouts: `coder_rework`, `jr_coder` routing, in-process `internal/clarify` calls — no guessing required
-- 15-step orchestrator sequence is fully documented with a numbered list and method-per-step contract, removing interpretation risk
-- Acceptance criteria are machine-verifiable (grep commands, find assertions, go test coverage threshold, exact label strings, exact constant values)
-- "Watch For" section pre-empts the two highest-risk mistakes: bash deletion before Go rewire, and scope creep via `coder_rework`
-- Three-phase sequencing constraint (Go first → rewire second → delete third) is explicit and tied to concrete gates (parity suite, regression test)
-- Dependency on m39.3 is declared; no implicit assumptions about prior arc state
-- No new user-facing config keys introduced — no migration impact section required
-- No UI components — UI testability criterion N/A
-- Size is large but coherent: all deliverables are tightly coupled parts of one orchestrator; the sub-packages from m39.1–m39.3 provide the pre-designed interfaces, so this is assembly work with a clear seam map, not open-ended design
+- Scope is tightly defined: five goals, explicit file list, clear in-scope/out-of-scope boundaries (working-tree write detection, CI guard, generalization all called out as future work)
+- Acceptance criteria are highly specific and testable — grep commands, test scenario descriptions, binary pass/fail conditions for every requirement
+- Code samples are provided for both the Go sentinel writer and the bash guard, leaving no ambiguity about the expected implementation shape
+- Behavior contract is explicit: warn + unstage + proceed (not abort), sentinel cleanup in deferred tail, override via `TEKHTON_MANIFEST_WRITE_OVERRIDE=1`
+- Watch For section pre-empts the three most likely implementation mistakes (non-deferred cleanup, aborting vs unstaging, working-tree vs staged check)
+- No UI components — UI testability criterion is N/A
+- Migration impact is minimal (new auto-managed sentinel under `.tekhton/`, new optional env var) and the behavior is described inline; absence of a formal "Migration impact" section is not a gap at this scope
+- No ambiguity between two competent developers given the design section's specificity
