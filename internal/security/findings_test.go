@@ -232,3 +232,33 @@ func TestExtractFilesFromCoderSummary_H3MixedExtractsBothSubsections(t *testing.
 		t.Errorf("mixed H2/H3 fixture\n got  %#v\n want %#v", got, want)
 	}
 }
+
+// TestExtractFilesFromCoderSummary_H2CanonicalWithH3SubsCollectsBoth covers
+// the belt-and-suspenders overlap the reviewer flagged: the canonical H2
+// `## Files Modified` fires as the BEGIN marker (sets in=true), then H3
+// subheadings `### Modified` and `### Created` appear inside the already-open
+// section. The isFilesSectionHeading hits on the H3 lines are no-ops (in is
+// already true); isH2Heading correctly ignores them, so the scan stays open
+// until the true H2 boundary. Bullets from both H3 subsections must be present.
+func TestExtractFilesFromCoderSummary_H2CanonicalWithH3SubsCollectsBoth(t *testing.T) {
+	got, err := extractFilesFromCoderSummary(filepath.Join("testdata", "docs_only", "h2_canonical_with_h3_subs.md"))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := []string{
+		"internal/example/alpha.go",
+		"internal/example/beta.go",
+		"internal/example/beta_test.go",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("H2 canonical + H3 subs fixture\n got  %#v\n want %#v", got, want)
+	}
+	// Belt-and-suspenders: IsDocsOnly must also return false (code files present).
+	ok, err := IsDocsOnly(filepath.Join("testdata", "docs_only", "h2_canonical_with_h3_subs.md"))
+	if err != nil {
+		t.Fatalf("IsDocsOnly err: %v", err)
+	}
+	if ok {
+		t.Errorf("IsDocsOnly: expected false (code files present), got true")
+	}
+}
