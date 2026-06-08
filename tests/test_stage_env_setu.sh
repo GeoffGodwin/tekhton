@@ -93,12 +93,14 @@ export TEKHTON_DEBUG_ENV=1
 # defaultStageOrder() in internal/runner/single.go, restricted to the
 # stages whose adapter is still the BashAdapter. Go-native stages (docs
 # m34.1, cleanup m34.2, security m35.2, architect m36.1, intake m36.3,
-# review m37.2, tester m38.6) bypass the bash source chain so the
-# env-dump signal would never fire for them — they belong in the Go
-# stage-port test suites, not here.
+# review m37.2, tester m38.6, coder m39.4) bypass the bash source chain
+# so the env-dump signal would never fire for them — they belong in the
+# Go stage-port test suites, not here.
 # Keep in sync — the milestone Watch For warns about silent coverage
 # gaps if a stage isn't exercised here but still has a bash adapter.
-STAGES=(coder)
+# m39.4: coder was the last bash-adapter stage; all stages are now
+# Go-native, so the list is intentionally empty.
+STAGES=()
 RUN_STDERR="${WORKDIR}/all_stderr.log"
 : > "$RUN_STDERR"
 
