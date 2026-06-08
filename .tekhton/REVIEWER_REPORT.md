@@ -8,12 +8,14 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- The milestone acceptance criterion specifies `-X main.version=$(cat VERSION)` but the Makefile correctly uses `-X github.com/geoffgodwin/tekhton/internal/version.Version=$(VERSION_STRING)`. The milestone template is aspirational shorthand; the actual implementation is correct and consistent with the `internal/version` package layout. No action needed, but the canonical milestone file could be updated to reflect the real ldflags path to avoid confusion in future reviews.
-- `go.mod` carries `github.com/fsnotify/fsnotify` and `golang.org/x/sys` alongside Cobra. The milestone's "Watch For" says "only depend on cobra — no other third-party deps yet." These extra deps are from later wedges (Phase 5+) and are not a problem for this verification pass, but the constraint in the milestone file is now stale.
-- The `lint` Makefile target silently skips if `golangci-lint` is not installed. A contributor without it on PATH will not notice lint failures locally. Pre-existing design choice, not introduced by this milestone.
+- `go.mod:8` — `golang.org/x/sys` is pinned at `v0.13.0` (2023-Q3); run `go get golang.org/x/sys@latest && go mod tidy` to close the stale-dependency gap. LOW severity per security report; no known exploitable CVE in this path.
+- `go.mod:8` — `golang.org/x/sys` appears in the direct require block without an `// indirect` marker, but the security agent describes it as an indirect dependency pulled in by `fsnotify`. If no Go file in the repo directly imports `golang.org/x/sys`, `go mod tidy` should demote it to the indirect block. If later-wedge subcommand implementations do import it directly, the current placement is correct and this note is moot.
+- `internal/version/version_test.go` — tests mutate `version.Version` without `t.Cleanup` restoration. Safe for sequential execution (no `t.Parallel()`), but would introduce a data race if parallel test expansion is added later.
+- `Makefile:lint` — the lint target silently skips if `golangci-lint` is not installed, meaning a contributor without it on PATH will not see lint failures locally. Pre-existing design choice, not introduced by this milestone.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `.claude/milestones/` contains approximately 40 files for `m01.1` variants produced by repeated dogfooding/self-host loops that re-split and re-issued the same milestone. The canonical file is `m01.1-go-module-bootstrap-and-cobra-root.md`; all others are stale artifacts. A cleanup pass should prune duplicate manifest rows and delete the corresponding milestone files, retaining only the canonical `m01.1` entry. This does not affect runtime correctness but adds noise to every future milestone query.
+- `.claude/milestones/` continues to accumulate stale sub-splits of m01.1 (`m01.1.1.*`, `m01.1.1.1.*`, etc.) from repeated self-host loops. The parent m01.1 reviewer noted this; it remains uncleaned. A hygiene pass to prune orphaned milestone files is warranted.
+- `Makefile:8` — `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
