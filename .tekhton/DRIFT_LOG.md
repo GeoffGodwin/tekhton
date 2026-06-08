@@ -4,25 +4,25 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 215
+- Runs since audit: 216
 =======
-- Runs since audit: 215
+- Runs since audit: 216
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 215
+- Runs since audit: 216
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
-- [ ] [2026-06-07 | "Implement Milestone m39.3: Buildfix Loop and Scout Sub-Stage"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
-- [ ] [2026-06-07 | "Implement Milestone m39.2: Buildfix Helpers Port"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
-- [ ] [2026-06-07 | "Implement Milestone m39.1: Coder Pre-Run Port"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
-- [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go` now partially overlaps with the new `internal/notes` mutation helpers (`CountOpen` vs. `UnresolvedCount`, `ResolveByModifiedFiles` vs. `SelectCleanupBatch+MarkResolved`). Noted in CODER_SUMMARY as an m40 candidate; included here so the drift log counts it.
 - [2026-05-29 | "unknown"] `internal/dashboard/dashboard.go:154â168`: `jsonEscape` is defined but never called in the package. Dead code from an earlier draft; actual escaping is handled by `json.Marshal` in `jsfile.go`.
 - [2026-05-26 | "unknown"] `internal/runner/single.go:buildStageEnv` (lines 124â152) allocates `len(defaultStageOrder())` independent copies of the same flat map. For a five-stage pipeline this is negligible; if the order list grows significantly a shared read-only map (copy-on-write per stage for overrides only) would be more memory-efficient. Flag for future cleanup pass.
-- [2026-05-26 | "unknown"] `internal/clarify/detect.go:93` — `parseClarifications` still takes `interface{ Read(p []byte) (int, error) }` (anonymous interface) instead of the idiomatic `io.Reader`. They are identical at the interface level; the stdlib type is self-documenting.
 - [2026-05-18 | "unknown"] [internal/preflight/ui_audit.go:255] — Dead `strings.Join` call with incorrect "satisfy import" comment; should be deleted in the next cleanup pass.
 
 ## Resolved
+- [x] [2026-06-07 | "Implement Milestone m39.3: Buildfix Loop and Scout Sub-Stage"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
+- [x] [2026-06-07 | "Implement Milestone m39.2: Buildfix Helpers Port"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
+- [x] [2026-06-07 | "Implement Milestone m39.1: Coder Pre-Run Port"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
+- [x] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go` now partially overlaps with the new `internal/notes` mutation helpers (`CountOpen` vs. `UnresolvedCount`, `ResolveByModifiedFiles` vs. `SelectCleanupBatch+MarkResolved`). Noted in CODER_SUMMARY as an m40 candidate; included here so the drift log counts it.
+- [x] [2026-05-26 | "unknown"] `internal/clarify/detect.go:93` — `parseClarifications` still takes `interface{ Read(p []byte) (int, error) }` (anonymous interface) instead of the idiomatic `io.Reader`. They are identical at the interface level; the stdlib type is self-documenting.
 - [x] [2026-05-26 | "unknown"] `internal/drift/artifacts.go:110-124` — `AppendDecision` calls `NextNumber()` inside the per-ACP loop (re-reading the file from disk after each flush). Correct for the single-writer case; fragile if a future caller passes multiple ACPs simultaneously. Compute the counter once before the loop in a follow-up.
 - [x] [2026-06-07 | "Implement Milestone m38.6: Tester Main Stage Port"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
 - [x] [2026-06-07 | "Implement Milestone m38.5: Test Baseline Port"] `internal/stagerunner/adapter.go` â both diagnostic dump sites are now correctly gated behind `TEKHTON_DEBUG_ENV`; the remaining cleanup work is removing them entirely once issue #41 is resolved. The flag-gated code will not pose a credential risk during that interval but will appear on every future security audit until removed.
