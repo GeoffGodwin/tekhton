@@ -4,292 +4,208 @@
 
 ## What Was Implemented
 
-Milestone **m39.3 — Buildfix Loop and Scout Sub-Stage**. Ports the bash
-`stages/coder_buildfix.sh` M128 continuation loop and the inline scout
-sub-stage in `stages/coder.sh:189-358` to two new Go sub-packages
-(`internal/coder/buildfix/` and `internal/coder/scout/`). Both bash
-files stay on disk — m39.4 deletes them alongside the main-stage port.
+Milestone **m48 — Auto-advance loop: reset per-iteration state so every
+milestone gets its own commit**. Adds two helpers and a banner to the Go
+auto-advance loop in `cmd/tekhton/run.go::runAutoAdvanceLoop`, plus
+three Go unit tests and one shim-boundary integration test.
 
-### Goal 1 — `internal/coder/buildfix/loop.go` + `loop_attempts.go`
+### Goal 1 — `clearAutoAdvanceIterationState(projectDir string) error`
 
-`Run(ctx, *LoopConfig, *Deps, *Paths) (*LoopResult, error)` implements
-the M128 continuation loop. Six terminating-outcome paths are pinned by
-unit tests:
+New file-scope helper in `cmd/tekhton/run.go`. Removes three commit-skip
+sentinels from `<projectDir>/.tekhton/`:
 
-- `cfg.Enabled=false` → `OutcomeNotRun`, `StateExit.ExitReason="build_failure"`
-- `Classify→noncode_dominant` → `OutcomeNotRun`, `StateExit.ExitReason="env_failure"`, DriftHumanActionAppend called once
-- Gate passes attempt 1 → `OutcomePassed`
-- `RequireProgress=true` + unchanged signal at attempt ≥2 → `OutcomeNoProgress`, `ProgressGateFailures=1`
-- `ClassificationRequired=true` + mixed_uncertain failed → `OutcomeExhausted` after exactly 1 attempt (M130 amendment C)
-- MaxAttempts reached → `OutcomeExhausted`
+- `.final_check_result`
+- `.final_check_reason`
+- `.commit_decision`
 
-The four Goal-7 stats (`Outcome`, `Attempts`, `TurnBudgetUsed`,
-`ProgressGateFailures`) are populated on every exit path via
-`writeStats()`. Routing classification is fixed at loop entry (NOT
-re-derived per attempt) — pinned by `TestRun_ClassifyOnceNotPerAttempt`.
+Uses `os.Remove` + `errors.Is(err, os.ErrNotExist)` to be idempotent.
+Returns the first non-not-exist error encountered (so all three removals
+are still attempted). Returns nil when `projectDir == ""`. The
+exhaustive-but-not-closed sentinel list is documented inline so future
+additions can be grepped.
 
-Agent label format `"Coder (build fix — <decision>)"` is preserved
-byte-identically — pinned by `TestRun_LabelFormatPreserved` (3 rows).
+Called from `runAutoAdvanceLoop` at the TOP of each iteration, before
+`buildRunner`. Failure is non-fatal — emits a single
+`auto-advance: warning: clear iteration state for <id>: <err>` line to
+stdout so an operator can spot it, then continues with the iteration
+(worst case = pre-m48 silent commit skip, which the banner below will
+surface anyway).
 
-### Goal 2 — `internal/coder/buildfix/routing.go` (M127 Classify)
+### Goal 2 — `emitAutoAdvanceCommitBanner(w io.Writer, projectDir, milestoneID string)`
 
-`Classify(rawErrors string) Decision` wraps the m17 pattern registry
-via `internal/errors.Patterns()`. Threshold scheme:
+New file-scope helper in `cmd/tekhton/run.go`. After each successful
+`RunSingle` call, inspects HEAD via `readGitHead(projectDir)` and emits
+one of three banner lines:
 
-- `noncode ratio ≥ 70%` → `noncode_dominant`
-- `code ratio ≥ 70%` → `code_dominant`
-- both code AND noncode present → `mixed_uncertain`
-- `unknown ratio ≥ 50%` → `unknown_only`
-- empty input / no signal → `code_dominant` (load-bearing fallback)
+- `✓ <id> committed as <8-char-hash>` — HEAD subject begins
+  `[MILESTONE <num> ✓]` (the prefix from
+  `lib/milestone_ops.sh::get_milestone_commit_prefix`)
+- `⚠ <id> finalize skipped commit — HEAD subject is "<subj>" (expected "<prefix>" prefix). Inspect .tekhton/.commit_decision and .tekhton/.final_check_result.`
+  — HEAD subject doesn't match (skip case)
+- `⚠ <id> finalize completed but HEAD read failed (<err>) — verify commit fired` — `git log` failed
 
-The empty-input → code_dominant default is the m39.3 Watch For
-semantic: bash's `stages/coder_buildfix.sh` initializes
-`decision="code_dominant"` before consulting the classifier, so the loop
-proceeds when the classifier produces no signal rather than save_exit-ing
-the operator. Pinned by `TestClassify_EmptyInputFallback` +
-`TestClassify_NoSignalFallback`.
+`strings.TrimPrefix(milestoneID, "m")` is applied because the bash side
+emits the bare-number form in the prefix (e.g. `[MILESTONE 38.5 ✓]`)
+while the Go runner carries milestoneID as `m38.5`.
 
-The 8-row matrix `TestClassify_FixtureMatrix` covers all four tokens
-plus boundary cases (70% noncode threshold, 69% just-under, code-only
-with noise).
+### Goal 3 — `readGitHead(projectDir string) (hash, subject string, err error)`
 
-### Goal 3 — `internal/coder/scout/scout.go` + `parse_estimate.go`
+Pure helper that shells out to `git log -1 --format=%H %s` rooted at
+projectDir and parses `<hash> <subject>` via `strings.SplitN`. Returns
+`("", "", err)` when git fails (no commit yet, not a repo, etc.). Used
+only by `emitAutoAdvanceCommitBanner`.
 
-`Run(ctx, *Config, *Deps) (*Result, error)` orchestrates the scout
-sub-agent. Three code paths:
+### Goal 4 — Loop wiring
 
-- Live agent → `RunAgent` invoked, `parseEstimate` reads the report
-- `cfg.Cached=true` + report exists → skip agent, parse cached report
-- Agent null-run / missing report → `Result.WasNullRun=true` or
-  `Result.Estimate=nil`, no error
+Two-line additions to `runAutoAdvanceLoop`:
 
-`ParseEstimate(path string)` ports the bash `parse_scout_complexity`
-parser: extracts the `## Complexity Estimate` section, strips leading
-bullets and `**bold**` markers, decodes the six fields. Returns nil
-when `RecommendedCoder<=0` (matches bash validation tail).
+- Before `buildRunner`, immediately after `advances++` and the header
+  banner: `clearAutoAdvanceIterationState(initialReq.ProjectDir)` with
+  non-fatal warn fallback.
+- After the successful-disposition gate (after `currentID = next.ID`
+  would be set): `emitAutoAdvanceCommitBanner(cmd.OutOrStdout(),
+  initialReq.ProjectDir, next.ID)`.
 
-### Goal 4 — `internal/coder/scout/turn_limits.go` (Apply)
+Both additions are scoped narrowly — no other loop logic changed.
 
-`Apply(*Estimate, TurnLimits) TurnLimits` preserves both invariants:
+### Goal 5 — Three Go unit tests (`cmd/tekhton/run_test.go`)
 
-- **Floor invariant**: `result = max(scout_recommended, floor)` per role
-- **Scaling invariant**: positive recommendations above the floor pass
-  through verbatim
+- `TestClearAutoAdvanceIterationState_RemovesSentinels` — plants the
+  three sentinel files under `t.TempDir()/.tekhton/`, calls the helper,
+  asserts all three are gone via `os.Stat` + `os.IsNotExist`.
+- `TestClearAutoAdvanceIterationState_GracefulOnMissing` — exercises
+  three branches: (1) `.tekhton/` does not exist, (2) `.tekhton/` exists
+  but is empty, (3) `projectDir == ""`. All three must return nil.
+- `TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit` — initializes
+  a real git repo via `exec.Command("git", "init")`, commits with
+  subject `[MILESTONE 38.5 ✓] port test_baseline subsystem`, calls
+  `emitAutoAdvanceCommitBanner` with `m38.5`, asserts stdout contains
+  `"✓ m38.5 committed as"` and does NOT contain `"finalize skipped commit"`.
+  Then makes a second commit with a generic subject, re-calls, asserts
+  output contains `"⚠ m38.5 finalize skipped commit"` and does NOT contain
+  `"✓ m38.5 committed as"`. Self-skips when `git` is not on PATH.
 
-`DefaultFloors() = {Coder:15, Reviewer:5, Tester:15}` matches the
-milestone-spec floor triple. The 6-row table test
-`TestApply_TableMatrix` plus the two single-invariant tests
-(`TestApply_ScalingPreservedAtMaxRow`,
-`TestApply_FloorPreservedAtMinRow`) ensure neither invariant can be
-silently broken.
+### Goal 6 — Shim-boundary integration test
 
-### Goal 5 — `internal/coder/scout/should_scout.go` (ShouldScout)
+New `tests/test_autoadvance_per_milestone_commits.sh` (266 LOC) drives
+the production `tekhton` binary across the bash-shim ↔ Go-binary
+boundary. Sets up:
 
-`ShouldScout(ShouldScoutInput) bool` ports the 4-arm decision tree at
-`stages/coder.sh:122-173`:
+- Throwaway git repo under `mktemp -d`
+- Minimal `.claude/pipeline.conf`, agent role stubs, `CLAUDE.md`,
+  `ARCHITECTURE.md`
+- 3-entry `MANIFEST.cfg` (m1 → m2 → m3) + 3 milestone files
 
-- `BUG`: always/auto → true, never → false (default: always)
-- `FEAT`: auto checks `est_turns>10` OR brownfield-keyword regex on
-  (Task + NotesContent) (default: auto)
-- `POLISH`: auto checks brownfield-keyword regex (default: never)
-- No tag → `DynamicTurnsEnabled` gate (default true)
-- `ScoutCached=true` → always false (short-circuit; report on disk)
+Drives `tekhton run --milestone m1 --auto-advance --auto-advance-limit 3`
+with `TEKHTON_AGENT_BINARY=/bin/false` to short-circuit real agent
+invocations. Six assertions:
 
-The 12-row `TestShouldScout_BranchMatrix` + cached short-circuit +
-notes-not-claimed fallthrough + word-boundary regex tests cover every
-branch.
+- A: run executed and produced output
+- B: no Go runtime panic on the new code path
+- C: `tekhton --help` works after m48 changes
+- D: `tekhton run --help` advertises `--auto-advance-limit`
+- E: `tekhton run --help` advertises `--milestone`
+- F: binary's string table contains the m48 reset format literal
+  (`clear iteration state for`), proving the new code is linked in
 
-### Goal 6 — Parity fixtures (`internal/coder/testdata/`)
+Self-skips cleanly when `bin/tekhton` is not built. Picks up the LOCAL
+build over an inherited `$TEKHTON_BIN` (which would point at a
+tekhton-stable binary in self-hosted runs and silently test stale code).
 
-Five parity fixtures land:
+Scope-honest about what the shim-boundary test cannot do: a true 3-
+iteration end-to-end driving 3 separate `[MILESTONE X.Y ✓]` commits
+would require a fake agent that emits CODER_SUMMARY.md /
+REVIEWER_REPORT.md / TESTER_REPORT.md per stage — far beyond
+`testdata/fake_agent.sh`'s two-turn shape. The Go unit tests in
+`cmd/tekhton/run_test.go` cover the banner success/warn paths against a
+real git repo at full fidelity; this shim test covers the binary-level
+integration.
 
-**buildfix/code-dominant-passes/**: 5 TypeScript compile errors →
-classify=code_dominant → attempt 1 fix + gate pass → `OutcomePassed`.
+## Root Cause (bugs only)
 
-**buildfix/mixed-uncertain-retry/**: 5 TS + 5 ECONNREFUSED →
-classify=mixed_uncertain + `BUILD_FIX_CLASSIFICATION_REQUIRED=true` →
-M130 save_exit after 1 attempt.
+Per the milestone's Gap section: `runAutoAdvanceLoop` was introduced in
+m20 + refined m40.1/m40.2 but never cleared per-iteration commit-skip
+sentinels at the iteration boundary. m46 added the bash-side clear for
+the operator-override `[c]/[r]/[s]/[a]` path
+(`_clear_commit_skip_sentinels`) but never extended it to the
+Go-driven auto-advance loop's iteration boundary. Symptoms:
 
-**buildfix/progress-stalls/**: 5 stuck TS errors, identical counts
-+ tails across 2 attempts → `OutcomeNoProgress`,
-`ProgressGateFailures=1`.
+- 2026-06-07 auto-advance produced `bf46f8f` (`[MILESTONE 47 ✓]` —
+  clean) + `a4579be` (m38.5 intake bookkeeping) + zero commits for the
+  next 5 milestones (m38.6, m39.1, m39.2, m39.3, m47-loose-ends)
+- 9,852 lines of work landed in a single manual squash commit
+- Per-milestone narrative was lost; operator had to hand-write the
+  per-milestone story in the squash message
 
-**scout/trivial/**: 1 file, 8 lines, low complexity, RecommendedCoder=20 →
-Apply with DefaultFloors → `Coder=20, Reviewer=8, Tester=20`.
-
-**scout/large-with-split/**: 12 files, 800 lines, high complexity,
-RecommendedCoder=100 → estimate surfaces an above-threshold scaling.
-
-Two parity tests load each fixture: `internal/coder/buildfix/parity_test.go`
-drives 3 build-fix scenarios; `internal/coder/scout/parity_test.go`
-drives 2 scout scenarios. All five pass.
-
-### Goal 7 — Load-bearing semantics preserved (Watch For items)
-
-- **Classify defaults to code_dominant for empty/no-signal**: 2 tests
-  pin this (`TestClassify_EmptyInputFallback`,
-  `TestClassify_NoSignalFallback`).
-- **M130 mixed_uncertain save_exit gated on `ClassificationRequired`**:
-  `TestRun_MixedUncertainEmitsDiagOnce` (default off → 3 attempts) and
-  `TestRun_M130MixedUncertainSaveExit` (on → 1 attempt) together pin
-  this.
-- **Routing decision fixed at loop entry, NOT re-classified per
-  attempt**: `TestRun_ClassifyOnceNotPerAttempt` asserts
-  `classifyCalls==1` even when raw errors drift across attempts.
-- **BUILD_RAW_ERRORS_FILE re-read per attempt but routing context is
-  preserved**: the loop re-reads `rawErrors` after each failed attempt
-  but never re-calls `Classify`; the appended report rows carry the
-  fixed classification.
-- **`apply_scout_turn_limits` preserves floor AND scaling**: the 6-row
-  Apply table + 2 single-invariant tests pin this; a buggy
-  implementation breaks a specific row.
-- **DYNAMIC_TURNS_ENABLED gates whether to scout, NOT whether to
-  apply**: `ShouldScout` is independent of `Apply`; Apply is callable on
-  any Estimate. Tests exercise both paths.
-- **SCOUT_CACHED=true skips the agent and reads from disk**:
-  `TestRun_CachedSkipsAgent` asserts RunAgent calls=0,
-  ParseEstimate calls=1.
-- **DYNAMIC_TURNS_ENABLED default is true**: pinned by
-  `TestShouldScout_BranchMatrix` row "no tag + default → true".
-- **Bash files NOT deleted in m39.3**: `stages/coder_buildfix.sh` and
-  `stages/coder.sh` remain on disk. m39.4 deletes them with the
-  main-stage port.
-
-## Architecture Change Proposals
-
-None. The two new `internal/coder/buildfix/` (extended) and
-`internal/coder/scout/` (new) sub-packages live under the existing
-`internal/coder/` umbrella (introduced m39.1, extended m39.2). The
-architecture already accommodates this — same pattern as
-`internal/coder/prerun/`.
+Fix: clear the three sentinels at the top of each iteration BEFORE
+`buildRunner` runs the next stage; emit a banner AFTER each iteration
+to surface skip-on-commit regressions in real-time.
 
 ## Files Modified
 
-### Buildfix sub-package (extended)
+### Modified
 
-- `internal/coder/buildfix/loop.go` (NEW, 139 LOC) — Run entry +
-  type definitions (LoopResult, StateExit, Paths).
-- `internal/coder/buildfix/loop_attempts.go` (NEW, 150 LOC) — inner
-  loop (runAttempts) + terminal-outcome routing
-  (finalizeOutcome, writeStats).
-- `internal/coder/buildfix/loop_helpers.go` (NEW, 259 LOC) — default
-  appliers, noncode_dominant handler, error snapshot, build-fix
-  invocation, attempt-report assembly, log/warn/error wrappers.
-- `internal/coder/buildfix/deps.go` (NEW, 75 LOC) — Deps DI seam.
-- `internal/coder/buildfix/routing.go` (NEW, 82 LOC) — Classify +
-  classifyLineCounts.
-- `internal/coder/buildfix/loop_test.go` (NEW, 120 LOC) — disabled /
-  noncode_dominant / mixed_uncertain-emit-diag-once / label-format
-  tests.
-- `internal/coder/buildfix/loop_invariants_test.go` (NEW, 189 LOC) —
-  M130 save_exit, progress stall, unrecognized token, always-exports-
-  stats, classify-once-not-per-attempt tests.
-- `internal/coder/buildfix/loop_fake_test.go` (NEW, 128 LOC) —
-  shared `loopFake` recording fake.
-- `internal/coder/buildfix/routing_test.go` (NEW, 101 LOC) — 8-row
-  M127 4-token matrix + empty-input + no-signal fallback tests.
-- `internal/coder/buildfix/parity_test.go` (NEW, 172 LOC) — 3-fixture
-  parity tests driving the live loop end-to-end.
+- `cmd/tekhton/run.go` (768 LOC) — added imports (`io`, `os/exec`),
+  added three helpers (`clearAutoAdvanceIterationState`,
+  `emitAutoAdvanceCommitBanner`, `readGitHead`), wired the helpers into
+  `runAutoAdvanceLoop` at the iteration top/bottom.
+- `cmd/tekhton/run_test.go` (336 LOC) — added imports (`bytes`, `os`,
+  `os/exec`, `path/filepath`), added three tests
+  (`TestClearAutoAdvanceIterationState_RemovesSentinels`,
+  `TestClearAutoAdvanceIterationState_GracefulOnMissing`,
+  `TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit`).
 
-### Scout sub-package (new)
+### Created
 
-- `internal/coder/scout/types.go` (NEW, 52 LOC) — Estimate, TurnLimits,
-  DefaultFloors.
-- `internal/coder/scout/turn_limits.go` (NEW, 48 LOC) — Apply +
-  maxInt helper.
-- `internal/coder/scout/should_scout.go` (NEW, 150 LOC) — ShouldScout
-  predicate + per-tag branch helpers + brownfield regex.
-- `internal/coder/scout/scout.go` (NEW, 250 LOC) — Run, runCached,
-  applyDefaults, invokeScoutAgent, parseEstimate seam, log/warn/success
-  wrappers.
-- `internal/coder/scout/parse_estimate.go` (NEW, 142 LOC) —
-  ParseEstimate + section extraction + field parsers.
-- `internal/coder/scout/turn_limits_test.go` (NEW, 125 LOC) — 6-row
-  table + DefaultFloors + 2 single-invariant tests.
-- `internal/coder/scout/should_scout_test.go` (NEW, 132 LOC) — 12-row
-  branch matrix + cached + notes-not-claimed + word-boundary tests.
-- `internal/coder/scout/scout_test.go` (NEW, 285 LOC) — happy path /
-  post-split label / null-run / missing report / cached / parser
-  fixtures.
-- `internal/coder/scout/parity_test.go` (NEW, 128 LOC) — 2-fixture
-  parity tests driving ParseEstimate + Apply end-to-end.
-
-### Parity fixtures
-
-- `internal/coder/testdata/buildfix/code-dominant-passes/raw_errors.txt` (NEW)
-- `internal/coder/testdata/buildfix/code-dominant-passes/expected.json` (NEW)
-- `internal/coder/testdata/buildfix/mixed-uncertain-retry/raw_errors.txt` (NEW)
-- `internal/coder/testdata/buildfix/mixed-uncertain-retry/expected.json` (NEW)
-- `internal/coder/testdata/buildfix/progress-stalls/raw_errors.txt` (NEW)
-- `internal/coder/testdata/buildfix/progress-stalls/expected.json` (NEW)
-- `internal/coder/testdata/scout/trivial/SCOUT_REPORT.md` (NEW)
-- `internal/coder/testdata/scout/trivial/expected.json` (NEW)
-- `internal/coder/testdata/scout/large-with-split/SCOUT_REPORT.md` (NEW)
-- `internal/coder/testdata/scout/large-with-split/expected.json` (NEW)
-
-### Bash files intentionally NOT modified or deleted
-
-- `stages/coder_buildfix.sh` — stays on disk; sourced by `stages/coder.sh`.
-- `stages/coder_buildfix_helpers.sh` — stays on disk; sourced by `stages/coder_buildfix.sh`.
-- `stages/coder.sh` — stays on disk; scout block at lines 189-358 still drives the bash-coder path.
-
-m39.4 deletes all three together with the main-stage port (acceptance
-criterion: `test -f stages/coder_buildfix.sh && test -f stages/coder.sh`).
+- `tests/test_autoadvance_per_milestone_commits.sh` (NEW, 266 LOC) —
+  shim-boundary integration test driving the production `tekhton`
+  binary with `TEKHTON_AGENT_BINARY=/bin/false` short-circuit.
 
 ### File-length compliance
 
-Every file under 300 lines (per task instructions). The original
-single `loop.go` was 350 LOC and was split into `loop.go` (139) +
-`loop_attempts.go` (150) by domain (entry+types vs. iteration body).
-The original single `loop_test.go` was 407 LOC and was split into
-`loop_test.go` (120) + `loop_invariants_test.go` (189) +
-`loop_fake_test.go` (128) by concern (basic disposition vs.
-load-bearing invariants vs. shared fake).
+- `cmd/tekhton/run.go` 768 LOC — within the Go 1000-line hard ceiling
+  (CLAUDE.md Rule 8); domain-coherent (one cobra subcommand).
+- `cmd/tekhton/run_test.go` 336 LOC — within the Go ceiling; siblings
+  in `cmd/tekhton/` go up to 549 LOC (`state_test.go`).
+- `tests/test_autoadvance_per_milestone_commits.sh` 266 LOC — under
+  the bash 300-line hard ceiling.
 
 ## Docs Updated
 
-None — no public-surface changes in this task. Both new sub-packages
-(`internal/coder/buildfix/` extended and `internal/coder/scout/`) are
-internal packages; no CLI surface, no config keys added. The
-`BUILD_FIX_*` and `SCOUT_*` env vars are pre-existing M128 / M42
-config keys documented in CLAUDE.md; m39.3 ports the helpers that
-read them, not the keys themselves. m39.4's main-stage wiring is
-where the user-observable behavior will need an `ARCHITECTURE.md`
-entry under `internal/coder/`.
+None — no public-surface changes in this task. The new helpers are
+package-private to `cmd/tekhton/`; no CLI flag or env var added. The
+existing `--auto-advance` / `--auto-advance-limit` flags already
+documented; behavior change (per-iteration reset + banner) is
+operator-visible at runtime but not a documented contract change. The
+`.tekhton/.commit_decision` / `.final_check_result` / `.final_check_reason`
+sentinels are internal pipeline state, not user-facing.
 
 ## Human Notes Status
 
 No actionable human notes attached to this run. The `CLARIFICATIONS.md`
-content carried in the run context is from prior sessions on unrelated
-topics (Watchtower dashboard, NON_BLOCKING_LOG, brownfield --init flow,
-intake testing) — none applies to m39.3.
+content carried in the run context is from prior unrelated sessions
+(Watchtower dashboard, NON_BLOCKING_LOG, brownfield --init flow, intake
+testing) — none applies to m48.
 
 ## Verification
 
-- `go build ./...` — clean.
-- `go vet ./...` — clean.
-- `gofmt -l internal/coder/` — clean.
-- `go test -count=1 -cover ./internal/coder/buildfix/...` — 83.4%
-  coverage (exceeds 80% milestone minimum).
-- `go test -count=1 -cover ./internal/coder/scout/...` — 85.1%
-  coverage (exceeds 80% milestone minimum).
-- `go test ./...` — all Go packages pass (no regressions vs m39.2
-  baseline).
-- Bash regression suite — pending; ran in background.
-- 5 parity fixtures pass byte-identically against captured assertions.
-- File lengths (all under 300):
-  - `loop.go` 139, `loop_attempts.go` 150, `loop_helpers.go` 259,
-    `deps.go` 75, `routing.go` 82
-  - `loop_test.go` 120, `loop_invariants_test.go` 189,
-    `loop_fake_test.go` 128, `routing_test.go` 101, `parity_test.go` 172
-  - `scout/types.go` 52, `turn_limits.go` 48, `should_scout.go` 150,
-    `scout.go` 250, `parse_estimate.go` 142
-  - `scout/turn_limits_test.go` 125, `should_scout_test.go` 132,
-    `scout_test.go` 285, `parity_test.go` 128
-- `test -f stages/coder_buildfix.sh && test -f stages/coder.sh` —
-  true (m39.3 acceptance criterion: bash files NOT deleted).
-- 14 exported functions verified across both sub-packages:
-  buildfix.{Run, Classify, ComputeBudget, ProgressSignal, TerminalClass,
-  ExtraContextFor, ExportStats, SetSecondaryCause, CountErrors,
-  ErrorTail, AppendReport, EmitRoutingDiagnosis} + scout.{Run, Apply,
-  ShouldScout, ParseEstimate, DefaultFloors}.
+All acceptance criteria pass:
+
+- AC1 (`grep -nE 'func clearAutoAdvanceIterationState'`) → 1 match at
+  `cmd/tekhton/run.go:703`
+- AC2 (`grep -B 2 -A 3 'clearAutoAdvanceIterationState'`) → call inside
+  the `for advances < limit` block, before `buildRunner`
+- AC3 — AC6: `go test -run TestClearAutoAdvanceIterationState|TestEmitAutoAdvanceCommitBanner -v`
+  → 3 PASS
+- AC7 — `bash tests/test_autoadvance_per_milestone_commits.sh` →
+  `Passed: 6  Failed: 0`
+- AC8 — `go test ./cmd/tekhton/ ./internal/runner/` → both packages PASS
+- AC9 — `shellcheck tests/test_autoadvance_per_milestone_commits.sh` →
+  clean
+- AC10 — `go vet ./cmd/tekhton/...` clean, `gofmt -l cmd/tekhton/` clean
+- AC11 — `bash tests/run_tests.sh` → 494 shell pass / 0 fail, all Go
+  packages pass (was 493 → 494: +1 for new shim-boundary test)
+
+## Observed Issues (out of scope)
+
+None observed in files touched during this task.

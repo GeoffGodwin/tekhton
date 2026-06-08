@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -617,6 +619,18 @@ func runAutoAdvanceLoop(
 				"══════════════════════════════════════\n\n",
 			advances, limit, next.ID, next.Title)
 
+		// m48 — Reset per-iteration commit-skip sentinels. Without this,
+		// every iteration after the first inherits the previous one's
+		// .commit_decision / .final_check_result sentinels and
+		// _hook_commit silently skips. Non-fatal: the worst case is the
+		// pre-fix behavior (silent commit skip), and the post-iteration
+		// banner below will surface it.
+		if err := clearAutoAdvanceIterationState(initialReq.ProjectDir); err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"auto-advance: warning: clear iteration state for %s: %v\n",
+				next.ID, err)
+		}
+
 		// Build a fresh request for the next milestone. Reuse the original
 		// request's project + tekhton-home + flags so the new run sees the
 		// same environment as the first.
@@ -653,10 +667,102 @@ func runAutoAdvanceLoop(
 				err: fmt.Errorf("auto-advance: %s disposition=%s", next.ID, res.Disposition)}
 		}
 
+		// m48 — Per-iteration commit confirmation banner. Surfaces whether
+		// _hook_commit fired for this iteration so the operator can spot a
+		// silent skip without scrolling through the log.
+		emitAutoAdvanceCommitBanner(cmd.OutOrStdout(), initialReq.ProjectDir, next.ID)
+
 		currentID = next.ID
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"auto-advance: reached limit %d, stopping.\n", limit)
 	return nil
+}
+
+// clearAutoAdvanceIterationState removes commit-skip sentinels and other
+// per-iteration state files that, if inherited from the previous milestone
+// in the chain, would silently poison the current iteration's _hook_commit.
+// The reset is intentionally minimal: every file listed here is a sentinel
+// that the Go finalize chain WRITES during its own flow; clearing them at
+// iteration start is equivalent to running the pipeline against a fresh tree.
+//
+// Without this reset, every iteration after the first inherits the previous
+// iteration's .commit_decision="skipped" (or worse, a FINAL_CHECK_RESULT=1)
+// and _hook_commit short-circuits. The m46-added warn fires on every skip,
+// but the loud output gets lost in long-chain runs (six milestones × dozens
+// of log lines each).
+//
+// Reference: 2026-06-07 auto-advance run that produced bf46f8f (m47
+// [MILESTONE ✓]) + a4579be (m38.5 intake bookkeeping) + zero commits for the
+// next 5 milestones. The work landed correctly, but the per-milestone
+// narrative was lost.
+//
+// The sentinel list is exhaustive but not closed. If a future milestone adds
+// another commit-skip sentinel, add it to this list.
+func clearAutoAdvanceIterationState(projectDir string) error {
+	if projectDir == "" {
+		return nil
+	}
+	tekhtonDir := filepath.Join(projectDir, ".tekhton")
+	sentinels := []string{
+		".final_check_result",
+		".final_check_reason",
+		".commit_decision",
+	}
+	var firstErr error
+	for _, name := range sentinels {
+		path := filepath.Join(tekhtonDir, name)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// emitAutoAdvanceCommitBanner emits a one-line operator-visible confirmation
+// after each successful auto-advance iteration. Inspects HEAD to determine
+// whether _hook_commit fired for this iteration. Lets the operator see at-a-
+// glance whether the per-milestone narrative is being preserved.
+//
+// The post-finalize commit subject is `[MILESTONE <num> ✓] <message>` when
+// _hook_commit fired (see lib/milestone_ops.sh::get_milestone_commit_prefix).
+// The number is the bare form ("38.5"), so we strip the "m" prefix from
+// milestoneID before building the expected prefix.
+func emitAutoAdvanceCommitBanner(w io.Writer, projectDir, milestoneID string) {
+	headHash, headSubject, err := readGitHead(projectDir)
+	if err != nil || headHash == "" {
+		fmt.Fprintf(w,
+			"⚠ %s finalize completed but HEAD read failed (%v) — verify commit fired\n",
+			milestoneID, err)
+		return
+	}
+	expectedPrefix := fmt.Sprintf("[MILESTONE %s ✓]", strings.TrimPrefix(milestoneID, "m"))
+	if strings.HasPrefix(headSubject, expectedPrefix) {
+		fmt.Fprintf(w, "✓ %s committed as %s\n", milestoneID, headHash[:8])
+		return
+	}
+	fmt.Fprintf(w,
+		"⚠ %s finalize skipped commit — HEAD subject is %q (expected %q prefix). "+
+			"Inspect .tekhton/.commit_decision and .tekhton/.final_check_result.\n",
+		milestoneID, headSubject, expectedPrefix)
+}
+
+// readGitHead returns the HEAD commit hash and subject for the repo rooted
+// at projectDir. Used by emitAutoAdvanceCommitBanner to detect whether the
+// per-milestone commit fired.
+func readGitHead(projectDir string) (hash, subject string, err error) {
+	c := exec.Command("git", "log", "-1", "--format=%H %s")
+	c.Dir = projectDir
+	out, err := c.Output()
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(out)), " ", 2)
+	if len(parts) != 2 {
+		return strings.TrimSpace(string(out)), "", nil
+	}
+	return parts[0], parts[1], nil
 }

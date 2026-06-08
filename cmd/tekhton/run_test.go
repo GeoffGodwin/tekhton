@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -208,5 +212,125 @@ func TestBuildRunner_EnvBuilderWired(t *testing.T) {
 	}
 	if hooks.Env != r.Env {
 		t.Error("buildRunner: BashHookRunner.Env and Runner.Env should share the same builder")
+	}
+}
+
+// TestClearAutoAdvanceIterationState_RemovesSentinels is the m48 acceptance
+// gate for the per-iteration sentinel reset. Plants the three commit-skip
+// sentinels under .tekhton/ and asserts every one is removed.
+func TestClearAutoAdvanceIterationState_RemovesSentinels(t *testing.T) {
+	projectDir := t.TempDir()
+	tekhtonDir := filepath.Join(projectDir, ".tekhton")
+	if err := os.MkdirAll(tekhtonDir, 0o755); err != nil {
+		t.Fatalf("mkdir .tekhton: %v", err)
+	}
+	sentinels := []string{
+		".final_check_result",
+		".final_check_reason",
+		".commit_decision",
+	}
+	for _, name := range sentinels {
+		path := filepath.Join(tekhtonDir, name)
+		if err := os.WriteFile(path, []byte("stale\n"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+
+	if err := clearAutoAdvanceIterationState(projectDir); err != nil {
+		t.Fatalf("clearAutoAdvanceIterationState: unexpected error: %v", err)
+	}
+
+	for _, name := range sentinels {
+		path := filepath.Join(tekhtonDir, name)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("sentinel %s still present (err=%v); reset failed", name, err)
+		}
+	}
+}
+
+// TestClearAutoAdvanceIterationState_GracefulOnMissing asserts the reset is
+// idempotent — calling it against a directory with no sentinels must not
+// error. Iteration 1 (and any iteration following a previous-iteration
+// success that already cleared on its own) hits this path.
+func TestClearAutoAdvanceIterationState_GracefulOnMissing(t *testing.T) {
+	projectDir := t.TempDir()
+	// Intentionally do not create .tekhton/ — covers the colder branch
+	// where neither the directory nor the files exist.
+	if err := clearAutoAdvanceIterationState(projectDir); err != nil {
+		t.Fatalf("expected nil error for missing sentinels, got %v", err)
+	}
+
+	// And the warmer branch: .tekhton/ exists but contains none of the
+	// sentinel files.
+	tekhtonDir := filepath.Join(projectDir, ".tekhton")
+	if err := os.MkdirAll(tekhtonDir, 0o755); err != nil {
+		t.Fatalf("mkdir .tekhton: %v", err)
+	}
+	if err := clearAutoAdvanceIterationState(projectDir); err != nil {
+		t.Fatalf("expected nil error when .tekhton/ is empty, got %v", err)
+	}
+
+	// Empty projectDir short-circuits.
+	if err := clearAutoAdvanceIterationState(""); err != nil {
+		t.Fatalf("expected nil error for empty projectDir, got %v", err)
+	}
+}
+
+// TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit drives a real git
+// repo and asserts the banner correctly distinguishes a milestone commit
+// (subject begins `[MILESTONE <id> ✓]`) from a generic commit. The expected
+// prefix is set by lib/milestone_ops.sh::get_milestone_commit_prefix — if
+// that prefix changes, this test fails red.
+func TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	projectDir := t.TempDir()
+
+	gitInit := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = projectDir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	gitInit("init", "-q")
+	gitInit("config", "user.email", "test@example.com")
+	gitInit("config", "user.name", "Test")
+	gitInit("config", "commit.gpgsign", "false")
+
+	if err := os.WriteFile(filepath.Join(projectDir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	gitInit("add", "a.txt")
+	gitInit("commit", "-q", "-m", "[MILESTONE 38.5 ✓] port test_baseline subsystem")
+
+	// Success-banner case: HEAD subject matches expected prefix.
+	var buf bytes.Buffer
+	emitAutoAdvanceCommitBanner(&buf, projectDir, "m38.5")
+	got := buf.String()
+	if !strings.Contains(got, "✓ m38.5 committed as") {
+		t.Errorf("missing success banner in output: %q", got)
+	}
+	if strings.Contains(got, "finalize skipped commit") {
+		t.Errorf("unexpected skip banner emitted on success path: %q", got)
+	}
+
+	// Follow-up commit with a generic subject — banner must flip to warn.
+	if err := os.WriteFile(filepath.Join(projectDir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("write b.txt: %v", err)
+	}
+	gitInit("add", "b.txt")
+	gitInit("commit", "-q", "-m", "feat: changes in .tekhton/INTAKE_REPORT.md")
+
+	buf.Reset()
+	emitAutoAdvanceCommitBanner(&buf, projectDir, "m38.5")
+	got = buf.String()
+	if !strings.Contains(got, "⚠ m38.5 finalize skipped commit") {
+		t.Errorf("missing skip banner in output: %q", got)
+	}
+	if strings.Contains(got, "✓ m38.5 committed as") {
+		t.Errorf("unexpected success banner emitted on skip path: %q", got)
 	}
 }
