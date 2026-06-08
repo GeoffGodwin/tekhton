@@ -81,3 +81,4 @@ _is_path_allowed() {
     done < <( _coder_declared_files; _pipeline_bookkeeping_globs )
     return 1
 }
+
