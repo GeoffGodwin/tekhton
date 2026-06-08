@@ -5,11 +5,12 @@ PASS
 93
 
 ## Reasoning
-- Scope is tightly defined: five goals, explicit file list, clear in-scope/out-of-scope boundaries (working-tree write detection, CI guard, generalization all called out as future work)
-- Acceptance criteria are highly specific and testable — grep commands, test scenario descriptions, binary pass/fail conditions for every requirement
-- Code samples are provided for both the Go sentinel writer and the bash guard, leaving no ambiguity about the expected implementation shape
-- Behavior contract is explicit: warn + unstage + proceed (not abort), sentinel cleanup in deferred tail, override via `TEKHTON_MANIFEST_WRITE_OVERRIDE=1`
-- Watch For section pre-empts the three most likely implementation mistakes (non-deferred cleanup, aborting vs unstaging, working-tree vs staged check)
-- No UI components — UI testability criterion is N/A
-- Migration impact is minimal (new auto-managed sentinel under `.tekhton/`, new optional env var) and the behavior is described inline; absence of a formal "Migration impact" section is not a gap at this scope
-- No ambiguity between two competent developers given the design section's specificity
+- Scope is precisely bounded: new files under `internal/provider/` only; supervisor and all stage code explicitly off-limits
+- Acceptance criteria are fully machine-verifiable (specific `go test` commands, `grep` assertions, `go doc` checks, `git diff` emptiness checks) — no vague "works correctly" entries
+- The interface shape is given in full code blocks; two developers would produce nearly identical implementations
+- Non-goals are stated three times (milestone table, sequencing note, Watch For) — no ambiguity about what m01 does vs m02
+- `ToolSchema` placeholder acknowledged and scoped to m04 — no hidden design decision deferred silently
+- Watch For section covers the highest-risk traps (supervisor mutation, Result field set as contract, channel close semantics, `OutcomeUnknown` as safety net)
+- No user-facing config keys, pipeline.conf additions, or file-format changes — migration impact section not required
+- No UI components — UI testability criterion is not applicable
+- One minor note: `Request.Tools []ToolSchema` references a type that doesn't exist yet; the milestone acknowledges it's a placeholder for m04, so this is expected and not a gap

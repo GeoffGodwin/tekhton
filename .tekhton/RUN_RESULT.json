@@ -1,8 +1,10 @@
 {
   "proto": "tekhton.run.result.v1",
-  "disposition": "success",
+  "disposition": "failure",
   "attempts": 1,
-  "agent_calls": 8,
-  "elapsed_secs": 3640,
-  "tests_run": true
+  "agent_calls": 1,
+  "elapsed_secs": 37,
+  "recovery": "save_exit",
+  "error_message": "stagerunner: subprocess failed\nexit status 1",
+  "error_class": "coder"
 }
