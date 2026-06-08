@@ -28,7 +28,8 @@ _coder_declared_files() {
         | grep -oE "\`[^\`]+\`" \
         | sed "s/^\`//;s/\`\$//" \
         | grep -vE '^\(fill|^N\/A$|^None$' \
-        | sort -u
+        | sort -u \
+        || return 0
 }
 
 # _pipeline_bookkeeping_globs

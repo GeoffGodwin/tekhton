@@ -59,6 +59,7 @@ service-account*.json
 .tekhton/parity_report/
 # Transient finalize-hook state (#46 commit gate sentinel); not source-controlled.
 .tekhton/.final_check_result
+.tekhton/.finalize_active
 # Transient commit-decision sentinel — lib/finalize_commit.sh writes
 # this in _hook_commit to gate the completion bookkeeping hooks
 # (mark_done / cleanup_milestone / clear_state). Per-run state, never
