@@ -68,19 +68,28 @@ _ac_has() {
 M29_PARENT="${MILESTONE_DIR}/m29-detect-port.md"
 M29_1="${MILESTONE_DIR}/m29.1-detect-core-and-report.md"
 M29_2="${MILESTONE_DIR}/m29.2-detect-domain-detectors.md"
-MANIFEST="${MILESTONE_DIR}/MANIFEST.cfg"
+# V4 milestones were archived to MANIFEST_V4.cfg at the V5 kickoff (commit 084d148).
+# The active MANIFEST.cfg is the fresh V5 manifest; V4 row checks read the archive.
+MANIFEST="${MILESTONE_DIR}/MANIFEST_V4.cfg"
 
 # ---------------------------------------------------------------------------
-# Load m29.2 file content from git history (file deleted on milestone close)
+# Load m29 parent + m29.2 file content from git history (files deleted on
+# milestone close, and again wholesale at the V5 cleanup).
 # ---------------------------------------------------------------------------
-M29_2_DEL=$(git -C "$TEKHTON_HOME" log --all --format="%H" --diff-filter=D \
-    -- .claude/milestones/m29.2-detect-domain-detectors.md 2>/dev/null | head -1)
-if [[ -n "$M29_2_DEL" ]]; then
-    M29_2_HIST=$(git -C "$TEKHTON_HOME" show \
-        "${M29_2_DEL}^:.claude/milestones/m29.2-detect-domain-detectors.md" 2>/dev/null || echo "")
-else
-    M29_2_HIST=""
-fi
+_git_last_content() {
+    local path="$1"
+    local sha
+    sha=$(git -C "$TEKHTON_HOME" log --all --format="%H" --diff-filter=D \
+        -- "$path" 2>/dev/null | head -1)
+    if [[ -n "$sha" ]]; then
+        git -C "$TEKHTON_HOME" show "${sha}^:${path}" 2>/dev/null || echo ""
+    else
+        echo ""
+    fi
+}
+
+M29_2_HIST="$(_git_last_content ".claude/milestones/m29.2-detect-domain-detectors.md")"
+M29_PARENT_HIST="$(_git_last_content ".claude/milestones/m29-detect-port.md")"
 
 # ---------------------------------------------------------------------------
 # AC1 — m29.1 completed: file deleted by finalize, MANIFEST shows done
@@ -178,12 +187,16 @@ echo "Suite 6: Parent milestone status"
 
 if [[ -f "$M29_PARENT" ]]; then
     pass "m29 parent file exists"
+elif [[ -n "$M29_PARENT_HIST" ]]; then
+    pass "m29 parent recovered from git history (V4 cleanup deleted the file)"
 else
     fail "m29 parent file missing: $M29_PARENT"
 fi
 
 if grep -q 'status: "split"' "$M29_PARENT" 2>/dev/null; then
     pass "m29 parent has status: \"split\""
+elif echo "$M29_PARENT_HIST" | grep -q 'status: "split"'; then
+    pass "m29 parent had status: \"split\" at last on-disk version (git history)"
 else
     fail "m29 parent missing status: \"split\""
 fi

@@ -116,12 +116,15 @@ if [[ "$version_major" == "4" ]] && [[ "$version_minor" == "27" ]] && [[ "$versi
     ok=true
 elif [[ "$version_major" == "4" ]] && [[ "$version_minor" -ge 28 ]]; then
     ok=true
+elif [[ "$version_major" -ge 5 ]]; then
+    # V5 supersedes the V4 m28 arc floor.
+    ok=true
 fi
 
 if [[ "$ok" == "true" ]]; then
     _pass "VERSION at or above m28.2 floor — current: ${actual_version}"
 else
-    _fail "VERSION reads '${actual_version}', expected 4.27.x (x>=6) or 4.>=28.x"
+    _fail "VERSION reads '${actual_version}', expected 4.27.x (x>=6), 4.>=28.x, or >=5.x.y"
 fi
 
 # =============================================================================

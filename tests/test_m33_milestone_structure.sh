@@ -54,7 +54,9 @@ _files_modified_has() {
 M33_PARENT="${MILESTONE_DIR}/m33-dashboard-port.md"
 M33_1="${MILESTONE_DIR}/m33.1-dashboard-emitters.md"
 M33_2="${MILESTONE_DIR}/m33.2-dashboard-parsers.md"
-MANIFEST="${MILESTONE_DIR}/MANIFEST.cfg"
+# V4 milestones were archived to MANIFEST_V4.cfg at the V5 kickoff (commit 084d148).
+# The active MANIFEST.cfg is the fresh V5 manifest; V4 row checks read the archive.
+MANIFEST="${MILESTONE_DIR}/MANIFEST_V4.cfg"
 
 # ---------------------------------------------------------------------------
 # AC1 — m33.1 exists with correct meta block and Overview dependency

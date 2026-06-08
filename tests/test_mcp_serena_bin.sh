@@ -223,10 +223,12 @@ ver=$(tr -d '[:space:]' < "${TEKHTON_HOME}/VERSION" 2>/dev/null || echo "MISSING
 vmaj="${ver%%.*}"; vrest="${ver#*.}"; vmin="${vrest%%.*}"; vpat="${ver##*.}"
 
 if { [[ "$vmaj" == "4" ]] && [[ "$vmin" == "27" ]] && [[ "$vpat" -ge 5 ]]; } \
-   || { [[ "$vmaj" == "4" ]] && [[ "$vmin" -ge 28 ]]; }; then
+   || { [[ "$vmaj" == "4" ]] && [[ "$vmin" -ge 28 ]]; } \
+   || [[ "$vmaj" -ge 5 ]]; then
+    # V5 supersedes the V4 m28 arc floor.
     _pass "VERSION at or above m28.1 floor — current: ${ver}"
 else
-    _fail "VERSION reads '${ver}', expected 4.27.x (x>=5) or 4.>=28.x"
+    _fail "VERSION reads '${ver}', expected 4.27.x (x>=5), 4.>=28.x, or >=5.x.y"
 fi
 
 # =============================================================================

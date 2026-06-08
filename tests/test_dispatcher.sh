@@ -111,8 +111,8 @@ _assert_version() {
     local out
     out="$(bash "$DISPATCHER" "$@" 2>&1)"
     case "$out" in
-        Tekhton*4.*) _pass "$label: --version prints in-dispatcher" ;;
-        *) _fail "$label: expected 'Tekhton 4.x.y', got: ${out}" ;;
+        Tekhton\ [0-9]*.[0-9]*.[0-9]*) _pass "$label: --version prints in-dispatcher" ;;
+        *) _fail "$label: expected 'Tekhton X.Y.Z', got: ${out}" ;;
     esac
 }
 _assert_version "version-long"  --version
