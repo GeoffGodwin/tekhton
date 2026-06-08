@@ -4,17 +4,19 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 218
+- Runs since audit: 219
 =======
-- Runs since audit: 218
+- Runs since audit: 219
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 218
+- Runs since audit: 219
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
 
 ## Resolved
+- [x] [2026-06-08 | "Implement Milestone m01.1.1: Go Module Skeleton with Cobra Root and Placeholder Version"] `.claude/milestones/` continues to accumulate stale sub-splits of m01.1 (`m01.1.1.*`, `m01.1.1.1.*`, etc.) from repeated self-host loops. The parent m01.1 reviewer noted this; it remains uncleaned. A hygiene pass to prune orphaned milestone files is warranted.
+- [x] [2026-06-08 | "Implement Milestone m01.1.1: Go Module Skeleton with Cobra Root and Placeholder Version"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
 - [x] [2026-06-08 | "Implement Milestone m01.1: Go Module Bootstrap and Cobra Root"] `.claude/milestones/` contains approximately 40 files for `m01.1` variants produced by repeated dogfooding/self-host loops that re-split and re-issued the same milestone. The canonical file is `m01.1-go-module-bootstrap-and-cobra-root.md`; all others are stale artifacts. A cleanup pass should prune duplicate manifest rows and delete the corresponding milestone files, retaining only the canonical `m01.1` entry. This does not affect runtime correctness but adds noise to every future milestone query.
 - [x] [2026-05-29 | "unknown"] `internal/dashboard/dashboard.go:154â168`: `jsonEscape` is defined but never called in the package. Dead code from an earlier draft; actual escaping is handled by `json.Marshal` in `jsfile.go`.
 - [x] [2026-05-26 | "unknown"] `internal/runner/single.go:buildStageEnv` (lines 124â152) allocates `len(defaultStageOrder())` independent copies of the same flat map. For a five-stage pipeline this is negligible; if the order list grows significantly a shared read-only map (copy-on-write per stage for overrides only) would be more memory-efficient. Flag for future cleanup pass.
