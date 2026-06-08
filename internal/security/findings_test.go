@@ -77,6 +77,10 @@ func TestIsDocsOnly_MissingSummary(t *testing.T) {
 	}
 }
 
+// TestIsDocsOnly_EmptyFileList — m49 flipped the empty-list default from
+// (true, nil) to (false, nil). The fail-closed semantic is "scan when
+// uncertain": an empty extracted list means the extractor couldn't classify
+// the changeset, and a silent skip is the wrong default for a security gate.
 func TestIsDocsOnly_EmptyFileList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "summary.md")
@@ -87,8 +91,8 @@ func TestIsDocsOnly_EmptyFileList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !ok {
-		t.Fatalf("empty file list must return true (nothing to scan), got false")
+	if ok {
+		t.Fatalf("m49: empty file list must return false (fail-closed — scan anyway), got true")
 	}
 }
 
@@ -170,5 +174,61 @@ func TestExtractFilesFromCoderSummary_CleansBackticksAndAnnotations(t *testing.T
 	want := []string{"internal/security/severity.go", "lib/security_helpers.sh"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %#v\nwant %#v", got, want)
+	}
+}
+
+// TestIsDocsOnly_TableDriven (m49) — covers H2/H3 recognition + fail-closed
+// empty-list default against frozen fixtures under testdata/docs_only/.
+//
+//   - H2 with code file       → false (canonical happy path / regression guard)
+//   - H3 with code file       → false (m49 — H3 BEGIN marker recognized)
+//   - Mixed H2 parent + H3    → false (m49 — H3 inside section is not END)
+//   - No Files section        → false (m49 — fail-closed default)
+//   - Section present, empty  → false (m49 — fail-closed default)
+//   - H2 with docs only       → true  (canonical skip path / regression guard)
+//   - H3 with docs only       → true  (m49 — H3 docs-only still skips)
+func TestIsDocsOnly_TableDriven(t *testing.T) {
+	cases := []struct {
+		fixture string
+		want    bool
+	}{
+		{"h2_with_files.md", false},
+		{"h3_with_files.md", false},
+		{"h2_h3_mixed.md", false},
+		{"no_section.md", false},
+		{"empty_section.md", false},
+		{"h2_with_docs_only.md", true},
+		{"h3_with_docs_only.md", true},
+	}
+	for _, c := range cases {
+		t.Run(c.fixture, func(t *testing.T) {
+			path := filepath.Join("testdata", "docs_only", c.fixture)
+			got, err := IsDocsOnly(path)
+			if err != nil {
+				t.Fatalf("IsDocsOnly(%q): %v", c.fixture, err)
+			}
+			if got != c.want {
+				t.Errorf("IsDocsOnly(%q) = %v, want %v", c.fixture, got, c.want)
+			}
+		})
+	}
+}
+
+// TestExtractFilesFromCoderSummary_H3MixedExtractsBothSubsections (m49) —
+// the mixed H2/H3 fixture must surface bullets from BOTH H3 subsections
+// (`### Modified` AND `### Created`). Pre-m49 the second H3 terminated the
+// scan because `strings.HasPrefix(line, "##")` matched H3 too.
+func TestExtractFilesFromCoderSummary_H3MixedExtractsBothSubsections(t *testing.T) {
+	got, err := extractFilesFromCoderSummary(filepath.Join("testdata", "docs_only", "h2_h3_mixed.md"))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := []string{
+		"internal/example/foo.go",
+		"internal/example/bar.go",
+		"internal/example/foo_test.go",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("mixed H2/H3 fixture\n got  %#v\n want %#v", got, want)
 	}
 }

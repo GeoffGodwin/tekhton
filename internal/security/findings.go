@@ -96,9 +96,15 @@ var docsExt = map[string]bool{
 // inversion: bash returns 0 (true) when the scan can be skipped.
 //
 //   - Summary missing                → (false, nil)   "scan anyway"
-//   - Summary present but empty list → (true,  nil)   "nothing to scan"
+//   - Summary present but empty list → (false, nil)   "scan anyway — the
+//     extractor couldn't find files, don't silently skip"
 //   - Any file outside the allowlist → (false, nil)   "code file present"
 //   - All files in the allowlist     → (true,  nil)   "docs only — skip"
+//
+// m49: the empty-list default flipped from (true) to (false). Prior behavior
+// was fail-OPEN — any coder summary whose file section the extractor couldn't
+// parse silently passed security, including all summaries using H3 subheadings
+// (the m48 false-skip incident).
 func IsDocsOnly(summaryPath string) (bool, error) {
 	if _, err := os.Stat(summaryPath); os.IsNotExist(err) {
 		return false, nil
@@ -110,7 +116,7 @@ func IsDocsOnly(summaryPath string) (bool, error) {
 		return false, err
 	}
 	if len(files) == 0 {
-		return true, nil
+		return false, nil // m49 — fail-closed: scan when uncertain
 	}
 	for _, f := range files {
 		ext := strings.TrimPrefix(filepath.Ext(f), ".")
@@ -122,9 +128,14 @@ func IsDocsOnly(summaryPath string) (bool, error) {
 }
 
 // extractFilesFromCoderSummary ports lib/indexer_helpers.sh's
-// extract_files_from_coder_summary. It scans for the `## Files Modified` or
-// `## Files Created` heading and returns the file path from each bullet row
-// until the next `## ` heading, mirroring the bash awk + while-read loop.
+// extract_files_from_coder_summary. It scans for a Files section heading and
+// returns the file path from each bullet row until the next H2 heading.
+//
+// m49: recognizes both the canonical H2 form (## Files Modified / Created /
+// Added) and the H3 subheading style coder agents often emit (### Modified,
+// ### Created, ### Added) under a parent section. The end-boundary is strict
+// H2 only — H3 subheadings INSIDE a Files section remain inside the scan, so
+// a `### Modified` followed by `### Created` keeps accumulating bullets.
 func extractFilesFromCoderSummary(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -140,12 +151,13 @@ func extractFilesFromCoderSummary(path string) ([]string, error) {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := sc.Text()
-		if strings.HasPrefix(line, "## Files Modified") ||
-			strings.HasPrefix(line, "## Files Created") {
+		// BEGIN markers: H2 canonical OR H3 stylistic.
+		if isFilesSectionHeading(line) {
 			in = true
 			continue
 		}
-		if in && strings.HasPrefix(line, "##") {
+		// END marker: next H2 only. H3 stays inside the section.
+		if in && isH2Heading(line) {
 			break
 		}
 		if !in {
@@ -158,6 +170,48 @@ func extractFilesFromCoderSummary(path string) ([]string, error) {
 		out = append(out, cleaned)
 	}
 	return out, sc.Err()
+}
+
+// isFilesSectionHeading returns true if line is one of the recognized
+// file-section heading styles. The set is intentionally narrow — match the
+// headings coder agents actually produce, not arbitrary file-related text.
+//
+// H2 canonical (matches the historical bash extractor):
+//
+//	## Files Modified
+//	## Files Created
+//	## Files Added
+//
+// H3 stylistic (under any parent section — common modern agent shape):
+//
+//	### Files Modified
+//	### Files Created
+//	### Modified
+//	### Created
+//	### Added
+func isFilesSectionHeading(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "## Files Modified") ||
+		strings.HasPrefix(trimmed, "## Files Created") ||
+		strings.HasPrefix(trimmed, "## Files Added") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "### Files Modified") ||
+		strings.HasPrefix(trimmed, "### Files Created") ||
+		strings.HasPrefix(trimmed, "### Modified") ||
+		strings.HasPrefix(trimmed, "### Created") ||
+		strings.HasPrefix(trimmed, "### Added") {
+		return true
+	}
+	return false
+}
+
+// isH2Heading returns true for exactly H2 headings (two #s + space), not H3
+// (three #s + space). Used as the section-end boundary so H3 subheadings
+// inside a Files section remain inside the scan.
+func isH2Heading(line string) bool {
+	trimmed := strings.TrimLeft(line, " \t")
+	return strings.HasPrefix(trimmed, "## ") && !strings.HasPrefix(trimmed, "### ")
 }
 
 // cleanFileBullet mirrors the bash bullet-stripping chain:

@@ -4,208 +4,216 @@
 
 ## What Was Implemented
 
-Milestone **m48 — Auto-advance loop: reset per-iteration state so every
-milestone gets its own commit**. Adds two helpers and a banner to the Go
-auto-advance loop in `cmd/tekhton/run.go::runAutoAdvanceLoop`, plus
-three Go unit tests and one shim-boundary integration test.
+Milestone **m49 — Security gate skip: recognize H3 subheadings AND flip
+the empty-file default to fail-closed**. Two narrow fixes inside
+`internal/security/findings.go` plus 7 fixtures, 2 new Go tests, and a
+shim-boundary integration test. Together they restore security-gate
+coverage on every coder run that uses H3 subheadings or omits the Files
+section entirely.
 
-### Goal 1 — `clearAutoAdvanceIterationState(projectDir string) error`
+### Goal 1 — Recognize H3 subheadings in `extractFilesFromCoderSummary`
 
-New file-scope helper in `cmd/tekhton/run.go`. Removes three commit-skip
-sentinels from `<projectDir>/.tekhton/`:
+Two new package-private helpers in `internal/security/findings.go`:
 
-- `.final_check_result`
-- `.final_check_reason`
-- `.commit_decision`
+- `isFilesSectionHeading(line) bool` returns true for either H2
+  canonical (`## Files Modified`, `## Files Created`, `## Files Added`)
+  OR H3 stylistic (`### Files Modified`, `### Files Created`,
+  `### Modified`, `### Created`, `### Added`).
+- `isH2Heading(line) bool` returns true only for exactly-H2 headings
+  (`## ` prefix, not `### `). Used as the section-end boundary so H3
+  subheadings INSIDE a Files section remain inside the scan.
 
-Uses `os.Remove` + `errors.Is(err, os.ErrNotExist)` to be idempotent.
-Returns the first non-not-exist error encountered (so all three removals
-are still attempted). Returns nil when `projectDir == ""`. The
-exhaustive-but-not-closed sentinel list is documented inline so future
-additions can be grepped.
+The extractor's BEGIN check now keys on `isFilesSectionHeading`; the
+END check keys on `isH2Heading`. Pre-m49 the END check was
+`strings.HasPrefix(line, "##")`, which incorrectly matched H3 because
+`### Created` starts with `##`. Both layered bugs are fixed together.
 
-Called from `runAutoAdvanceLoop` at the TOP of each iteration, before
-`buildRunner`. Failure is non-fatal — emits a single
-`auto-advance: warning: clear iteration state for <id>: <err>` line to
-stdout so an operator can spot it, then continues with the iteration
-(worst case = pre-m48 silent commit skip, which the banner below will
-surface anyway).
+### Goal 2 — Flip `IsDocsOnly` empty-list default to fail-closed
 
-### Goal 2 — `emitAutoAdvanceCommitBanner(w io.Writer, projectDir, milestoneID string)`
+`IsDocsOnly`'s `len(files) == 0` branch flipped from `(true, nil)`
+(fail-OPEN — skip security) to `(false, nil)` (fail-CLOSED — scan
+anyway). The docstring updated to reflect the new semantic. Three
+classes of summary now correctly trigger the security scan:
+(a) H3-only summaries that would have produced empty extractions
+pre-m49 (belt-and-suspenders alongside Goal 1), (b) summaries with a
+present-but-empty Files section, (c) summaries missing the Files
+section entirely.
 
-New file-scope helper in `cmd/tekhton/run.go`. After each successful
-`RunSingle` call, inspects HEAD via `readGitHead(projectDir)` and emits
-one of three banner lines:
+### Goal 3 — Fixtures + table-driven Go tests
 
-- `✓ <id> committed as <8-char-hash>` — HEAD subject begins
-  `[MILESTONE <num> ✓]` (the prefix from
-  `lib/milestone_ops.sh::get_milestone_commit_prefix`)
-- `⚠ <id> finalize skipped commit — HEAD subject is "<subj>" (expected "<prefix>" prefix). Inspect .tekhton/.commit_decision and .tekhton/.final_check_result.`
-  — HEAD subject doesn't match (skip case)
-- `⚠ <id> finalize completed but HEAD read failed (<err>) — verify commit fired` — `git log` failed
+Created 7 fixtures under `internal/security/testdata/docs_only/`:
 
-`strings.TrimPrefix(milestoneID, "m")` is applied because the bash side
-emits the bare-number form in the prefix (e.g. `[MILESTONE 38.5 ✓]`)
-while the Go runner carries milestoneID as `m38.5`.
+| Fixture | Expected `IsDocsOnly` |
+|---------|----------------------|
+| `h2_with_files.md` (Go file, canonical) | false |
+| `h3_with_files.md` (Go file, H3 only) | false |
+| `h2_h3_mixed.md` (mixed H2 parent + H3 subs) | false |
+| `no_section.md` (no Files section) | false (m49 fail-closed) |
+| `empty_section.md` (heading present, no bullets) | false (m49) |
+| `h2_with_docs_only.md` (all docs ext, H2) | true |
+| `h3_with_docs_only.md` (all docs ext, H3) | true (m49) |
 
-### Goal 3 — `readGitHead(projectDir string) (hash, subject string, err error)`
+Added two new Go tests in `internal/security/findings_test.go`:
 
-Pure helper that shells out to `git log -1 --format=%H %s` rooted at
-projectDir and parses `<hash> <subject>` via `strings.SplitN`. Returns
-`("", "", err)` when git fails (no commit yet, not a repo, etc.). Used
-only by `emitAutoAdvanceCommitBanner`.
+- `TestIsDocsOnly_TableDriven` — table-driven across all 7 fixtures.
+- `TestExtractFilesFromCoderSummary_H3MixedExtractsBothSubsections` —
+  asserts the mixed H2/H3 fixture extracts files from BOTH the H3
+  `### Modified` AND the H3 `### Created` sections (regression guard
+  against the pre-m49 second-H3-terminates-scan bug).
 
-### Goal 4 — Loop wiring
+Updated existing `TestIsDocsOnly_EmptyFileList` — flipped its assertion
+from `!ok` (true expected) to `ok` (false expected) per the m49
+fail-closed flip. The Scout flagged this test as requiring update.
 
-Two-line additions to `runAutoAdvanceLoop`:
+### Goal 4 — Shim-boundary integration test
 
-- Before `buildRunner`, immediately after `advances++` and the header
-  banner: `clearAutoAdvanceIterationState(initialReq.ProjectDir)` with
-  non-fatal warn fallback.
-- After the successful-disposition gate (after `currentID = next.ID`
-  would be set): `emitAutoAdvanceCommitBanner(cmd.OutOrStdout(),
-  initialReq.ProjectDir, next.ID)`.
+New `tests/test_security_h3_subheadings.sh` (204 LOC) drives the
+production `tekhton` binary across the bash → Go-binary boundary via
+the `tekhton security is-docs-only --summary PATH` Cobra subcommand
+(the operator-facing CLI surface the in-process Go stage also calls).
+Six assertions:
 
-Both additions are scoped narrowly — no other loop logic changed.
+- A: H3 with `.go` file → scan runs (exit 1) — the m48 false-skip
+  reproduced and now fixed.
+- B: No Files section → scan runs (exit 1, fail-closed).
+- C: Empty Files section → scan runs (exit 1, fail-closed).
+- D: H2 with `.go` file → scan runs (exit 1, canonical regression guard).
+- E: H2 with all docs → skip (exit 0, canonical regression guard).
+- F: H3 with all docs → skip (exit 0, m49 H3-recognition preserves
+  docs-only fast-path).
 
-### Goal 5 — Three Go unit tests (`cmd/tekhton/run_test.go`)
-
-- `TestClearAutoAdvanceIterationState_RemovesSentinels` — plants the
-  three sentinel files under `t.TempDir()/.tekhton/`, calls the helper,
-  asserts all three are gone via `os.Stat` + `os.IsNotExist`.
-- `TestClearAutoAdvanceIterationState_GracefulOnMissing` — exercises
-  three branches: (1) `.tekhton/` does not exist, (2) `.tekhton/` exists
-  but is empty, (3) `projectDir == ""`. All three must return nil.
-- `TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit` — initializes
-  a real git repo via `exec.Command("git", "init")`, commits with
-  subject `[MILESTONE 38.5 ✓] port test_baseline subsystem`, calls
-  `emitAutoAdvanceCommitBanner` with `m38.5`, asserts stdout contains
-  `"✓ m38.5 committed as"` and does NOT contain `"finalize skipped commit"`.
-  Then makes a second commit with a generic subject, re-calls, asserts
-  output contains `"⚠ m38.5 finalize skipped commit"` and does NOT contain
-  `"✓ m38.5 committed as"`. Self-skips when `git` is not on PATH.
-
-### Goal 6 — Shim-boundary integration test
-
-New `tests/test_autoadvance_per_milestone_commits.sh` (266 LOC) drives
-the production `tekhton` binary across the bash-shim ↔ Go-binary
-boundary. Sets up:
-
-- Throwaway git repo under `mktemp -d`
-- Minimal `.claude/pipeline.conf`, agent role stubs, `CLAUDE.md`,
-  `ARCHITECTURE.md`
-- 3-entry `MANIFEST.cfg` (m1 → m2 → m3) + 3 milestone files
-
-Drives `tekhton run --milestone m1 --auto-advance --auto-advance-limit 3`
-with `TEKHTON_AGENT_BINARY=/bin/false` to short-circuit real agent
-invocations. Six assertions:
-
-- A: run executed and produced output
-- B: no Go runtime panic on the new code path
-- C: `tekhton --help` works after m48 changes
-- D: `tekhton run --help` advertises `--auto-advance-limit`
-- E: `tekhton run --help` advertises `--milestone`
-- F: binary's string table contains the m48 reset format literal
-  (`clear iteration state for`), proving the new code is linked in
-
-Self-skips cleanly when `bin/tekhton` is not built. Picks up the LOCAL
-build over an inherited `$TEKHTON_BIN` (which would point at a
-tekhton-stable binary in self-hosted runs and silently test stale code).
-
-Scope-honest about what the shim-boundary test cannot do: a true 3-
-iteration end-to-end driving 3 separate `[MILESTONE X.Y ✓]` commits
-would require a fake agent that emits CODER_SUMMARY.md /
-REVIEWER_REPORT.md / TESTER_REPORT.md per stage — far beyond
-`testdata/fake_agent.sh`'s two-turn shape. The Go unit tests in
-`cmd/tekhton/run_test.go` cover the banner success/warn paths against a
-real git repo at full fidelity; this shim test covers the binary-level
-integration.
+Self-skips cleanly when `bin/tekhton` is not built (fresh-clone CI
+before `make build`). The milestone Design section names the
+shim-boundary test "drives `tekhton run` against a fixture project"
+shape, but the m49 change is parser-level and the operator-facing
+CLI subcommand (`tekhton security is-docs-only`) is the cleanest
+bash → Go boundary that exercises the new logic without spinning up
+a fake-agent fixture project. The CLI subcommand exists precisely for
+this kind of hand-driven/test-driven verification (per the m35.2
+retention rationale in `cmd/tekhton/security.go:132-136`).
 
 ## Root Cause (bugs only)
 
-Per the milestone's Gap section: `runAutoAdvanceLoop` was introduced in
-m20 + refined m40.1/m40.2 but never cleared per-iteration commit-skip
-sentinels at the iteration boundary. m46 added the bash-side clear for
-the operator-override `[c]/[r]/[s]/[a]` path
-(`_clear_commit_skip_sentinels`) but never extended it to the
-Go-driven auto-advance loop's iteration boundary. Symptoms:
+Per the m49 milestone, two layered bugs in
+`internal/security/findings.go`:
 
-- 2026-06-07 auto-advance produced `bf46f8f` (`[MILESTONE 47 ✓]` —
-  clean) + `a4579be` (m38.5 intake bookkeeping) + zero commits for the
-  next 5 milestones (m38.6, m39.1, m39.2, m39.3, m47-loose-ends)
-- 9,852 lines of work landed in a single manual squash commit
-- Per-milestone narrative was lost; operator had to hand-write the
-  per-milestone story in the squash message
+1. `extractFilesFromCoderSummary` only recognized the canonical H2
+   headings `## Files Modified` / `## Files Created`. The m48 coder
+   summary emitted `### Modified` and `### Created` — H3 subheadings
+   under an implicit `## Files` parent — and the scanner state never
+   flipped to `in=true`. The bash predecessor
+   `lib/indexer_helpers.sh::extract_files_from_coder_summary` had the
+   same H2-only assumption; the bug carried over to the Go port.
+2. `IsDocsOnly` returned `(true, nil)` on empty file list — fail-OPEN.
+   Combined with bug 1, every H3-using summary silently passed
+   security. Even worse: the break check
+   `strings.HasPrefix(line, "##")` matched H3 too (`### ...` starts
+   with `##`), so any future BEGIN handler that recognized H3 would
+   still terminate at the next H3 subheading.
 
-Fix: clear the three sentinels at the top of each iteration BEFORE
-`buildRunner` runs the next stage; emit a banner AFTER each iteration
-to surface skip-on-commit regressions in real-time.
+Together: every coder-summary-emitting milestone since m35.2 that used
+H3 subheadings had its security gate silently disabled. m48 was the
+observed incident; an unknown number of prior runs share the same
+silent skip.
+
+Fix: recognize both H2 and H3 BEGIN markers; use H2-only END markers
+so H3 subheadings inside the Files section don't terminate the scan;
+flip the empty-list default to fail-closed.
 
 ## Files Modified
 
 ### Modified
 
-- `cmd/tekhton/run.go` (768 LOC) — added imports (`io`, `os/exec`),
-  added three helpers (`clearAutoAdvanceIterationState`,
-  `emitAutoAdvanceCommitBanner`, `readGitHead`), wired the helpers into
-  `runAutoAdvanceLoop` at the iteration top/bottom.
-- `cmd/tekhton/run_test.go` (336 LOC) — added imports (`bytes`, `os`,
-  `os/exec`, `path/filepath`), added three tests
-  (`TestClearAutoAdvanceIterationState_RemovesSentinels`,
-  `TestClearAutoAdvanceIterationState_GracefulOnMissing`,
-  `TestEmitAutoAdvanceCommitBanner_DetectsMilestoneCommit`).
+- `internal/security/findings.go` (243 LOC) — added two helpers
+  (`isFilesSectionHeading`, `isH2Heading`); replaced the H2-only BEGIN
+  and `HasPrefix(line, "##")` END checks in
+  `extractFilesFromCoderSummary` with the new helpers; flipped
+  `IsDocsOnly`'s empty-list default from `(true, nil)` to
+  `(false, nil)`; updated `IsDocsOnly` docstring.
+- `internal/security/findings_test.go` (234 LOC) — updated
+  `TestIsDocsOnly_EmptyFileList` to expect false (m49 fail-closed);
+  added `TestIsDocsOnly_TableDriven` (7 fixture sub-cases); added
+  `TestExtractFilesFromCoderSummary_H3MixedExtractsBothSubsections`
+  (regression guard for the H3-as-END bug).
 
 ### Created
 
-- `tests/test_autoadvance_per_milestone_commits.sh` (NEW, 266 LOC) —
-  shim-boundary integration test driving the production `tekhton`
-  binary with `TEKHTON_AGENT_BINARY=/bin/false` short-circuit.
+- `internal/security/testdata/docs_only/h2_with_files.md` (NEW) — H2
+  canonical with a `.go` file.
+- `internal/security/testdata/docs_only/h3_with_files.md` (NEW) — H3
+  subheadings with a `.go` file (the m48 shape).
+- `internal/security/testdata/docs_only/h2_h3_mixed.md` (NEW) —
+  `## Files` parent + `### Modified` and `### Created` subsections.
+- `internal/security/testdata/docs_only/no_section.md` (NEW) — summary
+  with no Files section at all.
+- `internal/security/testdata/docs_only/empty_section.md` (NEW) —
+  Files section present but only `None` / fill-in placeholders.
+- `internal/security/testdata/docs_only/h2_with_docs_only.md` (NEW) —
+  H2 canonical with only docs/config/asset files (regression guard).
+- `internal/security/testdata/docs_only/h3_with_docs_only.md` (NEW) —
+  H3 subheadings with only docs/config/asset files.
+- `tests/test_security_h3_subheadings.sh` (NEW, 204 LOC) —
+  shim-boundary integration test driving
+  `tekhton security is-docs-only` against 6 fixtures.
 
 ### File-length compliance
 
-- `cmd/tekhton/run.go` 768 LOC — within the Go 1000-line hard ceiling
-  (CLAUDE.md Rule 8); domain-coherent (one cobra subcommand).
-- `cmd/tekhton/run_test.go` 336 LOC — within the Go ceiling; siblings
-  in `cmd/tekhton/` go up to 549 LOC (`state_test.go`).
-- `tests/test_autoadvance_per_milestone_commits.sh` 266 LOC — under
-  the bash 300-line hard ceiling.
+- `internal/security/findings.go` 243 LOC — under the 600-line Go soft
+  target.
+- `internal/security/findings_test.go` 234 LOC — under the Go soft
+  target.
+- `tests/test_security_h3_subheadings.sh` 204 LOC — under the 300-line
+  bash hard ceiling.
+- All fixture markdown files are tiny (17–29 LOC).
 
 ## Docs Updated
 
-None — no public-surface changes in this task. The new helpers are
-package-private to `cmd/tekhton/`; no CLI flag or env var added. The
-existing `--auto-advance` / `--auto-advance-limit` flags already
-documented; behavior change (per-iteration reset + banner) is
-operator-visible at runtime but not a documented contract change. The
-`.tekhton/.commit_decision` / `.final_check_result` / `.final_check_reason`
-sentinels are internal pipeline state, not user-facing.
+None — no public-surface changes in this task. The two new helpers
+(`isFilesSectionHeading`, `isH2Heading`) are package-private to
+`internal/security`. The `IsDocsOnly` exported function's signature is
+unchanged; only its return semantic on empty-list changed (documented
+in the function's doc comment). No CLI flag, env var, or config key
+added or removed. The `tekhton security is-docs-only` subcommand
+already existed (added m35.2) and is unchanged. The
+`ARCHITECTURE.md` entry for `internal/security/` already lists the
+file as the owner of `findings.go` / `extractFilesFromCoderSummary` /
+`IsDocsOnly`; no update needed since the file's role is unchanged.
 
 ## Human Notes Status
 
 No actionable human notes attached to this run. The `CLARIFICATIONS.md`
 content carried in the run context is from prior unrelated sessions
 (Watchtower dashboard, NON_BLOCKING_LOG, brownfield --init flow, intake
-testing) — none applies to m48.
+testing) — none applies to m49.
 
 ## Verification
 
 All acceptance criteria pass:
 
-- AC1 (`grep -nE 'func clearAutoAdvanceIterationState'`) → 1 match at
-  `cmd/tekhton/run.go:703`
-- AC2 (`grep -B 2 -A 3 'clearAutoAdvanceIterationState'`) → call inside
-  the `for advances < limit` block, before `buildRunner`
-- AC3 — AC6: `go test -run TestClearAutoAdvanceIterationState|TestEmitAutoAdvanceCommitBanner -v`
-  → 3 PASS
-- AC7 — `bash tests/test_autoadvance_per_milestone_commits.sh` →
-  `Passed: 6  Failed: 0`
-- AC8 — `go test ./cmd/tekhton/ ./internal/runner/` → both packages PASS
-- AC9 — `shellcheck tests/test_autoadvance_per_milestone_commits.sh` →
-  clean
-- AC10 — `go vet ./cmd/tekhton/...` clean, `gofmt -l cmd/tekhton/` clean
-- AC11 — `bash tests/run_tests.sh` → 494 shell pass / 0 fail, all Go
-  packages pass (was 493 → 494: +1 for new shim-boundary test)
+- AC1: `grep -nE 'func isFilesSectionHeading|func isH2Heading' internal/security/findings.go`
+  → 2 matches (lines 192, 212).
+- AC2: `TestIsDocsOnly_TableDriven/h3_with_files.md` → PASS (returns
+  false because the Go file is extracted).
+- AC3: `TestIsDocsOnly_TableDriven/h2_h3_mixed.md` → PASS, and
+  `TestExtractFilesFromCoderSummary_H3MixedExtractsBothSubsections`
+  → PASS (extracts files from BOTH H3 subsections).
+- AC4: `TestIsDocsOnly_TableDriven/no_section.md` + `/empty_section.md`
+  → both PASS returning false (fail-closed).
+- AC5: `TestIsDocsOnly_TableDriven/h2_with_docs_only.md` +
+  `/h3_with_docs_only.md` → both PASS returning true (docs-only skip
+  preserved).
+- AC6: `bash tests/test_security_h3_subheadings.sh` → 6/6 PASS,
+  including A (H3 + .go → scan runs).
+- AC7: `go test ./internal/security/... ./internal/stages/security/...
+  ./cmd/tekhton/...` → all PASS, no regressions.
+- AC8: `shellcheck tests/test_security_h3_subheadings.sh` → clean.
+- AC9: `golangci-lint run ./internal/security/...` and
+  `go vet ./internal/security/...` → both clean.
+- AC10: `bash tests/run_tests.sh` → Shell: 495/495 PASS (+1 from
+  previous 494 for the new shim-boundary test). Go: all packages PASS.
 
 ## Observed Issues (out of scope)
 
-None observed in files touched during this task.
+- `internal/security/severity_test.go` is gofmt-dirty per `gofmt -l`.
+  Last touched in `aa2d392` (unrelated to m49); skipping per scope
+  discipline. A future cleanup pass could `gofmt -w` it.
