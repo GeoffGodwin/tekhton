@@ -229,6 +229,72 @@ func TestOrchestrator_FinalizeActiveSentinel_NoProjectDir(t *testing.T) {
 	// somewhere unexpected. Smoke coverage only.
 }
 
+// TestWriteFinalizeActiveSentinel_TimestampPayload verifies the sentinel is
+// written with the Timestamp field as its content (plus newline). This pins
+// the payload contract so a future change to the payload format can't silently
+// pass the orchestrator-level tests, which only check file existence.
+func TestWriteFinalizeActiveSentinel_TimestampPayload(t *testing.T) {
+	projectDir := t.TempDir()
+	in := &Input{
+		ProjectDir: projectDir,
+		Timestamp:  "20260608_120000",
+	}
+	cleanup := writeFinalizeActiveSentinel(in)
+	if cleanup == nil {
+		t.Fatal("expected non-nil cleanup func for valid ProjectDir")
+	}
+	defer cleanup()
+
+	sentinelPath := filepath.Join(projectDir, ".tekhton", ".finalize_active")
+	got, err := os.ReadFile(sentinelPath)
+	if err != nil {
+		t.Fatalf("sentinel not written: %v", err)
+	}
+	if string(got) != "20260608_120000\n" {
+		t.Errorf("sentinel content: got %q, want %q", string(got), "20260608_120000\n")
+	}
+}
+
+// TestWriteFinalizeActiveSentinel_ActiveFallback verifies that when Timestamp
+// is empty the sentinel payload falls back to the literal "active" string.
+func TestWriteFinalizeActiveSentinel_ActiveFallback(t *testing.T) {
+	projectDir := t.TempDir()
+	in := &Input{ProjectDir: projectDir, Timestamp: ""}
+	cleanup := writeFinalizeActiveSentinel(in)
+	if cleanup == nil {
+		t.Fatal("expected non-nil cleanup func")
+	}
+	defer cleanup()
+
+	sentinelPath := filepath.Join(projectDir, ".tekhton", ".finalize_active")
+	got, err := os.ReadFile(sentinelPath)
+	if err != nil {
+		t.Fatalf("sentinel not written: %v", err)
+	}
+	if string(got) != "active\n" {
+		t.Errorf("sentinel content: got %q, want %q", string(got), "active\n")
+	}
+}
+
+// TestWriteFinalizeActiveSentinel_NilInput verifies the function returns nil
+// without panicking when called with a nil Input.
+func TestWriteFinalizeActiveSentinel_NilInput(t *testing.T) {
+	cleanup := writeFinalizeActiveSentinel(nil)
+	if cleanup != nil {
+		t.Errorf("expected nil cleanup for nil Input; got non-nil")
+	}
+}
+
+// TestWriteFinalizeActiveSentinel_EmptyProjectDir verifies the function
+// returns nil (no-op) when ProjectDir is the empty string, matching the
+// debug-subcommand path.
+func TestWriteFinalizeActiveSentinel_EmptyProjectDir(t *testing.T) {
+	cleanup := writeFinalizeActiveSentinel(&Input{ProjectDir: ""})
+	if cleanup != nil {
+		t.Errorf("expected nil cleanup for empty ProjectDir; got non-nil")
+	}
+}
+
 // recordingHook decorates a Hook to record the call order in an external
 // slice without mutating the Hook implementation under test.
 type recordingHook struct {

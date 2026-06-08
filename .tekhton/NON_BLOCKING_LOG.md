@@ -18,3 +18,9 @@ The coder is prompted to address these when the count exceeds the threshold.
 ### Test Audit Concerns (2026-05-25)
 #### COVERAGE: Regex-bug acceptance test accommodates rather than exposes the defect
 #### COVERAGE: FEAT placement check has no test for root-level new files
+
+### Test Audit Concerns (2026-06-08)
+
+#### COVERAGE
+
+#### COVERAGE
