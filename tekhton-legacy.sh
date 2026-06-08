@@ -1006,7 +1006,10 @@ source "${TEKHTON_HOME}/lib/orchestrate.sh"
 # Stage helpers and implementations
 # m36.3: stages/intake.sh, lib/intake_helpers.sh, lib/intake_verdict_handlers.sh
 # deleted. Intake stage runs entirely via the GoImpl dispatch in stagerunner.
-source "${TEKHTON_HOME}/stages/coder.sh"
+# m39.4: stages/coder.sh + stages/coder_buildfix.sh +
+# stages/coder_buildfix_helpers.sh + stages/coder_prerun.sh deleted. Coder
+# stage runs entirely via the GoImpl dispatch in stagerunner; the Phase 5
+# stage-port arc closes here and the pipeline-stage subset of stages/ is empty.
 # m34.1 + m35.2 + m36.1 + m36.3 + m37.2: the docs, security, architect,
 # intake, and review stages ported to Go (internal/stages/{docs,security,
 # architect,intake,review}/). All run via the GoImpl dispatch in stagerunner;
