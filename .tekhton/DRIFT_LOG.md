@@ -4,17 +4,19 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 219
+- Runs since audit: 220
 =======
-- Runs since audit: 219
+- Runs since audit: 220
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 219
+- Runs since audit: 220
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-08 | "Implement Milestone m50: MANIFEST.cfg is finalize-owned: block stage-agent writes via a pre-commit guard"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
 
 ## Resolved
+- [x] [2026-06-08 | "Implement Milestone m50: MANIFEST.cfg is finalize-owned: block stage-agent writes via a pre-commit guard"] `.claude/milestones/` continues to accumulate stale sub-splits of m01.1 (`m01.1.1.*`, `m01.1.1.1.*`, etc.) from repeated self-host loops. The parent m01.1 reviewer noted this; it remains uncleaned. A hygiene pass to prune orphaned milestone files is warranted.
 - [x] [2026-06-08 | "Implement Milestone m01.1.1: Go Module Skeleton with Cobra Root and Placeholder Version"] `.claude/milestones/` continues to accumulate stale sub-splits of m01.1 (`m01.1.1.*`, `m01.1.1.1.*`, etc.) from repeated self-host loops. The parent m01.1 reviewer noted this; it remains uncleaned. A hygiene pass to prune orphaned milestone files is warranted.
 - [x] [2026-06-08 | "Implement Milestone m01.1.1: Go Module Skeleton with Cobra Root and Placeholder Version"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
 - [x] [2026-06-08 | "Implement Milestone m01.1: Go Module Bootstrap and Cobra Root"] `.claude/milestones/` contains approximately 40 files for `m01.1` variants produced by repeated dogfooding/self-host loops that re-split and re-issued the same milestone. The canonical file is `m01.1-go-module-bootstrap-and-cobra-root.md`; all others are stale artifacts. A cleanup pass should prune duplicate manifest rows and delete the corresponding milestone files, retaining only the canonical `m01.1` entry. This does not affect runtime correctness but adds noise to every future milestone query.
