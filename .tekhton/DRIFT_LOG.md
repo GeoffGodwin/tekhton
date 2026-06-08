@@ -4,15 +4,26 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 221
+- Runs since audit: 222
 =======
-- Runs since audit: 221
+- Runs since audit: 222
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 221
+- Runs since audit: 222
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] [internal/provider/claude/claude.go:75-107] The EventChan send-and-close block runs even when `supErr != nil` (including the `v1 == nil` path). This matches the seam contract doc ("Close exactly once before returning"), so the behavior is correct, but the code does not have an inline comment explaining why both the error and close paths are intentionally combined. This pattern will be reproduced by m02âm08 implementers who may not read the seam doc first; a brief comment at the close site would prevent future mis-ports.
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] -- ### Prior Blocker Disposition **Cycle 1 blocker: "Implementation is entirely absent"** â FIXED. Evidence verified:
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/provider.go` â `Provider` interface, `ToolSchema`, `Request`, `Result`, `Outcome` (7 constants). â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/event.go` â `Event`, `EventKind` (7 constants), channel-close ownership contract. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/provider_test.go` â interface method-count, name, constant uniqueness, assignability. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/claude/claude.go` â compile-time assertions for both `supervisorRunner` and `provider.Provider`; `RunAgent`, `translateResult`, `translateOutcome`, `writePromptFile`, `labelOrDefault`. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/claude/claude_test.go` â Name, nil-request/nil-supervisor guards, streaming event sequence, translateOutcome for each outcome, writePromptFile round-trip and cleanup, labelOrDefault. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/claude/parity_test.go` â 6 fixture-backed sub-tests covering every Outcome category; supervisor stubbed. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `internal/provider/claude/testdata/` â all 5 fixture files present and structurally valid. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `docs/v5-provider-seam.md` â five `##` sections, outcome mapping table, event contract, translation pattern, m01 non-goals. â
+- [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] All 17 new tests pass per CODER_SUMMARY.md. â
 - [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `.claude/milestones/` continues to accumulate stale sub-splits of m01.1 (`m01.1.1.*`, `m01.1.1.1.*`, etc.) from repeated self-host loops. The parent m01.1 reviewer noted this; it remains uncleaned. A hygiene pass to prune orphaned milestone files is warranted.
 - [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.
 - [ ] [2026-06-08 | "Implement Milestone m50: MANIFEST.cfg is finalize-owned: block stage-agent writes via a pre-commit guard"] `Makefile:8` â `VERSION_STRING` uses `tr -d '[:space:]'` (strips ALL whitespace including interior) rather than a trim-surrounding-only strategy consistent with `strings.TrimSpace` in `version.String()`. For standard semver values the results are identical; if `PROJECT_VERSION_STRATEGY` is ever changed to calver with interior spaces, the Makefile ldflags and the runtime `String()` output would diverge.

@@ -6,21 +6,22 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// fakeAgent is a recording AgentRunner that consumes a queue of Behaviors,
-// one per Run() call. Once exhausted Run() returns a default success result
-// with TurnsUsed=5.
-type fakeAgent struct {
-	Calls     []*proto.AgentRequestV1
-	Behaviors []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error)
+// fakeProvider is a recording provider.Provider that consumes a queue of
+// Behaviors, one per RunAgent() call. Once exhausted RunAgent() returns a
+// default success result with TurnsUsed=5.
+type fakeProvider struct {
+	Calls     []*provider.Request
+	Behaviors []func(*provider.Request) (*provider.Result, error)
 	idx       int
 }
 
-func (f *fakeAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-	// Copy the request because the dispatcher writes the PromptFile in place;
-	// tests need to assert against the original label/turns.
+func (f *fakeProvider) Name() string { return "fake-review" }
+
+func (f *fakeProvider) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	cp := *req
 	f.Calls = append(f.Calls, &cp)
 	if f.idx < len(f.Behaviors) {
@@ -28,9 +29,8 @@ func (f *fakeAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.Ag
 		f.idx++
 		return b(req)
 	}
-	return &proto.AgentResultV1{
-		Proto:     proto.AgentRequestProtoV1,
-		Outcome:   proto.OutcomeSuccess,
+	return &provider.Result{
+		Outcome:   provider.OutcomeSuccess,
 		ExitCode:  0,
 		TurnsUsed: 5,
 	}, nil
@@ -81,18 +81,18 @@ func (f *fakeSpecialist) Run(_ context.Context, _ string) (string, error) {
 // installSeams wires fakes for the four package seams and returns a restore
 // closure. Tests may pass nil for seams they don't need; the default is left
 // in place.
-func installSeams(t *testing.T, ag AgentRunner, gate BuildGateRunner,
+func installSeams(t *testing.T, ag provider.Provider, gate BuildGateRunner,
 	replan ReplanRunner, spec SpecialistRunner,
 ) func() {
 	t.Helper()
 	var (
-		prevA AgentRunner
+		prevA provider.Provider
 		prevG BuildGateRunner
 		prevR ReplanRunner
 		prevS SpecialistRunner
 	)
 	if ag != nil {
-		prevA = SetAgentRunner(ag)
+		prevA = SetProvider(ag)
 	}
 	if gate != nil {
 		prevG = SetBuildGateRunner(gate)
@@ -105,7 +105,7 @@ func installSeams(t *testing.T, ag AgentRunner, gate BuildGateRunner,
 	}
 	return func() {
 		if ag != nil {
-			SetAgentRunner(prevA)
+			SetProvider(prevA)
 		}
 		if gate != nil {
 			SetBuildGateRunner(prevG)

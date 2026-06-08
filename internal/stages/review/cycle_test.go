@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	reviewparse "github.com/geoffgodwin/tekhton/internal/review"
 )
 
@@ -13,11 +13,11 @@ import (
 // produces an APPROVED report, runOneCycle returns cycleAccept.
 func TestCycle_AcceptsApprovedReport(t *testing.T) {
 	dir, req := setupProject(t)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 4}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 4}, nil
 			},
 		},
 	}
@@ -46,9 +46,9 @@ func TestCycle_AcceptsApprovedReport(t *testing.T) {
 // cycleRework with the parsed report so the caller can run the rework matrix.
 func TestCycle_ChangesRequiredReturnsRework(t *testing.T) {
 	dir, req := setupProject(t)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Verdict
 CHANGES_REQUIRED
 
@@ -58,7 +58,7 @@ CHANGES_REQUIRED
 ## Simple Blockers
 - None
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 12}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 12}, nil
 			},
 		},
 	}
@@ -80,11 +80,11 @@ CHANGES_REQUIRED
 // TestCycle_UpstreamErrorAtMax returns cycleUpstreamErrorAtMax with metadata.
 func TestCycle_UpstreamErrorAtMax(t *testing.T) {
 	_, req := setupProject(t)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{
-					Outcome:          proto.OutcomeTransientError,
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{
+					Outcome:          provider.OutcomeUpstreamError,
 					ErrorCategory:    "UPSTREAM",
 					ErrorSubcategory: "api_rate_limit",
 					ErrorMessage:     "429 too many requests",
@@ -111,11 +111,11 @@ func TestCycle_UpstreamErrorAtMax(t *testing.T) {
 // returns cycleRework so the loop retries.
 func TestCycle_NullRunMidLoopReturnsRework(t *testing.T) {
 	_, req := setupProject(t)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{
-					Outcome:   proto.OutcomeFatalError,
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{
+					Outcome:   provider.OutcomeUnknown,
 					ExitCode:  1,
 					TurnsUsed: 0,
 				}, nil
@@ -138,10 +138,10 @@ func TestCycle_NullRunMidLoopReturnsRework(t *testing.T) {
 // agent succeeds without producing REVIEWER_REPORT.md on the final cycle.
 func TestCycle_SynthesizesReportAtMax(t *testing.T) {
 	dir, req := setupProject(t)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 			},
 		},
 	}
@@ -172,11 +172,11 @@ func TestCycle_TurnUsageRecordedForBump(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("REVIEWER_MAX_TURNS", "20")
 	t.Setenv("REVIEWER_MAX_TURNS_CAP", "60")
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nCHANGES_REQUIRED\n\n## Complex Blockers\n- needs fix\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 18}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 18}, nil
 			},
 		},
 	}

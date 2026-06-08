@@ -9,22 +9,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// fakeAgent is a recording AgentRunner fake. Behavior is configurable
-// per-test via the function fields.
-type fakeAgent struct {
-	OnRun func(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
+// fakeProvider is a recording provider.Provider fake. Behavior is configurable
+// per-test via the OnRun function field.
+type fakeProvider struct {
+	OnRun func(ctx context.Context, req *provider.Request) (*provider.Result, error)
 }
 
-func (f *fakeAgent) Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fakeProvider) Name() string { return "fake-cleanup" }
+
+func (f *fakeProvider) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
 	if f.OnRun != nil {
 		return f.OnRun(ctx, req)
 	}
-	return &proto.AgentResultV1{
-		Proto:     proto.AgentRequestProtoV1,
-		Outcome:   proto.OutcomeSuccess,
+	return &provider.Result{
+		Outcome:   provider.OutcomeSuccess,
 		ExitCode:  0,
 		TurnsUsed: 5,
 	}, nil
@@ -44,12 +46,12 @@ func (f *fakeBuildGate) Run(ctx context.Context, projectDir, stageLabel string) 
 
 // installSeams wires fakes for both seams and returns a restore func.
 // Every test should defer the restore so package state doesn't leak.
-func installSeams(t *testing.T, ag AgentRunner, gate BuildGateRunner) func() {
+func installSeams(t *testing.T, ag *fakeProvider, gate BuildGateRunner) func() {
 	t.Helper()
-	prevA := SetAgentRunner(ag)
+	prevA := SetProvider(ag)
 	prevG := SetBuildGateRunner(gate)
 	return func() {
-		SetAgentRunner(prevA)
+		SetProvider(prevA)
 		SetBuildGateRunner(prevG)
 	}
 }
@@ -94,12 +96,17 @@ func setupProject(t *testing.T, count int) (string, *proto.StageRequestV1) {
 		t.Fatalf("git commit: %v: %s", err, out)
 	}
 
+	// Set NON_BLOCKING_LOG_FILE so the stage resolves the path under .tekhton/
+	// (matches where setupProject writes the file). Without this, the default
+	// "NON_BLOCKING_LOG.md" would resolve at the project root instead.
+	t.Setenv("NON_BLOCKING_LOG_FILE", ".tekhton/NON_BLOCKING_LOG.md")
+
 	req := &proto.StageRequestV1{
 		Proto: proto.StageRequestProtoV1,
 		Stage: proto.StageCleanup,
 		EnvOverrides: map[string]string{
-			"PROJECT_DIR":   dir,
-			"TEKHTON_HOME":  repoRoot(t),
+			"PROJECT_DIR":          dir,
+			"TEKHTON_HOME":         repoRoot(t),
 			"PIPELINE_STAGE_POS":   "1",
 			"PIPELINE_STAGE_COUNT": "1",
 		},
@@ -137,7 +144,7 @@ func TestRunStage_NoTrigger(t *testing.T) {
 	t.Setenv("CLEANUP_ENABLED", "false")
 	dir, req := setupProject(t, 10)
 	_ = dir
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 	defer restore()
 
 	res, err := RunStage(context.Background(), req)
@@ -156,7 +163,7 @@ func TestRunStage_BelowThreshold(t *testing.T) {
 	t.Setenv("CLEANUP_ENABLED", "true")
 	t.Setenv("CLEANUP_TRIGGER_THRESHOLD", "10")
 	_, req := setupProject(t, 5)
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 	defer restore()
 	res, _ := RunStage(context.Background(), req)
 	if res.Verdict != proto.VerdictSkip || res.ExitReason != "no-trigger" {
@@ -169,7 +176,7 @@ func TestRunStage_NoEligible(t *testing.T) {
 	t.Setenv("CLEANUP_TRIGGER_THRESHOLD", "0")
 	t.Setenv("CLEANUP_BATCH_SIZE", "0") // batch size 0 → empty slice
 	_, req := setupProject(t, 3)
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 	defer restore()
 	res, _ := RunStage(context.Background(), req)
 	if res.Verdict != proto.VerdictSkip || res.ExitReason != "no-eligible-notes" {
@@ -182,13 +189,13 @@ func TestRunStage_NullRun(t *testing.T) {
 	t.Setenv("CLEANUP_TRIGGER_THRESHOLD", "0")
 	t.Setenv("CLEANUP_BATCH_SIZE", "3")
 	_, req := setupProject(t, 5)
-	ag := &fakeAgent{OnRun: func(ctx context.Context, r *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-		// Null run: zero turns used.
-		return &proto.AgentResultV1{
-			Proto:     proto.AgentRequestProtoV1,
-			Outcome:   proto.OutcomeSuccess,
+	ag := &fakeProvider{OnRun: func(ctx context.Context, r *provider.Request) (*provider.Result, error) {
+		// Null run: NullRun=true.
+		return &provider.Result{
+			Outcome:   provider.OutcomeSuccess,
 			ExitCode:  0,
 			TurnsUsed: 0,
+			NullRun:   true,
 		}, nil
 	}}
 	gate := &fakeBuildGate{}
@@ -215,13 +222,13 @@ func TestRunStage_NeverFails(t *testing.T) {
 		{"no-trigger", func(t *testing.T) (*proto.StageRequestV1, func()) {
 			t.Setenv("CLEANUP_ENABLED", "false")
 			_, req := setupProject(t, 1)
-			return req, installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+			return req, installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 		}},
 		{"agent-error", func(t *testing.T) (*proto.StageRequestV1, func()) {
 			t.Setenv("CLEANUP_ENABLED", "true")
 			t.Setenv("CLEANUP_TRIGGER_THRESHOLD", "0")
 			_, req := setupProject(t, 5)
-			ag := &fakeAgent{OnRun: func(ctx context.Context, r *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			ag := &fakeProvider{OnRun: func(ctx context.Context, r *provider.Request) (*provider.Result, error) {
 				return nil, errors.New("boom")
 			}}
 			return req, installSeams(t, ag, &fakeBuildGate{})
@@ -230,7 +237,7 @@ func TestRunStage_NeverFails(t *testing.T) {
 			t.Setenv("CLEANUP_ENABLED", "true")
 			t.Setenv("CLEANUP_TRIGGER_THRESHOLD", "0")
 			_, req := setupProject(t, 5)
-			return req, installSeams(t, &fakeAgent{}, &fakeBuildGate{Err: errors.New("phase failed")})
+			return req, installSeams(t, &fakeProvider{}, &fakeBuildGate{Err: errors.New("phase failed")})
 		}},
 	}
 	for _, tc := range cases {

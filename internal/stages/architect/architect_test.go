@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -36,18 +37,18 @@ func (f *fakeTUI) Call(_ context.Context, sub string, args ...string) {
 	f.calls = append(f.calls, row)
 }
 
-// withStubs swaps in the agent + build-gate + tui seams and returns the
+// withStubs swaps in the provider + build-gate + tui seams and returns the
 // recorders. The cleanup hook restores the previous seams.
-func withStubs(t *testing.T) (*fakeAgent, *fakeBuildGate, *fakeTUI) {
+func withStubs(t *testing.T) (*fakeProvider, *fakeBuildGate, *fakeTUI) {
 	t.Helper()
-	a := &fakeAgent{}
+	a := &fakeProvider{}
 	g := &fakeBuildGate{}
 	tu := &fakeTUI{}
-	prevA := SetAgentRunner(a)
+	prevA := SetProvider(a)
 	prevG := SetBuildGateRunner(g)
 	prevT := SetTUICaller(tu)
 	t.Cleanup(func() {
-		SetAgentRunner(prevA)
+		SetProvider(prevA)
 		SetBuildGateRunner(prevG)
 		SetTUICaller(prevT)
 	})
@@ -269,8 +270,8 @@ func TestRunStage_UpstreamErrorReturnsPass(t *testing.T) {
 	a, _, _ := withStubs(t)
 	// Force the architect agent to return an UPSTREAM-classified result.
 	a.err = nil
-	prev := SetAgentRunner(&upstreamAgent{})
-	t.Cleanup(func() { SetAgentRunner(prev) })
+	prev := SetProvider(&upstreamProvider{})
+	t.Cleanup(func() { SetProvider(prev) })
 
 	t.Setenv("PROJECT_DIR", dir)
 	t.Setenv("ARCHITECT_PLAN_FILE", filepath.Join(dir, ".tekhton", "ARCHITECT_PLAN.md"))
@@ -379,7 +380,7 @@ func TestOOSBulletLines_StripsBlanks(t *testing.T) {
 
 // --- helpers ---------------------------------------------------------------
 
-func labels(calls []*proto.AgentRequestV1) []string {
+func labels(calls []*provider.Request) []string {
 	out := make([]string, 0, len(calls))
 	for _, c := range calls {
 		out = append(out, c.Label)
@@ -396,14 +397,14 @@ func contains(haystack []string, needle string) bool {
 	return false
 }
 
-// upstreamAgent simulates the UPSTREAM-error branch of the supervisor.
-type upstreamAgent struct{}
+// upstreamProvider simulates the UPSTREAM-error branch.
+type upstreamProvider struct{}
 
-func (upstreamAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-	return &proto.AgentResultV1{
-		Proto:            proto.AgentResultProtoV1,
-		Label:            req.Label,
-		Outcome:          proto.OutcomeTransientError,
+func (upstreamProvider) Name() string { return "fake-upstream" }
+
+func (upstreamProvider) RunAgent(_ context.Context, _ *provider.Request) (*provider.Result, error) {
+	return &provider.Result{
+		Outcome:          provider.OutcomeUpstreamError,
 		ErrorCategory:    "UPSTREAM",
 		ErrorSubcategory: "rate_limit",
 		ErrorMessage:     "test upstream error",

@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/geoffgodwin/tekhton/internal/prompt"
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	reviewparse "github.com/geoffgodwin/tekhton/internal/review"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
 )
@@ -65,7 +65,7 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 		return nil, err
 	}
 	out := &cycleOutcome{
-		TurnsUsed:     agentResultTurns(agentRes),
+		TurnsUsed:     providerResultTurns(agentRes),
 		ReviewerLimit: limit,
 		AgentCalls:    1,
 	}
@@ -158,8 +158,8 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 }
 
 // invokeReviewerAgent renders the reviewer prompt with cycle-aware vars and
-// dispatches it via the package-level AgentRunner.
-func invokeReviewerAgent(ctx context.Context, cfg *config, cycle, limit int, priorBlockers string) (*proto.AgentResultV1, error) {
+// dispatches it via the config's Provider.
+func invokeReviewerAgent(ctx context.Context, cfg *config, cycle, limit int, priorBlockers string) (*provider.Result, error) {
 	vars := prompt.EnvVars()
 	vars["REVIEW_CYCLE"] = fmt.Sprintf("%d", cycle)
 	vars["MAX_REVIEW_CYCLES"] = fmt.Sprintf("%d", cfg.MaxReviewCycles)
@@ -171,28 +171,18 @@ func invokeReviewerAgent(ctx context.Context, cfg *config, cycle, limit int, pri
 		// runs without a rendered prompt.
 		return nil, fmt.Errorf("render reviewer prompt: %w", err)
 	}
-	promptFile, cleanup, err := writePromptTmpFile(body)
-	if err != nil {
-		// m47 classification: pre-parse failure — the reviewer agent never
-		// runs without a prompt file on disk.
-		return nil, fmt.Errorf("write reviewer prompt: %w", err)
-	}
-	defer cleanup()
-
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:       body,
 		Label:        fmt.Sprintf("Reviewer (cycle %d)", cycle),
 		Model:        cfg.ReviewerModel,
 		MaxTurns:     limit,
-		PromptFile:   promptFile,
 		WorkingDir:   cfg.ProjectDir,
 		AllowedTools: cfg.ReviewerTools,
-	}
-	return agentRunner.Run(ctx, agentReq)
+	})
 }
 
-// agentResultTurns extracts turns_used from an agent result, defaulting to 0.
-func agentResultTurns(r *proto.AgentResultV1) int {
+// providerResultTurns extracts turns_used from a provider result, defaulting to 0.
+func providerResultTurns(r *provider.Result) int {
 	if r == nil {
 		return 0
 	}
@@ -200,36 +190,15 @@ func agentResultTurns(r *proto.AgentResultV1) int {
 }
 
 // isNullRun mirrors the bash `was_null_run` predicate — true when the agent
-// exited non-zero AND used zero turns. The supervisor's Outcome covers both
-// turn_exhausted and fatal_error paths; we treat all non-success outcomes
-// with zero turns as null runs.
-func isNullRun(r *proto.AgentResultV1) bool {
+// exited non-zero AND used zero turns.
+func isNullRun(r *provider.Result) bool {
 	if r == nil {
 		return true
 	}
-	if r.Outcome == proto.OutcomeSuccess {
+	if r.Outcome == provider.OutcomeSuccess {
 		return false
 	}
 	return r.TurnsUsed == 0
-}
-
-// writePromptTmpFile writes content to a temp file and returns its path plus
-// a cleanup func.
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-review-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }
 
 // errSynthesize is returned when the synthesize-at-max path is engaged but

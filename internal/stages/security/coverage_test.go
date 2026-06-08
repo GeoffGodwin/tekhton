@@ -3,61 +3,23 @@ package security
 // coverage_test.go — targeted tests for the code paths that kept
 // internal/stages/security below the 80% line-coverage threshold after m35.2:
 //
-//   - writePromptTmpFile: CreateTemp failure path
 //   - resolveTekhtonBin: TEKHTON_HOME/bin/tekhton, exec.LookPath, not-found
 //   - writeHaltState: milestone-mode resume-flag branch; store.Update failure
 //   - humanActionFile: relative-path join branch
 //   - subprocessBuildGate.Run: noop-when-no-binary and exec-with-binary
-//   - RunStage: scan_failed / failResult path via CreateTemp error
+//   - RunStage: scan_failed / failResult path via provider error
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
-
-// ---------------------------------------------------------------------------
-// writePromptTmpFile
-// ---------------------------------------------------------------------------
-
-// TestWritePromptTmpFile_Success verifies the happy path: content is written
-// to a temp file whose path is returned, and the cleanup func removes it.
-func TestWritePromptTmpFile_Success(t *testing.T) {
-	content := "# Security Scan Prompt\nsome content here\n"
-	path, cleanup, err := writePromptTmpFile(content)
-	if err != nil {
-		t.Fatalf("writePromptTmpFile: unexpected error: %v", err)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read temp file: %v", err)
-	}
-	if string(got) != content {
-		t.Errorf("content=%q want %q", string(got), content)
-	}
-	cleanup()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("cleanup func should have removed the temp file")
-	}
-}
-
-// TestWritePromptTmpFile_CreateTempFails sets TMPDIR to a non-existent
-// directory so os.CreateTemp fails. writePromptTmpFile must return a non-nil
-// error and a no-op cleanup func.
-func TestWritePromptTmpFile_CreateTempFails(t *testing.T) {
-	// t.TempDir() is evaluated before t.Setenv, so the parent dir exists;
-	// only the "nonexistent-sub" child does not.
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nonexistent-sub"))
-	_, cleanup, err := writePromptTmpFile("content")
-	if err == nil {
-		cleanup()
-		t.Error("expected error from CreateTemp with non-existent TMPDIR; got nil")
-	}
-}
 
 // ---------------------------------------------------------------------------
 // resolveTekhtonBin
@@ -253,22 +215,22 @@ func TestSubprocessBuildGate_RunWithBinary(t *testing.T) {
 // RunStage — scan_failed / failResult integration
 // ---------------------------------------------------------------------------
 
-// TestRunStage_ScanFailedOnCreateTempError exercises the scan_failed verdict
-// path (failResult) by making os.CreateTemp fail inside invokeScanAgent.
-// TMPDIR is set to a non-existent path AFTER setupProject has created its
-// directories, so only subsequent CreateTemp calls inside the stage fail.
-func TestRunStage_ScanFailedOnCreateTempError(t *testing.T) {
+// TestRunStage_ScanFailedOnProviderError exercises the scan_failed verdict
+// path (failResult) by making the provider return an error from RunAgent.
+func TestRunStage_ScanFailedOnProviderError(t *testing.T) {
 	dir, req := setupProject(t)
 	writeCoderSummary(t, dir, `# Coder Summary
 ## Files Modified
 - src/auth.go
 `)
-	// Point TMPDIR at a path that does not exist. os.CreateTemp("", …) uses
-	// os.TempDir() which reads $TMPDIR, so the first CreateTemp call inside
-	// writePromptTmpFile fails without reaching agentRunner.Run.
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "nonexistent-tmpdir"))
-
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(*provider.Request) (*provider.Result, error) {
+				return nil, errors.New("provider error")
+			},
+		},
+	}
+	restore := installSeams(t, ag, &fakeBuildGate{})
 	defer restore()
 
 	res, err := RunStage(context.Background(), req)
@@ -283,8 +245,5 @@ func TestRunStage_ScanFailedOnCreateTempError(t *testing.T) {
 	}
 	if res.ExitReason != "scan_failed" {
 		t.Errorf("exit_reason=%q want scan_failed", res.ExitReason)
-	}
-	if res.AgentCalls != 0 {
-		t.Errorf("agent_calls=%d want 0 (agent never started before CreateTemp failed)", res.AgentCalls)
 	}
 }

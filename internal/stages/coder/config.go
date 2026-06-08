@@ -8,6 +8,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/coder/buildfix"
 	"github.com/geoffgodwin/tekhton/internal/coder/prerun"
 	"github.com/geoffgodwin/tekhton/internal/coder/scout"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // Config holds the orchestrator's resolved env once at stage entry. The bash
@@ -96,6 +97,9 @@ type Config struct {
 	PrerunConfig   *prerun.Config
 	ScoutConfig    *scout.Config
 	BuildFixConfig *buildfix.Config
+
+	// Provider is the agent backend injected by the runner.
+	Provider provider.Provider
 }
 
 // DefaultConfig returns the bash-default values byte-identically. Tests assert
@@ -177,6 +181,7 @@ func loadConfigFromEnv() Config {
 		bf.EffectiveCoderMaxTurns = cfg.CoderMaxTurns
 	}
 	cfg.BuildFixConfig = &bf
+	cfg.Provider = stageProvider
 	return cfg
 }
 

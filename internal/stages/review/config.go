@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // config holds the resolved review-stage configuration for one RunStage
@@ -45,6 +46,9 @@ type config struct {
 	SpecialistReportFile  string
 
 	ReviewSkipThreshold int
+
+	// Provider is the agent backend injected by the runner.
+	Provider provider.Provider
 
 	// Diff-stat helper seam — overrideable for tests.
 	diffStatTotal func(projectDir string) (int, error)
@@ -105,6 +109,7 @@ func loadConfig(req *proto.StageRequestV1) config {
 	}
 
 	cfg.diffStatTotal = gitDiffStatTotal
+	cfg.Provider = stageProvider
 	return cfg
 }
 

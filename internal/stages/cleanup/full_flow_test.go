@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -63,13 +64,12 @@ func TestRunStage_FullSuccess_ReportParsedAndSaved(t *testing.T) {
 	}
 
 	var agentCallCount int
-	ag := &fakeAgent{
-		OnRun: func(ctx context.Context, r *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		OnRun: func(ctx context.Context, r *provider.Request) (*provider.Result, error) {
 			agentCallCount++
-			// Non-null-run: TurnsUsed > 0, ExitCode = 0.
-			return &proto.AgentResultV1{
-				Proto:     proto.AgentRequestProtoV1,
-				Outcome:   proto.OutcomeSuccess,
+			// Non-null-run: TurnsUsed > 0, NullRun = false.
+			return &provider.Result{
+				Outcome:   provider.OutcomeSuccess,
 				ExitCode:  0,
 				TurnsUsed: 5,
 			}, nil

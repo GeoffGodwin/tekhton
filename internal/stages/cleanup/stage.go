@@ -12,43 +12,40 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/notes"
 	"github.com/geoffgodwin/tekhton/internal/prompt"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
-
-// AgentRunner is the seam between the cleanup stage and the supervisor.
-// Production wires the in-process supervisor; tests wire a recording fake.
-// Matches the m34.1 docs-stage pattern verbatim — behavior on error is
-// `log + skip`, matching the bash `|| { warn ...; return 0; }` style.
-type AgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
-}
 
 // BuildGateRunner is the seam for the post-cleanup build gate. The bash
 // stage shelled to `run_build_gate`, which after m31.1 execs
 // `tekhton gate build`. The Go port preserves the subprocess semantics
 // behind an interface so tests can drive both pass and fail paths
-// deterministically without invoking the real binary. The eventual
-// in-process call (deferred per m34.2's "minimal-first" stance — see
-// the retro note in docs/go-migration.md) swaps the default
-// implementation here without touching the stage.
+// deterministically without invoking the real binary.
 type BuildGateRunner interface {
 	Run(ctx context.Context, projectDir, stageLabel string) error
 }
 
-// agentRunner is the package-level supervisor seam. Tests overwrite it
-// via SetAgentRunner; production code uses the default in-process
-// supervisor.
-var agentRunner AgentRunner = supervisor.New(nil, nil)
+// stageProvider is the package-level provider seam. Production code sets it
+// via SetProvider before running the pipeline; tests inject a fake.
+var stageProvider provider.Provider
 
 // buildGateRunner is the package-level build-gate seam. Defaults to the
 // subprocess implementation that execs `tekhton gate build`.
 var buildGateRunner BuildGateRunner = subprocessBuildGate{}
 
+// SetProvider replaces the package-level provider. Returns the previous value
+// so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
+	return prev
+}
+
 // RunStage is the m34.2 entry point. Signature matches
 // stagerunner.StageImpl so DefaultStageDefs[StageCleanup] can register
 // it directly. The cleanup stage never returns verdict=fail.
 func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error) {
+	cfg := loadConfig()
 	log := staglog.New(req)
 	log.Header("Cleanup")
 
@@ -94,14 +91,13 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 	turns := envInt("CLEANUP_MAX_TURNS", 15)
 	log.Info(fmt.Sprintf("Invoking cleanup agent (jr coder, max %d turns)...", turns))
 
-	agentRes, agentErr := invokeAgent(ctx, req, promptText, projectDir)
+	agentRes, agentErr := invokeAgent(ctx, cfg, req, promptText, projectDir)
 	if agentErr != nil {
 		log.Warn(fmt.Sprintf("[cleanup] agent invocation failed: %v", agentErr))
 	}
 	log.Info("Cleanup agent finished.")
 
-	// Null-run detection — matches `was_null_run` (m34.2 ported it to
-	// supervisor.AgentResult.IsNullRun).
+	// Null-run detection.
 	if isNullRun(agentRes) {
 		log.Warn("Cleanup agent was a null run — no debt items addressed.")
 		return skipResult(req, "null-run"), nil
@@ -143,14 +139,6 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 	}, nil
 }
 
-// SetAgentRunner replaces the package-level supervisor seam. Returns
-// the previous runner so tests can restore it.
-func SetAgentRunner(r AgentRunner) AgentRunner {
-	prev := agentRunner
-	agentRunner = r
-	return prev
-}
-
 // SetBuildGateRunner replaces the package-level build-gate seam. Tests
 // use this to drive the pass/fail/revert branches without invoking the
 // real `tekhton gate build` subprocess.
@@ -160,37 +148,26 @@ func SetBuildGateRunner(r BuildGateRunner) BuildGateRunner {
 	return prev
 }
 
-func invokeAgent(ctx context.Context, req *proto.StageRequestV1, promptText, projectDir string) (*proto.AgentResultV1, error) {
-	promptFile, cleanup, err := writePromptTmpFile(promptText)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
+func invokeAgent(ctx context.Context, cfg config, req *proto.StageRequestV1, promptText, projectDir string) (*provider.Result, error) {
 	model := envOr("CLAUDE_JR_CODER_MODEL", "claude-sonnet-4-6")
 	turns := envInt("CLEANUP_MAX_TURNS", 15)
 	tools := envOr("AGENT_TOOLS_CLEANUP", envOr("AGENT_TOOLS_JR_CODER", "Read Write Edit Glob Grep Bash"))
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:       promptText,
 		Label:        "Cleanup",
 		Model:        model,
 		MaxTurns:     turns,
-		PromptFile:   promptFile,
 		WorkingDir:   projectDir,
 		AllowedTools: tools,
-	}
-	return agentRunner.Run(ctx, agentReq)
+	})
 }
 
 func runBuildGate(ctx context.Context, projectDir, label string) error {
 	return buildGateRunner.Run(ctx, projectDir, label)
 }
 
-func isNullRun(res *proto.AgentResultV1) bool {
-	if res == nil {
-		return true
-	}
-	r := supervisor.FromProto(res)
-	return r.IsNullRun()
+func isNullRun(res *provider.Result) bool {
+	return res == nil || res.NullRun
 }
 
 // subprocessBuildGate is the default BuildGateRunner — execs
@@ -410,23 +387,6 @@ func resolvePromptsDir(req *proto.StageRequestV1) string {
 		return filepath.Join(v, "prompts")
 	}
 	return "prompts"
-}
-
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-cleanup-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }
 
 func fileExists(p string) bool {

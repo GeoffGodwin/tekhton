@@ -10,6 +10,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/coder/buildfix"
 	"github.com/geoffgodwin/tekhton/internal/coder/prerun"
 	"github.com/geoffgodwin/tekhton/internal/coder/scout"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -92,10 +93,10 @@ func (rec *orchestratorRecorder) newDeps(seedFn func(rec *orchestratorRecorder))
 			Estimate: &scout.Estimate{RecommendedCoder: rec.scoutRecCoder},
 		}, nil
 	}
-	deps.RunAgent = func(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	deps.RunAgent = func(ctx context.Context, req *provider.Request) (*provider.Result, error) {
 		rec.agentCalled = true
 		rec.agentLabel = req.Label
-		return &proto.AgentResultV1{TurnsUsed: 10}, nil
+		return &provider.Result{TurnsUsed: 10}, nil
 	}
 	deps.RenderPrompt = func(name string, vars map[string]string) (string, error) {
 		if rec.agentTemplate == "" {

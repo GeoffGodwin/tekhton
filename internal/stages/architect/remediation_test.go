@@ -5,36 +5,36 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
-// fakeAgent records every invocation. Useful for asserting model / turns /
-// tools routing under each remediation kind.
-type fakeAgent struct {
-	calls []*proto.AgentRequestV1
+// fakeProvider records every RunAgent() invocation. Useful for asserting
+// model / turns / tools routing under each remediation kind.
+type fakeProvider struct {
+	calls []*provider.Request
 	err   error
 }
 
-func (f *fakeAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fakeProvider) Name() string { return "fake-architect" }
+
+func (f *fakeProvider) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	f.calls = append(f.calls, req)
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &proto.AgentResultV1{
-		Proto:   proto.AgentResultProtoV1,
-		Label:   req.Label,
-		Outcome: proto.OutcomeSuccess,
+	return &provider.Result{
+		Outcome: provider.OutcomeSuccess,
 	}, nil
 }
 
-// withFakeAgent swaps in a recording AgentRunner for the duration of the
-// test. Returns the fake so the test body can read its `calls` slice.
-func withFakeAgent(t *testing.T) *fakeAgent {
+// withFakeAgent swaps in a recording provider for the duration of the test.
+// Returns the fake so the test body can read its `calls` slice.
+func withFakeAgent(t *testing.T) *fakeProvider {
 	t.Helper()
-	fa := &fakeAgent{}
-	prev := SetAgentRunner(fa)
-	t.Cleanup(func() { SetAgentRunner(prev) })
-	return fa
+	fp := &fakeProvider{}
+	prev := SetProvider(fp)
+	t.Cleanup(func() { SetProvider(prev) })
+	return fp
 }
 
 func TestRunRework_SrUsesCoderModelAndTurns(t *testing.T) {
@@ -46,6 +46,7 @@ func TestRunRework_SrUsesCoderModelAndTurns(t *testing.T) {
 		CoderTools:      "Read Write Edit",
 		JrCoderModel:    "claude-jr-pinned", // must NOT appear
 		JrCoderMaxTurns: 40,
+		Provider:        fa,
 	}
 	if err := runRework(context.Background(), remediationSr, cfg); err != nil {
 		t.Fatalf("runRework sr: %v", err)
@@ -77,6 +78,7 @@ func TestRunRework_JrUsesJrModelAndTurns(t *testing.T) {
 		JrCoderModel:    "claude-jr-pinned",
 		JrCoderMaxTurns: 40,
 		JrCoderTools:    "Read Edit",
+		Provider:        fa,
 	}
 	if err := runRework(context.Background(), remediationJr, cfg); err != nil {
 		t.Fatalf("runRework jr: %v", err)
@@ -100,8 +102,8 @@ func TestRunRework_JrUsesJrModelAndTurns(t *testing.T) {
 }
 
 func TestRunRework_UnknownKindReturnsError(t *testing.T) {
-	withFakeAgent(t)
-	err := runRework(context.Background(), "nonsense", config{PromptsDir: "../../../prompts"})
+	fa := withFakeAgent(t)
+	err := runRework(context.Background(), "nonsense", config{PromptsDir: "../../../prompts", Provider: fa})
 	if err == nil {
 		t.Fatalf("want error for unknown kind, got nil")
 	}
@@ -114,6 +116,7 @@ func TestRunBuildFix_UsesCoderMaxTurnsDivThree(t *testing.T) {
 		CoderModel:    "claude-coder-pinned",
 		CoderMaxTurns: 80,
 		BuildFixTools: "Read Write Edit Bash",
+		Provider:      fa,
 	}
 	if err := runBuildFix(context.Background(), cfg); err != nil {
 		t.Fatalf("runBuildFix: %v", err)
@@ -136,6 +139,7 @@ func TestRunBuildFix_MinTurnsClampedToOne(t *testing.T) {
 		PromptsDir:    "../../../prompts",
 		CoderModel:    "x",
 		CoderMaxTurns: 2, // 2/3 = 0 integer div
+		Provider:      fa,
 	}
 	if err := runBuildFix(context.Background(), cfg); err != nil {
 		t.Fatalf("runBuildFix: %v", err)
@@ -152,6 +156,7 @@ func TestRunExpeditedReview_UsesStandardModelAndReviewerTurns(t *testing.T) {
 		StandardModel:    "claude-standard-pinned",
 		ReviewerMaxTurns: 20,
 		ReviewerTools:    "Read",
+		Provider:         fa,
 	}
 	if err := runExpeditedReview(context.Background(), cfg); err != nil {
 		t.Fatalf("runExpeditedReview: %v", err)
@@ -179,6 +184,7 @@ func TestInvokeAgent_PropagatesAgentError(t *testing.T) {
 		CoderModel:    "x",
 		CoderMaxTurns: 9,
 		CoderTools:    "Read",
+		Provider:      fa,
 	}
 	err := runRework(context.Background(), remediationSr, cfg)
 	if err == nil {

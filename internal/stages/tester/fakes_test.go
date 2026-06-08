@@ -6,22 +6,25 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	innertester "github.com/geoffgodwin/tekhton/internal/tester"
 	"github.com/geoffgodwin/tekhton/internal/tester/tdd"
 	testaudit "github.com/geoffgodwin/tekhton/internal/test_audit"
 )
 
-// fakeMainAgent records every Run() call. By default Run returns a
+// fakeMainAgent records every RunAgent() call. By default RunAgent returns a
 // success result with TurnsUsed=5 so the null-run gate stays open.
 // Tests override Result to drive UPSTREAM, null-run, etc.
 type fakeMainAgent struct {
-	Result *proto.AgentResultV1
+	Result *provider.Result
 	Err    error
 	calls  int
 }
 
-func (f *fakeMainAgent) Run(_ context.Context, _ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fakeMainAgent) Name() string { return "fake-tester" }
+
+func (f *fakeMainAgent) RunAgent(_ context.Context, _ *provider.Request) (*provider.Result, error) {
 	f.calls++
 	if f.Err != nil {
 		return nil, f.Err
@@ -29,9 +32,8 @@ func (f *fakeMainAgent) Run(_ context.Context, _ *proto.AgentRequestV1) (*proto.
 	if f.Result != nil {
 		return f.Result, nil
 	}
-	return &proto.AgentResultV1{
-		Proto:     proto.AgentResultProtoV1,
-		Outcome:   proto.OutcomeSuccess,
+	return &provider.Result{
+		Outcome:   provider.OutcomeSuccess,
 		ExitCode:  0,
 		TurnsUsed: 5,
 	}, nil

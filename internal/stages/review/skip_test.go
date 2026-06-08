@@ -87,7 +87,7 @@ func TestRunStage_DiffSizeSkipBypassesAgent(t *testing.T) {
 	// expose shouldSkipBySize directly above; here we just assert the entry
 	// point compiles and runs through to a verdict when no project state
 	// exists.
-	ag := &fakeAgent{}
+	ag := &fakeProvider{}
 	restore := installSeams(t, ag, &fakeBuildGate{}, nil, nil)
 	defer restore()
 

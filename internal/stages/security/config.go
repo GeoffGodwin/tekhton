@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	sec "github.com/geoffgodwin/tekhton/internal/security"
 )
 
@@ -42,6 +43,9 @@ type config struct {
 
 	BlockSeverity   sec.Severity
 	UnfixablePolicy string
+
+	// Provider is the agent backend injected by the runner.
+	Provider provider.Provider
 
 	now func() time.Time
 }
@@ -97,6 +101,7 @@ func loadConfig(req *proto.StageRequestV1) config {
 
 		BlockSeverity:   sec.Severity(envOr("SECURITY_BLOCK_SEVERITY", "HIGH")),
 		UnfixablePolicy: envOr("SECURITY_UNFIXABLE_POLICY", "escalate"),
+		Provider:        stageProvider,
 	}
 	return cfg
 }

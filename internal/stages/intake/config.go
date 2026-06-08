@@ -8,6 +8,7 @@ import (
 	pkgintake "github.com/geoffgodwin/tekhton/internal/intake"
 	"github.com/geoffgodwin/tekhton/internal/manifest"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // config holds the resolved intake-stage configuration for a single RunStage
@@ -51,6 +52,11 @@ type config struct {
 
 	// DagEnabled mirrors MILESTONE_DAG_ENABLED.
 	DagEnabled bool
+
+	// Provider is the agent backend injected by the runner. Must be non-nil
+	// before invokeIntakeAgent is reached; nil panics on first RunAgent call
+	// so the wiring gap surfaces immediately in tests.
+	Provider provider.Provider
 }
 
 // loadConfig resolves the per-stage configuration. Mirrors the env-read
@@ -99,6 +105,7 @@ func loadConfig(req *proto.StageRequestV1) config {
 		UIFramework:       envOr("UI_FRAMEWORK", ""),
 
 		DagEnabled: envBoolFromReq(req, "MILESTONE_DAG_ENABLED", true),
+		Provider:   stageProvider,
 	}
 
 	return cfg

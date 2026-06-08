@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	reviewparse "github.com/geoffgodwin/tekhton/internal/review"
 )
@@ -19,7 +20,7 @@ func TestSpecialist_Passthrough(t *testing.T) {
 	report := &reviewparse.Report{Verdict: reviewparse.VerdictApproved}
 	budget := &reviewparse.CycleBudget{Current: 1, Max: 3}
 
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{}, nil, &fakeSpecialist{Blockers: ""})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{}, nil, &fakeSpecialist{Blockers: ""})
 	defer restore()
 
 	res, err := finalizeApproved(context.Background(), req, &cfg, report, budget, 1, &nullLogger{})
@@ -39,7 +40,7 @@ func TestSpecialist_Exhausted(t *testing.T) {
 	report := &reviewparse.Report{Verdict: reviewparse.VerdictApproved}
 	budget := &reviewparse.CycleBudget{Current: 3, Max: 3}
 
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{}, nil,
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{}, nil,
 		&fakeSpecialist{Blockers: "- broken auth on /admin"})
 	defer restore()
 
@@ -96,7 +97,7 @@ func TestFinalizeApproved_SpecialistRunnerErrorDoesNotOverrideVerdict(t *testing
 	budget := &reviewparse.CycleBudget{Current: 1, Max: 3}
 
 	specErr := errors.New("specialist runner exec failed")
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{}, nil,
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{}, nil,
 		&fakeSpecialist{Err: specErr})
 	defer restore()
 
@@ -139,20 +140,19 @@ func TestSpecialist_ReworkApproved(t *testing.T) {
 	// path has something to extend.
 	writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
 
-	cfg := loadConfig(req)
 	report := &reviewparse.Report{Verdict: reviewparse.VerdictApproved}
 	budget := &reviewparse.CycleBudget{Current: 1, Max: 3}
 
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
 			// senior coder rework
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 15}, nil
+			func(*provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 15}, nil
 			},
 			// post-specialist reviewer pass
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
 		},
 	}
@@ -160,6 +160,7 @@ func TestSpecialist_ReworkApproved(t *testing.T) {
 	restore := installSeams(t, ag, gate, nil,
 		&fakeSpecialist{Blockers: "- input not sanitized\n"})
 	defer restore()
+	cfg := loadConfig(req)
 
 	res, err := finalizeApproved(context.Background(), req, &cfg, report, budget, 1, &nullLogger{})
 	if err != nil {

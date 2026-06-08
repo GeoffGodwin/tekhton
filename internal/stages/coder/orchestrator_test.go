@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -190,9 +191,9 @@ func TestOrchestratorWithFakeDeps(t *testing.T) {
 	// Wire fakes that record the sequence.
 	var calls []string
 	deps := DefaultDeps()
-	deps.RunAgent = func(ctx context.Context, _ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	deps.RunAgent = func(ctx context.Context, _ *provider.Request) (*provider.Result, error) {
 		calls = append(calls, "agent")
-		return &proto.AgentResultV1{TurnsUsed: 5}, nil
+		return &provider.Result{TurnsUsed: 5}, nil
 	}
 	deps.RenderPrompt = func(name string, _ map[string]string) (string, error) {
 		calls = append(calls, "render:"+name)

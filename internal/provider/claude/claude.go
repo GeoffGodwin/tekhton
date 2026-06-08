@@ -86,8 +86,13 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 		MaxTurns:   req.MaxTurns,
 		PromptFile: promptPath,
 		Timeout:    req.Timeout,
+		WorkingDir: req.WorkingDir,
 	}
-	v1, supErr := p.Supervisor.Run(ctx, spec.ToProto())
+	protoReq := spec.ToProto()
+	if req.AllowedTools != "" {
+		protoReq.AllowedTools = req.AllowedTools
+	}
+	v1, supErr := p.Supervisor.Run(ctx, protoReq)
 
 	if req.EventChan != nil {
 		turnsUsed := 0

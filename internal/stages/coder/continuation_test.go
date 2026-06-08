@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // TestRunContinuation_Default3Attempts asserts the load-bearing
@@ -26,9 +26,9 @@ func TestRunContinuation_Default3Attempts(t *testing.T) {
 
 	var attempts int
 	deps := &Deps{
-		RunAgent: func(_ context.Context, _ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+		RunAgent: func(_ context.Context, _ *provider.Request) (*provider.Result, error) {
 			attempts++
-			return &proto.AgentResultV1{TurnsUsed: 10}, nil
+			return &provider.Result{TurnsUsed: 10}, nil
 		},
 		RenderPrompt: func(string, map[string]string) (string, error) { return "p", nil },
 		IsSubstantiveWork: func() bool { return true },
@@ -62,9 +62,9 @@ func TestRunContinuation_UpstreamShortCircuit(t *testing.T) {
 
 	var attempts int
 	deps := &Deps{
-		RunAgent: func(context.Context, *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+		RunAgent: func(context.Context, *provider.Request) (*provider.Result, error) {
 			attempts++
-			return &proto.AgentResultV1{
+			return &provider.Result{
 				TurnsUsed:     5,
 				ErrorCategory: "UPSTREAM",
 				ErrorMessage:  "quota_exhausted",
@@ -97,9 +97,9 @@ func TestRunContinuation_CompleteSucceeds(t *testing.T) {
 
 	var attempts int
 	deps := &Deps{
-		RunAgent: func(context.Context, *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+		RunAgent: func(context.Context, *provider.Request) (*provider.Result, error) {
 			attempts++
-			return &proto.AgentResultV1{TurnsUsed: 3}, nil
+			return &provider.Result{TurnsUsed: 3}, nil
 		},
 		RenderPrompt: func(string, map[string]string) (string, error) { return "p", nil },
 		IsSubstantiveWork: func() bool { return true },
@@ -125,9 +125,9 @@ func TestRunContinuation_DisabledNoop(t *testing.T) {
 	cfg.Enabled = false
 	var attempts int
 	deps := &Deps{
-		RunAgent: func(context.Context, *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+		RunAgent: func(context.Context, *provider.Request) (*provider.Result, error) {
 			attempts++
-			return &proto.AgentResultV1{}, nil
+			return &provider.Result{}, nil
 		},
 	}
 	res, err := RunContinuation(context.Background(), cfg, deps)
@@ -147,7 +147,7 @@ func TestRunContinuation_DisabledNoop(t *testing.T) {
 func TestRunContinuation_AgentErrorPropagates(t *testing.T) {
 	sentinel := errors.New("network")
 	deps := &Deps{
-		RunAgent: func(context.Context, *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+		RunAgent: func(context.Context, *provider.Request) (*provider.Result, error) {
 			return nil, sentinel
 		},
 		RenderPrompt: func(string, map[string]string) (string, error) { return "p", nil },
@@ -162,8 +162,8 @@ func TestRunContinuation_AgentErrorPropagates(t *testing.T) {
 // surface to the caller.
 func TestRunContinuation_PromptRenderErrorPropagates(t *testing.T) {
 	deps := &Deps{
-		RunAgent: func(context.Context, *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-			return &proto.AgentResultV1{}, nil
+		RunAgent: func(context.Context, *provider.Request) (*provider.Result, error) {
+			return &provider.Result{}, nil
 		},
 		RenderPrompt: func(string, map[string]string) (string, error) {
 			return "", fmt.Errorf("missing template")

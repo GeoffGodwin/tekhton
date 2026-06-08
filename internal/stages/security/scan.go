@@ -7,15 +7,15 @@ import (
 	"strconv"
 
 	"github.com/geoffgodwin/tekhton/internal/prompt"
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // invokeScanAgent renders the security_scan prompt and dispatches it via
-// the package-level AgentRunner. Mirrors stages/security.sh:47-83 — turn
+// the package-level Provider. Mirrors stages/security.sh:47-83 — turn
 // clamp (with MILESTONE_MODE doubling) → SECURITY_REPORT_CONTENT export →
-// render → run_agent. Returns the supervisor result so the stage can
+// render → run_agent. Returns the provider result so the stage can
 // count agent calls.
-func invokeScanAgent(ctx context.Context, cfg config, req *proto.StageRequestV1) (*proto.AgentResultV1, error) {
+func invokeScanAgent(ctx context.Context, cfg config) (*provider.Result, error) {
 	turns := clampTurns(cfg)
 
 	// Pre-load previous SECURITY_REPORT.md so the prompt can reference it
@@ -32,22 +32,14 @@ func invokeScanAgent(ctx context.Context, cfg config, req *proto.StageRequestV1)
 		return nil, fmt.Errorf("render security_scan: %w", err)
 	}
 
-	promptFile, cleanup, err := writePromptTmpFile(body)
-	if err != nil {
-		return nil, fmt.Errorf("write security_scan prompt: %w", err)
-	}
-	defer cleanup()
-
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:       body,
 		Label:        "Security (scan)",
 		Model:        cfg.ScanModel,
 		MaxTurns:     turns,
-		PromptFile:   promptFile,
 		WorkingDir:   cfg.ProjectDir,
 		AllowedTools: cfg.ReviewerTools,
-	}
-	return agentRunner.Run(ctx, agentReq)
+	})
 }
 
 // clampTurns ports stages/security.sh:48-59 verbatim. The bash logic is:

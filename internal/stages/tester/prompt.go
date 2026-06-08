@@ -1,8 +1,6 @@
 package tester
 
 import (
-	"os"
-
 	"github.com/geoffgodwin/tekhton/internal/prompt"
 )
 
@@ -29,22 +27,3 @@ func promptVarsFromEnv() map[string]string {
 	return prompt.EnvVars()
 }
 
-// writePromptTmpFile writes content to an os.CreateTemp file and returns
-// its path plus a cleanup closure. Mirrors the docs/cleanup/security
-// stage helpers verbatim.
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-tester-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
-}

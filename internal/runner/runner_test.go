@@ -248,6 +248,15 @@ func TestPersistFailureStateZerosCountersOnSafetyBound(t *testing.T) {
 	}
 }
 
+// TestNew_ProviderNonNil asserts the m02 acceptance criterion: New() must
+// return a Runner with a non-nil Provider so stages can call RunAgent.
+func TestNew_ProviderNonNil(t *testing.T) {
+	r := New(&fakePipeline{})
+	if r.Provider == nil {
+		t.Fatal("runner.New().Provider is nil; must be non-nil (m02 AC)")
+	}
+}
+
 func TestPersistFailureStateKeepsCountersOnSaveExit(t *testing.T) {
 	tmp := t.TempDir()
 	store := state.New(filepath.Join(tmp, "PIPELINE_STATE.json"))

@@ -26,17 +26,11 @@ import (
 	"strings"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	sec "github.com/geoffgodwin/tekhton/internal/security"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
 	"github.com/geoffgodwin/tekhton/internal/state"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
-
-// AgentRunner is the seam between the security stage and the supervisor.
-// Production wires the in-process supervisor; tests wire a recording fake.
-type AgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
-}
 
 // BuildGateRunner is the seam for the post-rework build gate. The bash
 // stage shelled to `run_build_gate`, which after m31.1 execs
@@ -47,19 +41,19 @@ type BuildGateRunner interface {
 	Run(ctx context.Context, projectDir, stageLabel string) error
 }
 
-// agentRunner is the package-level supervisor seam. Tests overwrite it via
-// SetAgentRunner; production uses the default in-process supervisor.
-var agentRunner AgentRunner = supervisor.New(nil, nil)
+// stageProvider is the package-level provider seam. Production code sets it
+// via SetProvider before running the pipeline; tests inject a fake.
+var stageProvider provider.Provider
 
 // buildGateRunner is the package-level build-gate seam. Defaults to the
 // subprocess implementation that execs `tekhton gate build`.
 var buildGateRunner BuildGateRunner = subprocessBuildGate{}
 
-// SetAgentRunner replaces the package-level agent seam. Returns the previous
-// runner so tests can restore it.
-func SetAgentRunner(r AgentRunner) AgentRunner {
-	prev := agentRunner
-	agentRunner = r
+// SetProvider replaces the package-level provider. Returns the previous value
+// so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
 	return prev
 }
 
@@ -105,13 +99,12 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 	for scanNeeded {
 		scanNeeded = false
 
-		scanRes, err := invokeScanAgent(ctx, cfg, req)
+		_, err := invokeScanAgent(ctx, cfg)
 		if err != nil {
 			log.Warn(fmt.Sprintf("[security] Scan agent invocation failed: %v", err))
 			return failResult(req, "scan_failed", agentCalls), err
 		}
 		agentCalls++
-		_ = scanRes
 		log.Success("Security scan finished.")
 
 		// --- Parse findings ---
@@ -296,25 +289,6 @@ func humanActionFile(cfg config) string {
 		return override
 	}
 	return filepath.Join(cfg.ProjectDir, override)
-}
-
-// writePromptTmpFile writes content to an os.CreateTemp file and returns
-// its path plus a cleanup func. Shared by scan.go and rework.go.
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-security-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }
 
 // subprocessBuildGate is the default BuildGateRunner — execs

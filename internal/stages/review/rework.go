@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/geoffgodwin/tekhton/internal/prompt"
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	reviewparse "github.com/geoffgodwin/tekhton/internal/review"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
 )
@@ -67,8 +67,7 @@ func invokeCoderRework(ctx context.Context, cfg *config, budget reviewparse.Cycl
 	if err != nil {
 		return fmt.Errorf("render coder_rework: %w", err)
 	}
-	return dispatchAgent(ctx, body, &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return dispatchAgent(ctx, cfg, body, &provider.Request{
 		Label:        fmt.Sprintf("Coder (rework cycle %d)", budget.Current),
 		Model:        cfg.CoderModel,
 		MaxTurns:     cfg.EffectiveCoderTurns,
@@ -93,8 +92,7 @@ func invokeJrCoderRework(ctx context.Context, cfg *config, budget reviewparse.Cy
 	if err != nil {
 		return fmt.Errorf("render jr_coder: %w", err)
 	}
-	return dispatchAgent(ctx, body, &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return dispatchAgent(ctx, cfg, body, &provider.Request{
 		Label:        fmt.Sprintf("Jr Coder (cycle %d)", budget.Current),
 		Model:        cfg.JrCoderModel,
 		MaxTurns:     cfg.EffectiveJrTurns,
@@ -115,8 +113,7 @@ func invokeBuildFixMinimal(ctx context.Context, cfg *config) error {
 	if turns < 1 {
 		turns = 1
 	}
-	return dispatchAgent(ctx, body, &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return dispatchAgent(ctx, cfg, body, &provider.Request{
 		Label:        "Coder (post-fix-pass build fix)",
 		Model:        cfg.CoderModel,
 		MaxTurns:     turns,
@@ -125,16 +122,9 @@ func invokeBuildFixMinimal(ctx context.Context, cfg *config) error {
 	})
 }
 
-// dispatchAgent is the shared writer-to-tempfile + agentRunner.Run boilerplate
-// shared by the rework / build-fix invocations. The request's PromptFile is
-// populated here so callers only need to supply the metadata.
-func dispatchAgent(ctx context.Context, body string, req *proto.AgentRequestV1) error {
-	promptFile, cleanup, err := writePromptTmpFile(body)
-	if err != nil {
-		return fmt.Errorf("write prompt: %w", err)
-	}
-	defer cleanup()
-	req.PromptFile = promptFile
-	_, err = agentRunner.Run(ctx, req)
+// dispatchAgent dispatches an agent call via the config's Provider.
+func dispatchAgent(ctx context.Context, cfg *config, body string, req *provider.Request) error {
+	req.Prompt = body
+	_, err := cfg.Provider.RunAgent(ctx, req)
 	return err
 }

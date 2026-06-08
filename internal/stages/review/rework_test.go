@@ -3,11 +3,10 @@ package review
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	reviewparse "github.com/geoffgodwin/tekhton/internal/review"
 )
 
@@ -16,12 +15,11 @@ import (
 // "coder_rework" (NOT "coder").
 func TestRework_ComplexOnly_RoutesSeniorCoder(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
-	ag := &fakeAgent{}
+	ag := &fakeProvider{}
 	gate := &fakeBuildGate{}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{
 		ComplexBlockers: []string{"refactor auth"},
@@ -50,12 +48,11 @@ func TestRework_ComplexOnly_RoutesSeniorCoder(t *testing.T) {
 // is set to "yes" on the jr call.
 func TestRework_ComplexAndSimple_RoutesBoth(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
-	ag := &fakeAgent{}
+	ag := &fakeProvider{}
 	gate := &fakeBuildGate{}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{
 		ComplexBlockers: []string{"refactor auth"},
@@ -80,12 +77,11 @@ func TestRework_ComplexAndSimple_RoutesBoth(t *testing.T) {
 // jr coder, NOT to senior. JR_AFTER_SENIOR is empty.
 func TestRework_SimpleOnly_RoutesJrCoder(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
-	ag := &fakeAgent{}
+	ag := &fakeProvider{}
 	gate := &fakeBuildGate{}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{
 		SimpleBlockers: []string{"typo in README"},
@@ -109,14 +105,13 @@ func TestRework_SimpleOnly_RoutesJrCoder(t *testing.T) {
 // escalation invokes build_fix_minimal, the retry passes.
 func TestRework_BuildGateFailure_EscalatesAndRecovers(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
-	ag := &fakeAgent{}
+	ag := &fakeProvider{}
 	gate := &fakeBuildGate{
 		Behaviors: []error{errors.New("broken"), nil},
 	}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{
 		ComplexBlockers: []string{"X"},
@@ -140,14 +135,13 @@ func TestRework_BuildGateFailure_EscalatesAndRecovers(t *testing.T) {
 // fails; runRework returns a non-nil error.
 func TestRework_BuildGateRetryFails_PropagatesError(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
-	ag := &fakeAgent{}
+	ag := &fakeProvider{}
 	gate := &fakeBuildGate{
 		Behaviors: []error{errors.New("broken"), errors.New("still broken")},
 	}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{
 		ComplexBlockers: []string{"X"},
@@ -165,18 +159,17 @@ func TestRework_BuildGateRetryFails_PropagatesError(t *testing.T) {
 // non-nil err from runRework.
 func TestRework_AgentErrorPropagates(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return nil, errors.New("supervisor exploded")
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(*provider.Request) (*provider.Result, error) {
+				return nil, errors.New("provider exploded")
 			},
 		},
 	}
 	gate := &fakeBuildGate{}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{ComplexBlockers: []string{"X"}}
 	_, err := runRework(context.Background(), &cfg, report, reviewparse.CycleBudget{Current: 1, Max: 3}, &nullLogger{})
@@ -196,23 +189,13 @@ func TestRework_AgentErrorPropagates(t *testing.T) {
 // Directive" header is absent.
 func TestRework_CoderReworkPromptBody_ContainsReworkHeader(t *testing.T) {
 	_, req := setupProject(t)
-	cfg := loadConfig(req)
-
 	var capturedBody string
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(r *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				// PromptFile exists until dispatchAgent's defer cleanup() runs,
-				// which is after this Run() call returns — safe to read here.
-				data, readErr := os.ReadFile(r.PromptFile)
-				if readErr != nil {
-					t.Errorf("read PromptFile %q: %v", r.PromptFile, readErr)
-				} else {
-					capturedBody = string(data)
-				}
-				return &proto.AgentResultV1{
-					Proto:     proto.AgentRequestProtoV1,
-					Outcome:   proto.OutcomeSuccess,
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(r *provider.Request) (*provider.Result, error) {
+				capturedBody = r.Prompt
+				return &provider.Result{
+					Outcome:   provider.OutcomeSuccess,
 					ExitCode:  0,
 					TurnsUsed: 5,
 				}, nil
@@ -222,6 +205,7 @@ func TestRework_CoderReworkPromptBody_ContainsReworkHeader(t *testing.T) {
 	gate := &fakeBuildGate{}
 	restore := installSeams(t, ag, gate, nil, nil)
 	defer restore()
+	cfg := loadConfig(req)
 
 	report := &reviewparse.Report{
 		ComplexBlockers: []string{"refactor auth"},

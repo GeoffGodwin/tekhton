@@ -1,41 +1,53 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, ~36 test functions (1 primary + 3 freshness samples)
+Tests audited: 5 files, 30 test functions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Partial-result-with-error path untested
-- File: internal/provider/claude/parity_test.go (exercises internal/provider/claude/claude.go:111)
-- Issue: `claude.go:109-114` has two branches when `supErr != nil`: one where `v1 == nil` (returns nil result + wrapped error) and one where `v1 != nil` (returns a translated result *and* an error). The parity test only exercises the `v1 == nil` path (via `context_cancelled`). The `v1 != nil && supErr != nil` path — returning a partial result alongside an error — is not covered by any test in either `claude_test.go` or `parity_test.go`. Callers that branch on `err != nil` without checking `result != nil` would silently see a result they didn't expect if this path fires.
-- Severity: MEDIUM
-- Action: Add a parity sub-test or `claude_test.go` unit test with a `stubSup` that returns both a non-nil `AgentResultV1` and a non-nil error, then assert both the returned `Result` is non-nil and the error is non-nil.
-
-#### COVERAGE: RawProviderData content not spot-checked
-- File: internal/provider/claude/parity_test.go:92-94
-- Issue: `RawProviderData` is asserted non-empty (`len == 0` guard) but its JSON content is not verified. A regression in `translateResult` that serialized a zero-value struct would still pass this check. The fixture files provide known `exit_code`, `outcome`, and `turns_used` values that could be spot-checked.
+#### COVERAGE: Partial-completion error path not tested
+- File: internal/provider/claude/parity_test.go
+- Issue: The `supErr != nil && v1 != nil` branch in `RunAgent` (claude.go:115–118) is
+  never exercised. That branch returns `(translateResult(v1), supErr)` — a non-nil
+  Result alongside a non-nil error — which is the only place in the provider where
+  that combination can legitimately arise. No test stub configures both a non-nil
+  result and a non-nil error simultaneously.
 - Severity: LOW
-- Action: For at least one scenario (e.g., `upstream_error`), unmarshal `RawProviderData` into `proto.AgentResultV1` and assert a fixture-specific field (e.g., `ExitCode == 1`) to verify content fidelity.
+- Action: Add a table entry with `supErr: errors.New("partial")` and a stub that
+  returns a non-nil result alongside that error; assert `got != nil && err != nil`.
 
-#### COVERAGE: Translated result fields not asserted
-- File: internal/provider/claude/parity_test.go:86-94
-- Issue: `translateResult` populates `TurnsUsed`, `ExitCode`, `ErrorCategory`, `ErrorMessage`, and `ErrorSubcategory` but the parity test only checks `Outcome`, `NullRun`, and `RawProviderData`. The `upstream_error` fixture carries `error_category: "UPSTREAM"` and `error_message: "API rate limit exceeded; retry after 60s"` that flow through `FromProto` but are never asserted.
+#### COVERAGE: Upstream error with turns ≤ NullRunThreshold untested
+- File: internal/provider/claude/parity_test.go
+- Issue: `translateOutcome` checks `IsNullRun()` before `CategoryUpstream`, meaning
+  an upstream error with `turns_used <= DefaultNullRunThreshold` (2) is classified
+  as `OutcomeNullRun`, not `OutcomeUpstreamError`. The `upstream_error` fixture uses
+  `turns_used=3` — safely above the threshold — so the IsNullRun/Upstream precedence
+  decision is exercised only indirectly. The intentional design choice (stated in the
+  design notes) that null-run detection masks upstream classification is not pinned
+  by any test.
 - Severity: LOW
-- Action: Assert `ErrorCategory` for `upstream_error` and `TurnsUsed` for `multi_turn_with_tools` to pin the full translation contract beyond Outcome classification alone.
+- Action: Add a unit test in `claude_test.go` (where `translateOutcome` is already
+  exercised directly) calling `translateOutcome` with `exit_code=1`,
+  `turns_used=1`, `error_category=UPSTREAM` and asserting the result is
+  `OutcomeNullRun`, not `OutcomeUpstreamError`. This pins the precedence rule as an
+  explicit invariant rather than an accident of the fixture.
 
----
+#### NAMING: "context_cancelled" comment overstates cancellation timing
+- File: internal/provider/claude/parity_test.go:72–79
+- Issue: The inline comment reads "pre-first-turn cancellation must return a nil
+  Result." The test does not cancel the context before `RunAgent` is called; it
+  supplies `context.Background()` and has the stub return `context.Canceled` as
+  its error. What is actually tested is that a supervisor error on the first
+  supervisor call produces `(nil, error)`. The contract being asserted is correct;
+  the comment misleads a reader about what execution path is driven.
+- Severity: LOW
+- Action: Revise the comment to: "when the supervisor returns context.Canceled,
+  RunAgent must return (nil, error) — callers must never receive a partial Result
+  alongside an error."
 
-### Freshness Sample Review (no findings)
-
-**cmd/tekhton/config_test.go** — 9 test functions. All create fixtures in `t.TempDir()`. `clearCIEnvTest` correctly restores env vars via `t.Cleanup`. Error paths (missing file, missing required key, strict-mode promotion) covered. Assertions grounded in real CLI command output. No scope misalignment. PASS.
-
-**cmd/tekhton/dag_test.go** — 24 test functions. Fixtures created in temp dirs. Both happy paths and error paths covered (invalid transition, unknown ID, empty manifest, corrupt dep reference). `loadDagState` env-var fallback path tested. All referenced symbols align with current codebase. PASS.
-
-**internal/coder/prerun/parity_test.go** — `TestParity_Fixtures` with 3 sub-tests. Uses `recordingDeps` fake and `wireCombinedStream` to capture call sequences against committed `bash_baseline.txt` fixtures. No mutable project-state reads. Note: `deps.RunAgent` still accepts `*proto.AgentRequestV1` directly — correct for m01; stages migrate to `provider.Provider` in m02. No scope misalignment for current milestone. PASS.
-
----
-
-### Tester Claim Verification
-
-The tester report claims: "assert Result is nil alongside error for context_cancelled (pre-first-turn cancellation contract)." This claim is **accurate**. `parity_test.go:78-80` adds `if got != nil { t.Errorf(...) }` inside the `wantErr` branch, directly addressing the coverage gap the reviewer flagged in cycle 1. The nil-Result check is present and correct.
+### Notes on freshness samples
+`internal/coder/prerun/prerun_test.go`, `internal/coder/scout/parity_test.go`, and
+`internal/coder/scout/scout_test.go` were not modified in this run. All three use
+purpose-built fakes (`recordingDeps`, `scoutFake`) or static fixture files in temp
+directories; none read mutable pipeline artifacts. No integrity issues found.

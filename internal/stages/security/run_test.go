@@ -9,31 +9,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	sec "github.com/geoffgodwin/tekhton/internal/security"
 )
 
-// fakeAgent is a recording AgentRunner that can vary its behavior across
-// successive invocations. The Behaviors slice is consumed one entry per
-// Run() call; once exhausted, Run returns the default success result with
-// TurnsUsed=5 so a test that doesn't explicitly script every call still
+// fakeProvider is a recording provider.Provider that can vary its behavior
+// across successive invocations. The Behaviors slice is consumed one entry per
+// RunAgent() call; once exhausted, RunAgent returns the default success result
+// with TurnsUsed=5 so a test that doesn't explicitly script every call still
 // makes forward progress.
-type fakeAgent struct {
-	Calls     []*proto.AgentRequestV1
-	Behaviors []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error)
+type fakeProvider struct {
+	Calls     []*provider.Request
+	Behaviors []func(*provider.Request) (*provider.Result, error)
 	idx       int
 }
 
-func (f *fakeAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fakeProvider) Name() string { return "fake-security" }
+
+func (f *fakeProvider) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	f.Calls = append(f.Calls, req)
 	if f.idx < len(f.Behaviors) {
 		b := f.Behaviors[f.idx]
 		f.idx++
 		return b(req)
 	}
-	return &proto.AgentResultV1{
-		Proto:     proto.AgentRequestProtoV1,
-		Outcome:   proto.OutcomeSuccess,
+	return &provider.Result{
+		Outcome:   provider.OutcomeSuccess,
 		ExitCode:  0,
 		TurnsUsed: 5,
 	}, nil
@@ -52,12 +54,12 @@ func (f *fakeBuildGate) Run(_ context.Context, _, _ string) error {
 }
 
 // installSeams wires fakes for both seams and returns a restore func.
-func installSeams(t *testing.T, ag AgentRunner, gate BuildGateRunner) func() {
+func installSeams(t *testing.T, ag *fakeProvider, gate BuildGateRunner) func() {
 	t.Helper()
-	prevA := SetAgentRunner(ag)
+	prevA := SetProvider(ag)
 	prevG := SetBuildGateRunner(gate)
 	return func() {
-		SetAgentRunner(prevA)
+		SetProvider(prevA)
 		SetBuildGateRunner(prevG)
 	}
 }
@@ -136,7 +138,7 @@ func writeCoderSummary(t *testing.T, dir, content string) {
 func TestRunStage_AgentDisabled(t *testing.T) {
 	_, req := setupProject(t)
 	t.Setenv("SECURITY_AGENT_ENABLED", "false")
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 	defer restore()
 
 	res, err := RunStage(context.Background(), req)
@@ -155,7 +157,7 @@ func TestRunStage_AgentDisabled(t *testing.T) {
 func TestRunStage_SkipFlag(t *testing.T) {
 	_, req := setupProject(t)
 	t.Setenv("SKIP_SECURITY", "true")
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 	defer restore()
 
 	res, _ := RunStage(context.Background(), req)
@@ -173,7 +175,7 @@ func TestRunStage_DocsOnly(t *testing.T) {
 - docs/index.md
 - CHANGELOG.md
 `)
-	restore := installSeams(t, &fakeAgent{}, &fakeBuildGate{})
+	restore := installSeams(t, &fakeProvider{}, &fakeBuildGate{})
 	defer restore()
 
 	res, _ := RunStage(context.Background(), req)
@@ -190,9 +192,9 @@ func TestRunStage_PassNoFindings(t *testing.T) {
 ## Files Modified
 - src/auth.go
 `)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(r *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(r *provider.Request) (*provider.Result, error) {
 				// Simulate the agent: write an empty SECURITY_REPORT.md.
 				writeReport(t, dir, `## Summary
 No issues.
@@ -203,7 +205,7 @@ None
 ## Verdict
 CLEAN
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 			},
 		},
 	}
@@ -237,10 +239,10 @@ func TestRunStage_FixableReworkPass(t *testing.T) {
 - src/auth.go
 `)
 
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
 			// scan 1: 1 CRITICAL fixable finding
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Summary
 Issue found.
 
@@ -250,14 +252,14 @@ Issue found.
 ## Verdict
 FINDINGS_PRESENT
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 8}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 8}, nil
 			},
 			// rework: pretend the fix was applied
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 10}, nil
+			func(*provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 10}, nil
 			},
 			// scan 2: empty report
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Summary
 Clean.
 
@@ -267,7 +269,7 @@ None
 ## Verdict
 CLEAN
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 			},
 		},
 	}
@@ -310,9 +312,9 @@ func TestRunStage_UnfixableHalt(t *testing.T) {
 	t.Setenv("SECURITY_UNFIXABLE_POLICY", "halt")
 	t.Setenv("PIPELINE_STATE_FILE", filepath.Join(dir, ".tekhton", "PIPELINE_STATE.json"))
 
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Summary
 Issue found.
 
@@ -322,7 +324,7 @@ Issue found.
 ## Verdict
 FINDINGS_PRESENT
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
 		},
 	}
@@ -371,9 +373,9 @@ func TestRunStage_UnfixableEscalate(t *testing.T) {
 	haPath := filepath.Join(dir, ".tekhton", "HUMAN_ACTION_REQUIRED.md")
 	t.Setenv("HUMAN_ACTION_FILE", haPath)
 
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Summary
 Issue found.
 
@@ -383,7 +385,7 @@ Issue found.
 ## Verdict
 FINDINGS_PRESENT
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
 		},
 	}
@@ -424,19 +426,19 @@ func TestRunStage_BuildGateFailureBreaksLoop(t *testing.T) {
 ## Files Modified
 - src/auth.go
 `)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Findings
 - [CRITICAL] [auth.go:42] fixable:yes — SQL injection
 
 ## Verdict
 FINDINGS_PRESENT
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+			func(*provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
 		},
 	}
@@ -597,16 +599,16 @@ func TestRunStage_LogsWarnButProceedsOnNotesWriteFail(t *testing.T) {
 	// Point SECURITY_NOTES_FILE at an unwritable path.
 	t.Setenv("SECURITY_NOTES_FILE", "/dev/full/cannot-write.md")
 
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(*proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(*provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Findings
 - [LOW] [auth.go] fixable:unknown — Informational
 
 ## Verdict
 FINDINGS_PRESENT
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 			},
 		},
 	}

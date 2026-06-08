@@ -17,29 +17,28 @@ import (
 
 	"github.com/geoffgodwin/tekhton/internal/prompt"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
 
-// AgentRunner is the seam between the docs stage and the supervisor.
-// Production wires runSupervised; tests wire a recording fake so they don't
-// need a real claude binary. Mirrors the bash side calling run_agent —
-// behavior on error is identical to the bash `|| { warn "..."; return 0; }`
-// pattern: log and skip.
-type AgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
-}
+// stageProvider is the package-level provider seam. Production code sets it
+// via SetProvider before running the pipeline; tests inject a fake.
+var stageProvider provider.Provider
 
-// agentRunner is the package-level seam. Tests overwrite it via the
-// WithAgentRunner option in stage_test.go; production code uses the default
-// (an in-process supervisor.Supervisor).
-var agentRunner AgentRunner = supervisor.New(nil, nil)
+// SetProvider replaces the package-level provider. Returns the previous value
+// so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
+	return prev
+}
 
 // RunStage is the m34.1 entry point. Signature matches stagerunner.StageImpl
 // so DefaultStageDefs[StageDocs] can register it directly. The docs stage
 // never returns verdict=fail; on any internal error the result carries
 // verdict=skip with an exit_reason that names the failing step.
 func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error) {
+	cfg := loadConfig()
 	log := staglog.New(req)
 	log.Header("Docs")
 
@@ -72,31 +71,21 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 		return skipResult(req, "prompt-failed"), nil
 	}
 
-	// Write prompt to a tempfile the supervisor can pass to the agent.
-	promptFile, cleanup, err := writePromptTmpFile(promptText)
-	if err != nil {
-		log.Warn(fmt.Sprintf("[docs] write prompt: %v", err))
-		return skipResult(req, "prompt-write-failed"), nil
-	}
-	defer cleanup()
-
 	model := envOr("DOCS_AGENT_MODEL", "claude-haiku-4-5-20251001")
 	turns := envInt("DOCS_AGENT_MAX_TURNS", 10)
 	tools := envOr("AGENT_TOOLS_CODER", "Read Write Edit Glob Grep Bash")
 
 	log.Info(fmt.Sprintf("[docs] Invoking docs agent (model=%s, turns=%d)...", model, turns))
 
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	agentRes, agentErr := cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:       promptText,
 		Label:        "Docs",
 		Model:        model,
 		MaxTurns:     turns,
-		PromptFile:   promptFile,
 		WorkingDir:   projectDir,
 		AllowedTools: tools,
-	}
-	agentRes, agentErr := agentRunner.Run(ctx, agentReq)
-	if agentErr != nil || agentRes == nil || agentRes.Outcome != proto.OutcomeSuccess {
+	})
+	if agentErr != nil || agentRes == nil || agentRes.Outcome != provider.OutcomeSuccess {
 		log.Warn("[docs] Docs agent run failed — continuing pipeline without docs updates.")
 		return skipResult(req, "agent-failed"), nil
 	}
@@ -109,15 +98,6 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 		ExitReason: "agent-completed",
 		AgentCalls: 1,
 	}, nil
-}
-
-// SetAgentRunner replaces the package-level supervisor seam. Used by tests
-// to install a recording fake without spinning up a real claude subprocess.
-// Returns the previous runner so tests can restore it.
-func SetAgentRunner(r AgentRunner) AgentRunner {
-	prev := agentRunner
-	agentRunner = r
-	return prev
 }
 
 func skipResult(req *proto.StageRequestV1, reason string) *proto.StageResultV1 {
@@ -153,23 +133,6 @@ func resolvePromptsDir(req *proto.StageRequestV1) string {
 	}
 	// Last-ditch fallback — assume the binary runs from the repo root.
 	return "prompts"
-}
-
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-docs-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }
 
 func envBool(key string, fallback bool) bool {

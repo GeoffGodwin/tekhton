@@ -10,15 +10,9 @@ import (
 
 	"github.com/geoffgodwin/tekhton/internal/drift"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
-
-// AgentRunner is the seam between the architect stage and the supervisor.
-// Production wires the in-process supervisor; tests wire a recording fake.
-type AgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
-}
 
 // BuildGateRunner is the seam for the post-remediation build gate. The
 // bash architect.sh shelled to `run_build_gate`, which after m31.1 execs
@@ -38,16 +32,16 @@ type TUICaller interface {
 }
 
 var (
-	agentRunner     AgentRunner     = supervisor.New(nil, nil)
+	stageProvider   provider.Provider
 	buildGateRunner BuildGateRunner = subprocessBuildGate{}
 	tuiCaller       TUICaller       = subprocessTUI{}
 )
 
-// SetAgentRunner replaces the package-level agent seam. Returns the
-// previous runner so tests can restore it.
-func SetAgentRunner(r AgentRunner) AgentRunner {
-	prev := agentRunner
-	agentRunner = r
+// SetProvider replaces the package-level provider. Returns the previous
+// value so tests can restore it.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
 	return prev
 }
 
@@ -271,28 +265,20 @@ func substageEnd(ctx context.Context, started bool, verdict string) {
 }
 
 // runArchitectAgent renders the architect prompt and dispatches it. Returns
-// the supervisor result so the caller can branch on ErrorCategory/UPSTREAM.
-func runArchitectAgent(ctx context.Context, cfg config) (*proto.AgentResultV1, error) {
+// the provider result so the caller can branch on ErrorCategory/UPSTREAM.
+func runArchitectAgent(ctx context.Context, cfg config) (*provider.Result, error) {
 	body, err := renderArchitectPrompt(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("render architect prompt: %w", err)
 	}
-	promptFile, cleanup, err := writePromptTmpFile(body)
-	if err != nil {
-		return nil, fmt.Errorf("write architect prompt: %w", err)
-	}
-	defer cleanup()
-
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:       body,
 		Label:        "Architect",
 		Model:        cfg.ArchitectModel,
 		MaxTurns:     cfg.ArchitectMaxTurns,
-		PromptFile:   promptFile,
 		WorkingDir:   cfg.ProjectDir,
 		AllowedTools: cfg.ArchitectTools,
-	}
-	return agentRunner.Run(ctx, agentReq)
+	})
 }
 
 // resetAuditCounter wraps drift.ResetRunsSinceAudit with a logged warning
@@ -362,23 +348,6 @@ func fileExists(p string) bool {
 	}
 	_, err := os.Stat(p)
 	return err == nil
-}
-
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-architect-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
 }
 
 // subprocessBuildGate is the default BuildGateRunner — execs

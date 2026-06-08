@@ -6,7 +6,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/coder/buildfix"
 	"github.com/geoffgodwin/tekhton/internal/coder/prerun"
 	"github.com/geoffgodwin/tekhton/internal/coder/scout"
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // Deps is the orchestrator's dependency-injection seam. Every field is
@@ -34,8 +34,8 @@ type Deps struct {
 	// --- Agent + prompt seams ---
 
 	// RunAgent dispatches the senior coder + continuation agents. Production
-	// wires the in-process supervisor; tests substitute recording fakes.
-	RunAgent func(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
+	// delegates to the Config's Provider; tests substitute recording fakes.
+	RunAgent func(ctx context.Context, req *provider.Request) (*provider.Result, error)
 
 	// RenderPrompt renders the named template against vars. Production wires
 	// internal/prompt.Render; tests substitute a recording stub.

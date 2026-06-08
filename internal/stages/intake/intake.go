@@ -30,23 +30,21 @@ import (
 	pkgintake "github.com/geoffgodwin/tekhton/internal/intake"
 	"github.com/geoffgodwin/tekhton/internal/prompt"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
 
-// AgentRunner is the seam between the intake stage and the supervisor.
-// Production wires the in-process supervisor; tests wire a recording fake.
-type AgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
-}
+// stageProvider is the package-level provider seam. Production code sets it
+// via SetProvider before running the pipeline; tests inject a fake.
+// A nil stageProvider panics on first RunAgent call so wiring gaps surface
+// immediately rather than silently falling back to direct supervisor calls.
+var stageProvider provider.Provider
 
-var agentRunner AgentRunner = supervisor.New(nil, nil)
-
-// SetAgentRunner replaces the package-level agent seam. Returns the previous
-// runner so tests can restore it.
-func SetAgentRunner(r AgentRunner) AgentRunner {
-	prev := agentRunner
-	agentRunner = r
+// SetProvider replaces the package-level provider. Returns the previous value
+// so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
 	return prev
 }
 
@@ -123,22 +121,13 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 	log.Info(fmt.Sprintf("Running intake evaluation (model: %s, turns: %d)...",
 		cfg.Model, cfg.MaxTurns))
 
-	promptFile, cleanup, err := writePromptTmpFile(promptText)
-	if err != nil {
-		log.Warn(fmt.Sprintf("Intake: write prompt failed: %v", err))
-		return skipResult(req, "prompt_write_failed"), nil
-	}
-	defer cleanup()
-
-	agentReq := &proto.AgentRequestV1{
-		Proto:      proto.AgentRequestProtoV1,
+	if _, agentErr := cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:     promptText,
 		Label:      "Intake",
 		Model:      cfg.Model,
 		MaxTurns:   cfg.MaxTurns,
-		PromptFile: promptFile,
 		WorkingDir: cfg.ProjectDir,
-	}
-	if _, agentErr := agentRunner.Run(ctx, agentReq); agentErr != nil {
+	}); agentErr != nil {
 		log.Warn(fmt.Sprintf("Intake agent failed: %v", agentErr))
 		// Best-effort: continue to parse whatever report exists.
 	}
@@ -319,21 +308,3 @@ func blockResult(req *proto.StageRequestV1, reason string, agentCalls int) *prot
 	}
 }
 
-// writePromptTmpFile writes content to a temp file and returns its path
-// plus a cleanup func.
-func writePromptTmpFile(content string) (string, func(), error) {
-	f, err := os.CreateTemp("", "tekhton-intake-prompt-*.md")
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", func() {}, err
-	}
-	return f.Name(), func() { _ = os.Remove(f.Name()) }, nil
-}

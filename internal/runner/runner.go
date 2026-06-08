@@ -31,7 +31,10 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/manifest"
 	"github.com/geoffgodwin/tekhton/internal/preflight"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
+	"github.com/geoffgodwin/tekhton/internal/provider/claude"
 	"github.com/geoffgodwin/tekhton/internal/state"
+	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
 
 // Sentinel errors callers match with errors.Is.
@@ -95,6 +98,11 @@ type Runner struct {
 	TUI        TUI
 	Acceptance AcceptanceChecker
 
+	// Provider is the agent backend all stage packages use. Defaults to the
+	// Claude provider backed by an in-process supervisor. m09 will make this
+	// per-stage configurable; for now all stages share a single provider.
+	Provider provider.Provider
+
 	// Env composes the bash subprocess env (m26 StageEnvV1 contract) from
 	// pipeline.conf + run-request flags + per-stage overrides. Nil falls
 	// back to a defaults-only builder built lazily at first use, which
@@ -138,6 +146,7 @@ func New(p Pipeline) *Runner {
 		DefaultMaxPipelineAttempts:     5,
 		DefaultAutonomousTimeoutSecs:   7200,
 		DefaultMaxAutonomousAgentCalls: 200,
+		Provider:                       claude.New(supervisor.New(nil, nil)),
 	}
 }
 

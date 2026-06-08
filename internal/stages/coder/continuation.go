@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // ContinuationConfig holds the M14 continuation-loop knobs. The orchestrator
@@ -119,12 +119,11 @@ func RunContinuation(ctx context.Context, cfg *ContinuationConfig, deps *Deps) (
 			return result, nil
 		}
 
-		req := &proto.AgentRequestV1{
-			Proto:        proto.AgentRequestProtoV1,
+		req := &provider.Request{
+			Prompt:       prompt,
 			Label:        fmt.Sprintf("Coder (continuation %d)", attempt),
 			Model:        cfg.Model,
 			MaxTurns:     cfg.Budget,
-			PromptFile:   prompt,
 			AllowedTools: cfg.AgentTools,
 		}
 		res, err := deps.RunAgent(ctx, req)

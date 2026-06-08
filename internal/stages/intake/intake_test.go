@@ -7,18 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// fakeAgent records every Run() call and returns canned results.
-type fakeAgent struct {
-	calls    []*proto.AgentRequestV1
+// fakeProvider records every RunAgent() call and returns canned results.
+type fakeProvider struct {
+	calls    []*provider.Request
 	report   string // body to write into INTAKE_REPORT.md before "agent" exit
 	reportTo string // absolute path to write report into
 	runErr   error
 }
 
-func (f *fakeAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fakeProvider) Name() string { return "fake-intake" }
+
+func (f *fakeProvider) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	f.calls = append(f.calls, req)
 	if f.reportTo != "" && f.report != "" {
 		_ = os.MkdirAll(filepath.Dir(f.reportTo), 0o755)
@@ -27,19 +30,17 @@ func (f *fakeAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.Ag
 	if f.runErr != nil {
 		return nil, f.runErr
 	}
-	return &proto.AgentResultV1{
-		Proto:   proto.AgentResultProtoV1,
-		Label:   req.Label,
-		Outcome: proto.OutcomeSuccess,
+	return &provider.Result{
+		Outcome: provider.OutcomeSuccess,
 	}, nil
 }
 
-func withFakeAgent(t *testing.T) *fakeAgent {
+func withFakeAgent(t *testing.T) *fakeProvider {
 	t.Helper()
-	fa := &fakeAgent{}
-	prev := SetAgentRunner(fa)
-	t.Cleanup(func() { SetAgentRunner(prev) })
-	return fa
+	fp := &fakeProvider{}
+	prev := SetProvider(fp)
+	t.Cleanup(func() { SetProvider(prev) })
+	return fp
 }
 
 // makeReq builds a minimal StageRequestV1 pointing at projectDir.
@@ -179,7 +180,7 @@ func TestRunStage_CachedPass(t *testing.T) {
 		t.Fatalf("RunStage: %v", err)
 	}
 	if len(fa.calls) != 0 {
-		t.Errorf("cached run should not call agent; got %d calls", len(fa.calls))
+		t.Errorf("cached run should not call provider; got %d calls", len(fa.calls))
 	}
 	if res.Verdict != proto.VerdictPass || res.ExitReason != "cached_pass" {
 		t.Errorf("verdict/reason = %s/%s, want pass/cached_pass", res.Verdict, res.ExitReason)
@@ -232,7 +233,7 @@ func TestRunStage_LiveDispatchPassSetsEmitFlag(t *testing.T) {
 		t.Errorf("_INTAKE_PASS_EMIT = %q, want true (PASS dispatch must set the flag)", got)
 	}
 	if len(fa.calls) != 1 {
-		t.Errorf("agent should be called once, got %d", len(fa.calls))
+		t.Errorf("provider should be called once, got %d", len(fa.calls))
 	}
 }
 
@@ -264,7 +265,7 @@ func TestRunStage_ContentHashSkipsRerun(t *testing.T) {
 		t.Fatalf("RunStage: %v", err)
 	}
 	if len(fa.calls) != 0 {
-		t.Errorf("content-hash skip should not call agent; got %d", len(fa.calls))
+		t.Errorf("content-hash skip should not call provider; got %d", len(fa.calls))
 	}
 	if res.Verdict != proto.VerdictSkip || res.ExitReason != "unchanged" {
 		t.Errorf("verdict/reason = %s/%s, want skip/unchanged", res.Verdict, res.ExitReason)
@@ -298,7 +299,7 @@ func TestRunStage_NoContent(t *testing.T) {
 		t.Errorf("verdict/reason = %s/%s, want skip/no_content", res.Verdict, res.ExitReason)
 	}
 	if len(fa.calls) != 0 {
-		t.Errorf("no_content should not call agent; got %d", len(fa.calls))
+		t.Errorf("no_content should not call provider; got %d", len(fa.calls))
 	}
 }
 

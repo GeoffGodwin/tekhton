@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
 	innertester "github.com/geoffgodwin/tekhton/internal/tester"
@@ -35,7 +36,7 @@ func routeDecision(
 	ctx context.Context,
 	cfg *config,
 	decision innertester.ValidationDecision,
-	_ *proto.AgentResultV1,
+	_ *provider.Result,
 ) (routingMetadata, int, error) {
 	meta := routingMetadata{}
 	additionalCalls := 0

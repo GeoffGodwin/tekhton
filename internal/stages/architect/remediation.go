@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/geoffgodwin/tekhton/internal/prompt"
-	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // remediationKind identifies which architect rework path runs.
@@ -85,8 +85,7 @@ func runExpeditedReview(ctx context.Context, cfg config) error {
 }
 
 // invokeAgent is the shared dispatcher for all architect-stage agent calls.
-// Mirrors run_agent in lib/agent.sh — renders the prompt, writes the body
-// to a temp file, dispatches via the package-level AgentRunner seam.
+// Renders the prompt and dispatches via the config's Provider seam.
 //
 // The varOverrides argument inserts/overwrites prompt variables before
 // render so callers can scope additional values without polluting the
@@ -104,21 +103,13 @@ func invokeAgent(ctx context.Context, cfg config, label, model string, turns int
 		return fmt.Errorf("architect: render %s: %w", template, err)
 	}
 
-	promptFile, cleanup, err := writePromptTmpFile(body)
-	if err != nil {
-		return fmt.Errorf("architect: write prompt %s: %w", template, err)
-	}
-	defer cleanup()
-
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	_, err = cfg.Provider.RunAgent(ctx, &provider.Request{
+		Prompt:       body,
 		Label:        label,
 		Model:        model,
 		MaxTurns:     turns,
-		PromptFile:   promptFile,
 		WorkingDir:   cfg.ProjectDir,
 		AllowedTools: tools,
-	}
-	_, err = agentRunner.Run(ctx, agentReq)
+	})
 	return err
 }

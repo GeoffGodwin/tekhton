@@ -3,7 +3,6 @@ package cleanup
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
@@ -157,23 +156,6 @@ func TestResolveByFileChanges_NoModifications(t *testing.T) {
 	}
 }
 
-func TestWritePromptTmpFile(t *testing.T) {
-	path, cleanup, err := writePromptTmpFile("hello prompt")
-	if err != nil {
-		t.Fatalf("writePromptTmpFile: %v", err)
-	}
-	defer cleanup()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if string(raw) != "hello prompt" {
-		t.Errorf("file content = %q, want 'hello prompt'", string(raw))
-	}
-	if !strings.HasSuffix(path, ".md") {
-		t.Errorf("path %q does not end in .md", path)
-	}
-}
 
 func TestResolveTekhtonBin_NotFound(t *testing.T) {
 	t.Setenv("TEKHTON_BIN", "")

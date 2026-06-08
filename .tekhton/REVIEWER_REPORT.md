@@ -8,28 +8,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- [lib/finalize_commit_staging.sh:22-31] Pre-existing LOW path-traversal (carry-forward from cycle 1): `_coder_declared_files` does not strip `../` components before paths flow into the git staging allowlist. Security agent flagged this as fixable with `grep -v '\.\.'`. Not introduced by this rework; schedule for a dedicated hardening pass.
-- [internal/provider/provider.go:31] The `Provider` interface godoc does not state when a caller should expect a non-nil `*Result` alongside a non-nil error (the partial-result case). `docs/v5-provider-seam.md` documents it but the interface itself is silent. A one-line doc note on `RunAgent` would surface this at the call site without requiring implementers to read the seam doc.
+- [lib/finalize_commit_staging.sh:22-31] `|| return 0` fix and the `_coder_declared_files` function remain intact and correct — no regression from prior cycle.
+- [.tekhton/NON_BLOCKING_LOG.md:18-23] Unresolved git merge conflict markers (`<<<<<<< Updated upstream` / `>>>>>>> Stashed changes`) are present in the file. The conflicting content is empty on both sides (no actual lines differ), leaving only the markers. This file is in the `.tekhton/` staging prefix and will be committed as-is with the conflict markers included. Not a code regression — the markers are inert in this log file — but should be resolved before the next milestone run: `git checkout .tekhton/NON_BLOCKING_LOG.md` and re-apply the open items manually, or use `git checkout --theirs .tekhton/NON_BLOCKING_LOG.md` and re-stage.
+- [internal/provider/provider.go:30] Carry-forward from cycle 1: `RunAgent` godoc does not document the partial-result case (non-nil `*Result` alongside non-nil error). Schedule for a doc-only pass.
+- [lib/finalize_commit_staging.sh:23-32] Carry-forward LOW path-traversal: `_coder_declared_files` does not strip `../` or absolute-path components before paths enter the staging allowlist. Security agent flagged with a suggested fix. No change from cycle 1 — still scheduled for a dedicated hardening pass.
 
 ## Coverage Gaps
-- [internal/provider/claude/parity_test.go:50] The `context_cancelled` parity sub-test asserts `wantErr: true` but does not check that `Result` is nil (the (nil, error) contract for pre-first-turn cancellation). A future refactor that accidentally returns a non-nil partial result on context cancellation would pass the test silently.
+- None
 
 ## Drift Observations
-- [internal/provider/claude/claude.go:75-107] The EventChan send-and-close block runs even when `supErr != nil` (including the `v1 == nil` path). This matches the seam contract doc ("Close exactly once before returning"), so the behavior is correct, but the code does not have an inline comment explaining why both the error and close paths are intentionally combined. This pattern will be reproduced by m02–m08 implementers who may not read the seam doc first; a brief comment at the close site would prevent future mis-ports.
-
----
-
-### Prior Blocker Disposition
-
-**Cycle 1 blocker: "Implementation is entirely absent"** — FIXED.
-
-Evidence verified:
-- `internal/provider/provider.go` — `Provider` interface, `ToolSchema`, `Request`, `Result`, `Outcome` (7 constants). ✓
-- `internal/provider/event.go` — `Event`, `EventKind` (7 constants), channel-close ownership contract. ✓
-- `internal/provider/provider_test.go` — interface method-count, name, constant uniqueness, assignability. ✓
-- `internal/provider/claude/claude.go` — compile-time assertions for both `supervisorRunner` and `provider.Provider`; `RunAgent`, `translateResult`, `translateOutcome`, `writePromptFile`, `labelOrDefault`. ✓
-- `internal/provider/claude/claude_test.go` — Name, nil-request/nil-supervisor guards, streaming event sequence, translateOutcome for each outcome, writePromptFile round-trip and cleanup, labelOrDefault. ✓
-- `internal/provider/claude/parity_test.go` — 6 fixture-backed sub-tests covering every Outcome category; supervisor stubbed. ✓
-- `internal/provider/claude/testdata/` — all 5 fixture files present and structurally valid. ✓
-- `docs/v5-provider-seam.md` — five `##` sections, outcome mapping table, event contract, translation pattern, m01 non-goals. ✓
-- All 17 new tests pass per CODER_SUMMARY.md. ✓
+- [.tekhton/NON_BLOCKING_LOG.md:18-23] Double-nested conflict markers (`<<<<<<< Updated upstream` appears twice, `>>>>>>> Stashed changes` appears twice) suggest a stash-pop was applied on top of an already-conflicted tree, or a rebase was interrupted mid-run. The pipeline's finalize path writes to `.tekhton/` files without checking for existing conflict markers first — worth adding a pre-commit guard that aborts if any `.tekhton/*.md` file contains `<<<<<<<`.

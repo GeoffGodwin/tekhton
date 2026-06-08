@@ -41,6 +41,12 @@ type Request struct {
 	Timeout   time.Duration // Per-invocation timeout. 0 = no timeout.
 	EventChan chan<- Event   // Optional streaming. nil = no streaming.
 
+	// WorkingDir is the subprocess working directory. Empty = inherit caller's cwd.
+	WorkingDir string
+	// AllowedTools is a space-separated list of tool names the agent may call.
+	// Empty = no restriction.
+	AllowedTools string
+
 	// ProviderSpecific carries opaque per-provider config that does not
 	// fit the cross-provider shape. Unused in m01; m04+ populates it for
 	// per-provider tool-schema translation.

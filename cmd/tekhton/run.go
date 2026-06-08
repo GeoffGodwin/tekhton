@@ -18,6 +18,14 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/pipeline"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/runner"
+	stagearchitect "github.com/geoffgodwin/tekhton/internal/stages/architect"
+	stagecleanup "github.com/geoffgodwin/tekhton/internal/stages/cleanup"
+	stagecoder "github.com/geoffgodwin/tekhton/internal/stages/coder"
+	stagedocs "github.com/geoffgodwin/tekhton/internal/stages/docs"
+	stageintake "github.com/geoffgodwin/tekhton/internal/stages/intake"
+	stagereview "github.com/geoffgodwin/tekhton/internal/stages/review"
+	stagesecurity "github.com/geoffgodwin/tekhton/internal/stages/security"
+	stagetester "github.com/geoffgodwin/tekhton/internal/stages/tester"
 	"github.com/geoffgodwin/tekhton/internal/stagerunner"
 	"github.com/geoffgodwin/tekhton/internal/state"
 	"github.com/geoffgodwin/tekhton/internal/tui"
@@ -297,6 +305,20 @@ func buildRunner(req *proto.RunRequestV1, analyzeCmd, compileCmd, testCmd string
 	r.State = state.New(statePath)
 	r.ProjectDir = req.ProjectDir
 	r.TekhtonHome = req.TekhtonHome
+
+	// m02: inject the runner's provider into every Go-native stage package.
+	// All stage packages default to a nil provider; this call wires the real
+	// backend so RunAgent calls reach the Claude CLI.
+	if r.Provider != nil {
+		stageintake.SetProvider(r.Provider)
+		stagecleanup.SetProvider(r.Provider)
+		stagedocs.SetProvider(r.Provider)
+		stagesecurity.SetProvider(r.Provider)
+		stagearchitect.SetProvider(r.Provider)
+		stagereview.SetProvider(r.Provider)
+		stagetester.SetProvider(r.Provider)
+		stagecoder.SetProvider(r.Provider)
+	}
 
 	// m26: load pipeline.conf once and build the EnvBuilder that feeds
 	// every stage subprocess + every finalize hook the same composed env.

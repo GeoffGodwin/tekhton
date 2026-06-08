@@ -7,18 +7,21 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// fakeAgentRunner records the request it was asked to run and returns a
-// canned response. Used by stage_test.go in place of a real supervisor.
-type fakeAgentRunner struct {
-	gotReq *proto.AgentRequestV1
-	res    *proto.AgentResultV1
+// fakeProviderRunner records the request it was asked to run and returns a
+// canned response. Used by stage_test.go in place of a real provider.
+type fakeProviderRunner struct {
+	gotReq *provider.Request
+	res    *provider.Result
 	err    error
 }
 
-func (f *fakeAgentRunner) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fakeProviderRunner) Name() string { return "fake-docs" }
+
+func (f *fakeProviderRunner) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	f.gotReq = req
 	return f.res, f.err
 }
@@ -104,8 +107,8 @@ func TestRunStage_NeverReturnsFail(t *testing.T) {
 	writeFile(t, filepath.Join(proj, "prompts", "docs_agent.prompt.md"), "doc the surface\n")
 
 	// Agent returns an error → must become verdict=skip with reason=agent-failed.
-	prev := SetAgentRunner(&fakeAgentRunner{err: errors.New("boom")})
-	defer SetAgentRunner(prev)
+	prev := SetProvider(&fakeProviderRunner{err: errors.New("boom")})
+	defer SetProvider(prev)
 
 	t.Setenv("DOCS_AGENT_ENABLED", "true")
 	t.Setenv("SKIP_DOCS", "false")
@@ -125,9 +128,8 @@ func TestRunStage_NeverReturnsFail(t *testing.T) {
 	}
 
 	// Agent returns non-success outcome → also verdict=skip.
-	SetAgentRunner(&fakeAgentRunner{res: &proto.AgentResultV1{
-		Proto:    proto.AgentResultProtoV1,
-		Outcome:  proto.OutcomeFatalError,
+	SetProvider(&fakeProviderRunner{res: &provider.Result{
+		Outcome:  provider.OutcomeUnknown,
 		ExitCode: 1,
 	}})
 	res, _ = RunStage(context.Background(), freshRequest(t, proj))
@@ -146,12 +148,11 @@ func TestRunStage_AgentSucceeds(t *testing.T) {
 	writeAndStage(t, proj, "foo.go", "package main\n")
 	writeFile(t, filepath.Join(proj, "prompts", "docs_agent.prompt.md"), "doc the surface\n")
 
-	fr := &fakeAgentRunner{res: &proto.AgentResultV1{
-		Proto:   proto.AgentResultProtoV1,
-		Outcome: proto.OutcomeSuccess,
+	fr := &fakeProviderRunner{res: &provider.Result{
+		Outcome: provider.OutcomeSuccess,
 	}}
-	prev := SetAgentRunner(fr)
-	defer SetAgentRunner(prev)
+	prev := SetProvider(fr)
+	defer SetProvider(prev)
 
 	t.Setenv("DOCS_AGENT_ENABLED", "true")
 	t.Setenv("SKIP_DOCS", "false")
@@ -209,17 +210,17 @@ func TestRunStage_PromptMissing(t *testing.T) {
 	}
 }
 
-func TestSetAgentRunner_RoundTrip(t *testing.T) {
-	prev := agentRunner
-	r := &fakeAgentRunner{}
-	ret := SetAgentRunner(r)
+func TestSetProvider_RoundTrip(t *testing.T) {
+	prev := stageProvider
+	r := &fakeProviderRunner{}
+	ret := SetProvider(r)
 	if ret != prev {
-		t.Fatal("SetAgentRunner did not return previous runner")
+		t.Fatal("SetProvider did not return previous provider")
 	}
-	if agentRunner != r {
-		t.Fatal("SetAgentRunner did not install new runner")
+	if stageProvider != r {
+		t.Fatal("SetProvider did not install new provider")
 	}
-	SetAgentRunner(prev)
+	SetProvider(prev)
 }
 
 func TestEnvBoolEnvInt(t *testing.T) {

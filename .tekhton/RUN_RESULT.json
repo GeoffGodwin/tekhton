@@ -3,6 +3,5 @@
   "disposition": "success",
   "attempts": 1,
   "agent_calls": 7,
-  "elapsed_secs": 1729,
-  "tests_run": false
+  "elapsed_secs": 4210
 }

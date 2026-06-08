@@ -11,6 +11,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/coder/buildfix"
 	"github.com/geoffgodwin/tekhton/internal/coder/scout"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
 )
 
@@ -238,20 +239,19 @@ func (o *orchestrator) invokeCoderAgent(ctx context.Context, template string, bl
 		return nil
 	}
 	vars := blocks.AsTemplateVars()
-	prompt := ""
+	promptText := ""
 	if o.deps.RenderPrompt != nil {
 		p, err := o.deps.RenderPrompt(template, vars)
 		if err != nil {
 			return fmt.Errorf("render prompt %s: %w", template, err)
 		}
-		prompt = p
+		promptText = p
 	}
-	req := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	req := &provider.Request{
+		Prompt:       promptText,
 		Label:        "Coder",
 		Model:        o.cfg.CoderModel,
 		MaxTurns:     o.cfg.effectiveCoderTurns(),
-		PromptFile:   prompt,
 		AllowedTools: o.cfg.AgentToolsCoder,
 	}
 	res, err := o.deps.RunAgent(ctx, req)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -131,7 +132,7 @@ type fixtureAgent struct {
 	t          *testing.T
 	queues     map[string][]fixtureAgentResponse
 	idx        map[string]int
-	calls      []*proto.AgentRequestV1
+	calls      []*provider.Request
 }
 
 func newFixtureAgent(t *testing.T, projectDir string, queues map[string][]fixtureAgentResponse) *fixtureAgent {
@@ -143,7 +144,9 @@ func newFixtureAgent(t *testing.T, projectDir string, queues map[string][]fixtur
 	}
 }
 
-func (f *fixtureAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+func (f *fixtureAgent) Name() string { return "fixture" }
+
+func (f *fixtureAgent) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	cp := *req
 	f.calls = append(f.calls, &cp)
 	key := labelKey(req.Label)
@@ -152,7 +155,7 @@ func (f *fixtureAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto
 	if i >= len(q) {
 		// No more canned responses for this label — return success with 0
 		// turns so the stage code keeps going.
-		return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 0}, nil
+		return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 0}, nil
 	}
 	resp := q[i]
 	f.idx[key] = i + 1
@@ -166,11 +169,28 @@ func (f *fixtureAgent) Run(_ context.Context, req *proto.AgentRequestV1) (*proto
 			f.t.Fatalf("write %s: %v", full, err)
 		}
 	}
-	out := resp.AgentResult
-	if out.Outcome == "" {
-		out.Outcome = proto.OutcomeSuccess
+	// Convert proto.AgentResultV1 → provider.Result for the return value.
+	src := resp.AgentResult
+	outcome := provider.Outcome(0)
+	switch src.Outcome {
+	case proto.OutcomeSuccess, "":
+		outcome = provider.OutcomeSuccess
+	default:
+		if src.ErrorCategory == "UPSTREAM" {
+			outcome = provider.OutcomeUpstreamError
+		} else {
+			outcome = provider.OutcomeUnknown
+		}
 	}
-	return &out, nil
+	return &provider.Result{
+		Outcome:          outcome,
+		TurnsUsed:        src.TurnsUsed,
+		ExitCode:         src.ExitCode,
+		ErrorCategory:    src.ErrorCategory,
+		ErrorSubcategory: src.ErrorSubcategory,
+		ErrorMessage:     src.ErrorMessage,
+		NullRun:          src.TurnsUsed == 0 && src.ExitCode != 0,
+	}, nil
 }
 
 // fixtureBuildGate consumes a queue of "pass"|"fail" verdicts.
@@ -317,7 +337,7 @@ func runParityFixture(t *testing.T, dir string) {
 	}
 }
 
-func agentLabels(calls []*proto.AgentRequestV1) []string {
+func agentLabels(calls []*provider.Request) []string {
 	out := make([]string, 0, len(calls))
 	for _, c := range calls {
 		out = append(out, c.Label)

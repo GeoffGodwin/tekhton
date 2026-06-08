@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -15,11 +16,11 @@ import (
 func TestRunStage_ApprovedCycleOne(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("MAX_REVIEW_CYCLES", "3")
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
 		},
 	}
@@ -51,7 +52,7 @@ func TestRunStage_BlockersRemainAtMaxCycles(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("MAX_REVIEW_CYCLES", "3")
 	// Agent writes the same CHANGES_REQUIRED report on every cycle.
-	always := func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	always := func(_ *provider.Request) (*provider.Result, error) {
 		writeReport(t, dir, `## Verdict
 CHANGES_REQUIRED
 
@@ -61,10 +62,10 @@ CHANGES_REQUIRED
 ## Simple Blockers
 - None
 `)
-		return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 8}, nil
+		return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 8}, nil
 	}
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){always, always, always},
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){always, always, always},
 	}
 	gate := &fakeBuildGate{}
 	restore := installSeams(t, ag, gate, nil, nil)
@@ -96,7 +97,7 @@ CHANGES_REQUIRED
 func TestRunStage_MaxReviewCyclesIsRespected(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("MAX_REVIEW_CYCLES", "2")
-	always := func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	always := func(_ *provider.Request) (*provider.Result, error) {
 		writeReport(t, dir, `## Verdict
 CHANGES_REQUIRED
 
@@ -106,10 +107,10 @@ CHANGES_REQUIRED
 ## Simple Blockers
 - None
 `)
-		return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 8}, nil
+		return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 8}, nil
 	}
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){always, always, always, always},
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){always, always, always, always},
 	}
 	restore := installSeams(t, ag, &fakeBuildGate{}, nil, nil)
 	defer restore()
@@ -133,21 +134,21 @@ CHANGES_REQUIRED
 func TestRunStage_ChangesThenApproved(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("MAX_REVIEW_CYCLES", "3")
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
 			// reviewer cycle 1
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nCHANGES_REQUIRED\n\n## Complex Blockers\n- bug X\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 10}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 10}, nil
 			},
 			// coder rework
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 20}, nil
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 20}, nil
 			},
 			// reviewer cycle 2
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 4}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 4}, nil
 			},
 		},
 	}
@@ -194,12 +195,12 @@ func TestRunStage_SynthesizedAtMax(t *testing.T) {
 	// two return rework -> rework cycle. Caller's runRework with empty report
 	// (because runOneCycle returns cycleRework with nil report when file
 	// doesn't exist) — we must make sure the test still sees the path.
-	noReport := func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	noReport := func(_ *provider.Request) (*provider.Result, error) {
 		// Don't write a report; supervisor returns success.
-		return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+		return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 	}
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
 			noReport, noReport, noReport,
 		},
 	}
@@ -226,9 +227,9 @@ func TestRunStage_SynthesizedAtMax(t *testing.T) {
 func TestRunStage_ReplanContinue(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("MAX_REVIEW_CYCLES", "3")
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, `## Verdict
 REPLAN_REQUIRED
 
@@ -238,7 +239,7 @@ REPLAN_REQUIRED
 ## Simple Blockers
 - None
 `)
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 6}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 6}, nil
 			},
 		},
 	}
@@ -262,11 +263,11 @@ REPLAN_REQUIRED
 func TestRunStage_ReplanAbort(t *testing.T) {
 	dir, req := setupProject(t)
 	t.Setenv("MAX_REVIEW_CYCLES", "3")
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nREPLAN_REQUIRED\n\n## Complex Blockers\n- mis-scoped\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 4}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 4}, nil
 			},
 		},
 	}
@@ -315,25 +316,25 @@ func TestRunStage_PreservesPassEnvelopeOnSpecialistReworkFailure(t *testing.T) {
 	// post-specialist-rework but recovers on retry — that's the path the
 	// envelope-warning rule applies to (any failure in the rework branch
 	// that does NOT terminate via the post-specialist-retry hard fail).
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
 			// reviewer cycle 1 — APPROVED
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED_WITH_NOTES\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 5}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 5}, nil
 			},
 			// senior coder rework (specialist branch)
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 12}, nil
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 12}, nil
 			},
 			// build_fix_minimal (escalation after first build gate fails)
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 4}, nil
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 4}, nil
 			},
 			// post-specialist reviewer pass — APPROVED again
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED_WITH_NOTES\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 			},
 		},
 	}
@@ -381,20 +382,20 @@ func TestRunStage_RecordsSubprocessWarningOnPostSpecialistCycleError(t *testing.
 	// a render failure.
 	postSpecialistAgentErr := errors.New("post-specialist reviewer dispatch failed")
 	cycleCalls := 0
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
 			// reviewer cycle 1 — APPROVED
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(_ *provider.Request) (*provider.Result, error) {
 				cycleCalls++
 				writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 4}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 4}, nil
 			},
 			// senior coder rework (specialist branch)
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 10}, nil
+			func(_ *provider.Request) (*provider.Result, error) {
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 10}, nil
 			},
 			// post-specialist reviewer pass — errors out
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+			func(_ *provider.Request) (*provider.Result, error) {
 				return nil, postSpecialistAgentErr
 			},
 		},
@@ -440,11 +441,11 @@ func TestRunStage_RecordsSubprocessWarningOnPostSpecialistCycleError(t *testing.
 // after a complete run, regardless of which verdict path engaged.
 func TestRunStage_DoesNotMutatePipelineState(t *testing.T) {
 	dir, req := setupProject(t)
-	ag := &fakeAgent{
-		Behaviors: []func(*proto.AgentRequestV1) (*proto.AgentResultV1, error){
-			func(_ *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
+	ag := &fakeProvider{
+		Behaviors: []func(*provider.Request) (*provider.Result, error){
+			func(_ *provider.Request) (*provider.Result, error) {
 				writeReport(t, dir, "## Verdict\nAPPROVED\n\n## Complex Blockers\n- None\n\n## Simple Blockers\n- None\n")
-				return &proto.AgentResultV1{Outcome: proto.OutcomeSuccess, TurnsUsed: 3}, nil
+				return &provider.Result{Outcome: provider.OutcomeSuccess, TurnsUsed: 3}, nil
 			},
 		},
 	}

@@ -19,16 +19,10 @@ import (
 	"os"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	reviewparse "github.com/geoffgodwin/tekhton/internal/review"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
-
-// AgentRunner is the seam between the review stage and the supervisor.
-// Production wires the in-process supervisor; tests wire a recording fake.
-type AgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
-}
 
 // BuildGateRunner is the seam for the post-rework build gate. Production
 // shells out to `tekhton gate build`; tests substitute a recording fake.
@@ -37,14 +31,15 @@ type BuildGateRunner interface {
 }
 
 var (
-	agentRunner     AgentRunner     = supervisor.New(nil, nil)
+	stageProvider   provider.Provider
 	buildGateRunner BuildGateRunner = subprocessBuildGate{}
 )
 
-// SetAgentRunner replaces the package-level agent seam.
-func SetAgentRunner(r AgentRunner) AgentRunner {
-	prev := agentRunner
-	agentRunner = r
+// SetProvider replaces the package-level provider. Returns the previous
+// value so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
 	return prev
 }
 

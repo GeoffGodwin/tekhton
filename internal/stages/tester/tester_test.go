@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 	innertester "github.com/geoffgodwin/tekhton/internal/tester"
 	"github.com/geoffgodwin/tekhton/internal/tester/tdd"
 )
@@ -242,10 +242,10 @@ func testUpstreamError(t *testing.T, dir string, req *proto.StageRequestV1) (*pr
 	writeLog(t, dir, "ok\n")
 
 	agent := &fakeMainAgent{
-		Result: &proto.AgentResultV1{
-			Outcome:          proto.OutcomeTransientError,
+		Result: &provider.Result{
+			Outcome:          provider.OutcomeUpstreamError,
 			ExitCode:         1,
-			ErrorCategory:    supervisor.CategoryUpstream,
+			ErrorCategory:    "UPSTREAM",
 			ErrorSubcategory: "rate_limit",
 			ErrorMessage:     "API quota exhausted",
 		},
@@ -271,12 +271,13 @@ func testNullRun(t *testing.T, dir string, req *proto.StageRequestV1) (*proto.St
 	writeReport(t, dir, "")
 	writeLog(t, dir, "")
 
-	// Null-run = 0 turns used + non-success outcome.
+	// Null-run = NullRun=true.
 	agent := &fakeMainAgent{
-		Result: &proto.AgentResultV1{
-			Outcome:   proto.OutcomeTurnExhausted,
+		Result: &provider.Result{
+			Outcome:   provider.OutcomeMaxTurns,
 			ExitCode:  1,
 			TurnsUsed: 0,
+			NullRun:   true,
 		},
 	}
 	restore := installFixtureSeams(t, fixtureSeams{main: agent})

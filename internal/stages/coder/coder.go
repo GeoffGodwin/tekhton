@@ -22,7 +22,20 @@ import (
 	"context"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
+
+// stageProvider is the package-level provider seam. Production code sets it
+// via SetProvider before running the pipeline; tests inject a fake.
+var stageProvider provider.Provider
+
+// SetProvider replaces the package-level provider. Returns the previous value
+// so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
+	return prev
+}
 
 // RunStage is the Go-native entry point. The signature matches
 // stagerunner.StageImpl so DefaultStageDefs[StageCoder] can register it

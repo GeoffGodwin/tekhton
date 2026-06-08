@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // config holds the resolved tester-stage configuration for a single
@@ -46,6 +47,9 @@ type config struct {
 	MilestoneMode bool
 
 	ResumeFlag string
+
+	// Provider is the agent backend injected by the runner.
+	Provider provider.Provider
 }
 
 // loadConfig resolves the per-stage configuration from env + the stage
@@ -94,6 +98,7 @@ func loadConfig(req *proto.StageRequestV1) config {
 	}
 
 	cfg.ResumeFlag = buildResumeFlag("test", cfg)
+	cfg.Provider = stageProvider
 	return cfg
 }
 

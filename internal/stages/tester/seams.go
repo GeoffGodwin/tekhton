@@ -3,19 +3,20 @@ package tester
 import (
 	"context"
 
-	"github.com/geoffgodwin/tekhton/internal/proto"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	innertester "github.com/geoffgodwin/tekhton/internal/tester"
 	"github.com/geoffgodwin/tekhton/internal/tester/tdd"
 	testaudit "github.com/geoffgodwin/tekhton/internal/test_audit"
 )
 
 // MainAgentRunner is the seam for the primary tester agent invocation.
-// Production wires the in-process supervisor; tests substitute a
-// recording fake to drive UPSTREAM, null-run, and success branches
-// deterministically.
+// After m02 this is an alias for provider.Provider so the tester can be
+// swapped independently from the package-level stageProvider. Tests
+// substitute a recording fake to drive UPSTREAM, null-run, and success
+// branches deterministically.
 type MainAgentRunner interface {
-	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
+	Name() string
+	RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error)
 }
 
 // TDDRunner is the seam for dispatching to tdd.Run. Production wraps
@@ -51,6 +52,10 @@ type StateHaltWriter interface {
 	Write(ctx context.Context, stage, exitReason, resumeFlag, task, notes string) error
 }
 
+// stageProvider is the package-level provider seam. Production code sets it
+// via SetProvider before running the pipeline; tests inject a fake.
+var stageProvider provider.Provider
+
 // Package-level seams. Tests overwrite via Set* helpers; the helpers
 // return the previous value so callers can defer-restore.
 var (
@@ -61,6 +66,14 @@ var (
 	auditRunner        AuditRunner        = defaultAuditRunner{}
 	stateHaltWriter    StateHaltWriter    = noopStateHaltWriter{}
 )
+
+// SetProvider replaces the package-level provider. Returns the previous value
+// so callers can defer-restore.
+func SetProvider(p provider.Provider) provider.Provider {
+	prev := stageProvider
+	stageProvider = p
+	return prev
+}
 
 // SetMainAgentRunner overrides the main-agent seam.
 func SetMainAgentRunner(r MainAgentRunner) MainAgentRunner {
@@ -116,11 +129,13 @@ func SetStateHaltWriter(w StateHaltWriter) StateHaltWriter {
 	return prev
 }
 
-// defaultMainAgent wraps the in-process supervisor.
+// defaultMainAgent delegates to the package-level stageProvider.
 type defaultMainAgent struct{}
 
-func (defaultMainAgent) Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error) {
-	return supervisor.New(nil, nil).Run(ctx, req)
+func (defaultMainAgent) Name() string { return "default-tester" }
+
+func (defaultMainAgent) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
+	return stageProvider.RunAgent(ctx, req)
 }
 
 // defaultTDDRunner wraps tdd.Run.

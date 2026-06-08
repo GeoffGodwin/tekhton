@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // config holds the resolved architect-stage configuration for a single
@@ -43,6 +44,9 @@ type config struct {
 	Timestamp         string
 
 	MilestoneMode bool
+
+	// Provider is the agent backend injected by the runner.
+	Provider provider.Provider
 }
 
 // loadConfig resolves the per-stage configuration from env + the stage
@@ -92,6 +96,7 @@ func loadConfig(req *proto.StageRequestV1) config {
 		Timestamp: envOr("TIMESTAMP", ""),
 
 		MilestoneMode: envBool("MILESTONE_MODE", false),
+		Provider:      stageProvider,
 	}
 	return cfg
 }

@@ -37,8 +37,8 @@ import (
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/stages/staglog"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 	innertester "github.com/geoffgodwin/tekhton/internal/tester"
 )
 
@@ -68,7 +68,7 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 	agentCalls := 1
 
 	// --- UPSTREAM short-circuit (RECOVERABLE — distinct from TDD UPSTREAM) -
-	if agentRes != nil && agentRes.ErrorCategory == supervisor.CategoryUpstream {
+	if agentRes != nil && agentRes.ErrorCategory == "UPSTREAM" {
 		log.Warn("[tester] UPSTREAM error — re-run the same command.")
 		_ = stateHaltWriter.Write(ctx, "tester", "upstream_error",
 			cfg.ResumeFlag, cfg.Task,
@@ -120,7 +120,7 @@ func RunStage(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResul
 // already exports ARCHITECTURE_CONTENT, REPO_MAP_CONTENT,
 // TEST_BASELINE_SUMMARY, UI_TESTER_PATTERNS, MILESTONE_BLOCK, etc.
 // before invoking the binary.
-func invokeMainAgent(ctx context.Context, cfg *config, req *proto.StageRequestV1) (*proto.AgentResultV1, error) {
+func invokeMainAgent(ctx context.Context, cfg *config, req *proto.StageRequestV1) (*provider.Result, error) {
 	promptName := "tester"
 	if cfg.StartAt == "tester" {
 		promptName = "tester_resume"
@@ -129,33 +129,20 @@ func invokeMainAgent(ctx context.Context, cfg *config, req *proto.StageRequestV1
 	if err != nil {
 		return nil, err
 	}
-	promptFile, cleanup, err := writePromptTmpFile(body)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	agentReq := &proto.AgentRequestV1{
-		Proto:        proto.AgentRequestProtoV1,
+	return mainAgentRunner.RunAgent(ctx, &provider.Request{
+		Prompt:       body,
 		Label:        "Tester",
 		Model:        cfg.TesterModel,
 		MaxTurns:     cfg.TesterMaxTurns,
-		PromptFile:   promptFile,
 		WorkingDir:   cfg.ProjectDir,
 		AllowedTools: cfg.AgentTools,
-	}
-	return mainAgentRunner.Run(ctx, agentReq)
+	})
 }
 
-// isNullRun ports lib/agent_helpers.sh::was_null_run via
-// supervisor.AgentResult.IsNullRun semantics. A nil result is treated as
-// null so a supervisor failure before the result is built doesn't get
-// classified as real work.
-func isNullRun(res *proto.AgentResultV1) bool {
-	if res == nil {
-		return true
-	}
-	return supervisor.FromProto(res).IsNullRun()
+// isNullRun checks whether the agent run produced no meaningful work.
+// A nil result or NullRun=true is treated as a null run.
+func isNullRun(res *provider.Result) bool {
+	return res == nil || res.NullRun
 }
 
 // exportTesterTimingEnv writes the four _TESTER_TIMING_* env vars the
