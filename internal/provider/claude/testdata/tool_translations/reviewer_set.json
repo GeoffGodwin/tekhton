@@ -1,0 +1,102 @@
+[
+  {
+    "name": "Read",
+    "description": "Read the contents of a file from the local filesystem. Returns the file contents as a string.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file_path": {
+          "description": "Absolute path to the file to read.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Number of lines to read. Optional; defaults to 2000.",
+          "type": "integer"
+        },
+        "offset": {
+          "description": "Line number to start reading from (1-indexed). Optional.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "Glob",
+    "description": "Find files matching a glob pattern. Returns matching file paths sorted by modification time.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Directory to search in. Optional; defaults to current directory.",
+          "type": "string"
+        },
+        "pattern": {
+          "description": "Glob pattern to match files against.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "Grep",
+    "description": "Search file contents using a regular expression. Returns matching file paths or content.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "glob": {
+          "description": "Glob pattern to filter files. Optional.",
+          "type": "string"
+        },
+        "output_mode": {
+          "description": "Output mode: files_with_matches, content, or count. Optional.",
+          "type": "string"
+        },
+        "path": {
+          "description": "File or directory to search in. Optional.",
+          "type": "string"
+        },
+        "pattern": {
+          "description": "Regular expression pattern to search for.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "Bash",
+    "description": "Execute a shell command and return its output.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "description": "The shell command to execute.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Short description of what the command does. Optional.",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "Timeout in milliseconds. Optional.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    }
+  }
+]

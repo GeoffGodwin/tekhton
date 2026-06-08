@@ -181,6 +181,32 @@ func TestWritePromptFile_CleanupRemovesFile(t *testing.T) {
 	}
 }
 
+// TestTranslateOutcome_UpstreamWithLowTurns pins the precedence rule:
+// IsNullRun() is checked before ErrorCategory, so an upstream error with
+// turns_used <= DefaultNullRunThreshold is classified as OutcomeNullRun,
+// NOT OutcomeUpstreamError. This is an intentional design choice — a run
+// that barely started (≤ threshold turns) before an upstream error is
+// indistinguishable from a null run in terms of work produced.
+func TestTranslateOutcome_UpstreamWithLowTurns(t *testing.T) {
+	// turns_used=1 is at or below DefaultNullRunThreshold (2).
+	// ErrorCategory=UPSTREAM would normally map to OutcomeUpstreamError,
+	// but IsNullRun() wins because exit_code=1 and turns<=threshold.
+	res := supervisor.FromProto(&proto.AgentResultV1{
+		ExitCode:      1,
+		TurnsUsed:     1,
+		Outcome:       proto.OutcomeTransientError,
+		ErrorCategory: supervisor.CategoryUpstream,
+	})
+	got := translateOutcome(res)
+	if got != provider.OutcomeNullRun {
+		t.Errorf("UPSTREAM with turns=1: want OutcomeNullRun (IsNullRun wins), got %d (%v)",
+			got, got)
+	}
+	if got == provider.OutcomeUpstreamError {
+		t.Error("UPSTREAM with turns=1: OutcomeUpstreamError must not be returned when IsNullRun is true")
+	}
+}
+
 func TestLabelOrDefault(t *testing.T) {
 	if got := labelOrDefault(""); got != "agent" {
 		t.Errorf("empty: want agent, got %s", got)

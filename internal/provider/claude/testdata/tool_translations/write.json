@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Write",
+    "description": "Write content to a file, creating it if it does not exist or overwriting if it does.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "description": "The content to write.",
+          "type": "string"
+        },
+        "file_path": {
+          "description": "Absolute path to write.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path",
+        "content"
+      ],
+      "type": "object"
+    }
+  }
+]

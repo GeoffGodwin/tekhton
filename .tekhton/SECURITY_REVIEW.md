@@ -1,1 +1,9 @@
-# Stale content cleared 2026-06-08T15:43:55-04:00 before V5 m01 run.
+## Summary
+The change introduces `lib/finalize_commit_staging.sh`, a bash helper that builds an allowlist of files to auto-stage before a pipeline commit. The file is well-structured with proper quoting and `set -euo pipefail`. No credentials, cryptographic operations, network calls, or authentication logic are present. The main risk surface is the allowlist logic: one source of allowlist entries is AI-generated content (CODER_SUMMARY.md), and the bookkeeping globs are intentionally broad. Both concerns are low-severity in context, and neither is exploitable in a way that reaches beyond the local git working tree.
+
+## Findings
+- [MEDIUM] [category:A01] [lib/finalize_commit_staging.sh:50-66] fixable:unknown — `_pipeline_bookkeeping_globs` covers entire directory trees (`internal/`, `cmd/`, `tests/`, `scripts/`, `docs/`) as auto-stage prefixes. Any file a compromised or adversarial coder agent writes under those paths is auto-committed without needing to appear in CODER_SUMMARY.md. The comment at line 43 documents this as an intentional trade-off, so remediation is a policy decision rather than a straightforward code fix. Consider bounding the bookkeeping paths to known-safe sub-paths or requiring CODER_SUMMARY entries for newly created files under broad prefixes.
+- [LOW] [category:A03] [lib/finalize_commit_staging.sh:79-80] fixable:yes — Entries produced by `_coder_declared_files` are used on the RHS of `[[ "$path" == "$entry"* ]]` without stripping bash glob metacharacters (`*`, `?`, `[`). An adversarial CODER_SUMMARY.md declaring a path containing glob characters (e.g. `` `tests/[a-z]*` ``) could expand the matched file set beyond what was intended. In practice the existing broad bookkeeping globs already cover the same directories, limiting exploitability. Fix: switch to a literal prefix comparison using `[[ "${path#"$entry"}" != "$path" ]]` instead of `[[ "$path" == "$entry"* ]]`.
+
+## Verdict
+FINDINGS_PRESENT

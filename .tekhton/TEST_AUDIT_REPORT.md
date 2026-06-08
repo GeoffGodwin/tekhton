@@ -1,53 +1,39 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 5 files, 30 test functions
+Tests audited: 1 file (internal/provider/claude/parity_test.go), 2 test functions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Partial-completion error path not tested
-- File: internal/provider/claude/parity_test.go
-- Issue: The `supErr != nil && v1 != nil` branch in `RunAgent` (claude.go:115–118) is
-  never exercised. That branch returns `(translateResult(v1), supErr)` — a non-nil
-  Result alongside a non-nil error — which is the only place in the provider where
-  that combination can legitimately arise. No test stub configures both a non-nil
-  result and a non-nil error simultaneously.
-- Severity: LOW
-- Action: Add a table entry with `supErr: errors.New("partial")` and a stub that
-  returns a non-nil result alongside that error; assert `got != nil && err != nil`.
+#### SCOPE: Audit manifest lists parity_test.go twice; claude_test.go and tools_test.go absent
+- File: internal/provider/claude/parity_test.go (manifest entry, listed twice)
+- Issue: The audit context lists `internal/provider/claude/parity_test.go` twice and omits `internal/provider/claude/claude_test.go` (git status: M — modified this run) and `internal/provider/claude/tools_test.go` (git status: ?? — new this run). Both omitted files contain substantive behavioral tests: `claude_test.go` covers `translateOutcome` branches, streaming events, `writePromptFile` lifecycle, and `labelOrDefault`; `tools_test.go` covers the tool-schema translation layer. Per audit rules these files cannot be evaluated here, but their absence from the audit manifest means 11 of the 14 test functions written this run received no independent review.
+- Severity: MEDIUM
+- Action: Resubmit with `claude_test.go` and `tools_test.go` added to the audit manifest. No changes to the test files themselves are required.
 
-#### COVERAGE: Upstream error with turns ≤ NullRunThreshold untested
-- File: internal/provider/claude/parity_test.go
-- Issue: `translateOutcome` checks `IsNullRun()` before `CategoryUpstream`, meaning
-  an upstream error with `turns_used <= DefaultNullRunThreshold` (2) is classified
-  as `OutcomeNullRun`, not `OutcomeUpstreamError`. The `upstream_error` fixture uses
-  `turns_used=3` — safely above the threshold — so the IsNullRun/Upstream precedence
-  decision is exercised only indirectly. The intentional design choice (stated in the
-  design notes) that null-run detection masks upstream classification is not pinned
-  by any test.
+#### COVERAGE: Supervisor returning (nil, nil) is not exercised
+- File: internal/provider/claude/parity_test.go (no line — gap, not an existing line)
+- Issue: `claude.go:120-122` contains a defensive guard for the case where `p.Supervisor.Run` returns a nil result with a nil error (`"supervisor returned nil result without error"`). No test case in `parity_test.go` exercises this path. It is a reachable guard in the implementation.
 - Severity: LOW
-- Action: Add a unit test in `claude_test.go` (where `translateOutcome` is already
-  exercised directly) calling `translateOutcome` with `exit_code=1`,
-  `turns_used=1`, `error_category=UPSTREAM` and asserting the result is
-  `OutcomeNullRun`, not `OutcomeUpstreamError`. This pins the precedence rule as an
-  explicit invariant rather than an accident of the fixture.
+- Action: Add a `stubSup` case with `result: nil, err: nil` and assert that `RunAgent` returns `(nil, non-nil error)` containing "nil result". One table entry in `TestClaudeProvider_ParityWithDirectSupervisor` suffices.
 
-#### NAMING: "context_cancelled" comment overstates cancellation timing
-- File: internal/provider/claude/parity_test.go:72–79
-- Issue: The inline comment reads "pre-first-turn cancellation must return a nil
-  Result." The test does not cancel the context before `RunAgent` is called; it
-  supplies `context.Background()` and has the stub return `context.Canceled` as
-  its error. What is actually tested is that a supervisor error on the first
-  supervisor call produces `(nil, error)`. The contract being asserted is correct;
-  the comment misleads a reader about what execution path is driven.
+#### NAMING: loadFixture comment says "skipped" but behavior is "failed"
+- File: internal/provider/claude/parity_test.go:16
+- Issue: The comment reads "The test is skipped if the file does not exist" but the body calls `t.Fatalf`, which marks the test as failed (not skipped). The behavior (fail on missing fixture) is correct — silently skipping would mask a missing fixture — but the comment misstates it.
 - Severity: LOW
-- Action: Revise the comment to: "when the supervisor returns context.Canceled,
-  RunAgent must return (nil, error) — callers must never receive a partial Result
-  alongside an error."
+- Action: Update comment to "The test fails if the file does not exist" or simply remove the inaccurate sentence.
 
-### Notes on freshness samples
-`internal/coder/prerun/prerun_test.go`, `internal/coder/scout/parity_test.go`, and
-`internal/coder/scout/scout_test.go` were not modified in this run. All three use
-purpose-built fakes (`recordingDeps`, `scoutFake`) or static fixture files in temp
-directories; none read mutable pipeline artifacts. No integrity issues found.
+---
+
+### Rubric Summary
+
+| Criterion | Result | Notes |
+|---|---|---|
+| Assertion Honesty | PASS | All assertions trace to real implementation logic via `translateResult`/`translateOutcome`/`IsNullRun`. No hard-coded magic values. |
+| Edge Case Coverage | PASS (minor gap) | Covers 5 outcome categories + context cancellation + partial completion. Missing: (nil, nil) supervisor return. |
+| Implementation Exercise | PASS | Stub replaces only the subprocess call; the translation layer (`translateResult`, `translateOutcome`, `supervisor.FromProto`, `IsNullRun`) is fully exercised on every path. |
+| Test Weakening | PASS | No removed assertions or broadened expectations observed. |
+| Test Naming | PASS | All test names encode scenario and expected outcome clearly. |
+| Scope Alignment | PASS | No orphaned imports; both deleted files are non-test files and are not referenced. |
+| Test Isolation | PASS | All inputs come from checked-in fixture files under `testdata/` or in-memory stubs. No reads of mutable project state. |

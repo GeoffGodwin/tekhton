@@ -2,13 +2,13 @@
 PASS
 
 ## Confidence
-92
+95
 
 ## Reasoning
-- Scope is precisely defined: 8 named stages, explicit before/after code patterns, and a hard "zero matches" grep audit as the completion signal
-- Acceptance criteria are fully mechanical — every criterion is a runnable command with a deterministic pass/fail outcome (grep counts, test exit codes, diff comparisons)
-- The before/after code examples eliminate interpretation ambiguity for the injection pattern, mock pattern, and runner wiring
-- Watch For section covers the most likely failure modes: nil-Provider shortcut, partial-interface fakes, supervisor relocation temptation, field-set drift mid-migration
-- No user-facing config changes and no format changes; no Migration Impact section is needed
-- Depends-on m01 is declared; the m01 parity test is named explicitly as the safety net
-- File table is complete and matches the narrative — no unstated files
+- Scope is exceptionally well-defined: explicit list of files to create, clear LOC estimates, and repeated explicit statement that no stage or supervisor code changes in m03
+- Acceptance criteria are highly specific and testable — named test functions, exact CLI verification commands, byte-for-byte fixture matching, go doc output checks
+- Design section provides complete Go type definitions and function signatures, leaving almost no room for divergent interpretation
+- Watch For section addresses the most likely implementation pitfalls (nil-on-empty translator, AdditionalProperties enforcement, fixture integrity, scope creep into stage wiring)
+- No user-facing config changes or format changes — no migration impact section required
+- No UI components — UI testability criterion is not applicable
+- Dependency on m02 is declared; no unstated assumptions beyond the module path (`github.com/geoffgodwin/tekhton`) which is visible in the code samples

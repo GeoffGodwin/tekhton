@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Read",
+    "description": "Read the contents of a file from the local filesystem. Returns the file contents as a string.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file_path": {
+          "description": "Absolute path to the file to read.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Number of lines to read. Optional; defaults to 2000.",
+          "type": "integer"
+        },
+        "offset": {
+          "description": "Line number to start reading from (1-indexed). Optional.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    }
+  }
+]

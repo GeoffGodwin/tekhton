@@ -4,18 +4,96 @@
 // end. Per-provider implementations live in internal/provider/<name>/.
 //
 // V5 m01 — Interface + Claude reference. m02 moves stages over.
+// m03 defines ToolSchema fully and ships the Claude translator.
 // m05–m08 add Codex. P5 adds local Qwen.
 package provider
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
-// ToolSchema is a placeholder for m04. m01 ships with an empty struct;
-// m04 defines the cross-provider tool-schema shape and per-provider
-// translation functions.
-type ToolSchema struct{}
+// ToolSchema is the Tekhton-internal canonical representation of an
+// agent tool. Per-provider translators convert this to native tool-use
+// formats (Claude's tool_use blocks, Codex's function calling, local
+// LLMs' pseudo-tools).
+//
+// V5 m03 — Defined. m04 wires stages to populate Request.Tools with
+// canonical schemas from internal/provider/tools/canonical.go.
+type ToolSchema struct {
+	// Name is the canonical tool name. Cross-provider — every
+	// provider's translator uses this string. Examples: "Read",
+	// "Write", "Edit", "Bash".
+	Name string
+
+	// Description is a one-line description of the tool's purpose.
+	// Used in agent prompts and provider tool-list payloads.
+	Description string
+
+	// Parameters is a JSON-schema-shaped object describing the tool's
+	// input parameters. The format follows JSON Schema draft 2020-12
+	// with a strict subset:
+	//   - type: "object" required at the top level
+	//   - properties: map of named parameters
+	//   - required: array of required parameter names
+	//   - additionalProperties: false (enforced)
+	Parameters ParameterSchema
+
+	// BehaviorHints carries cross-provider guidance about the tool's
+	// behavior — useful for providers that need to inject safety
+	// notices, output-size limits, or tool-ordering preferences into
+	// their native format.
+	BehaviorHints BehaviorHints
+}
+
+// ParameterSchema describes the JSON-schema-shaped parameters block for
+// a tool. Only the strict cross-provider subset is represented.
+type ParameterSchema struct {
+	Type                 string                       // "object"
+	Properties           map[string]ParameterProperty
+	Required             []string
+	AdditionalProperties bool // enforced false by ValidateToolSchema
+}
+
+// ParameterProperty describes a single named parameter within a tool's
+// parameter schema.
+type ParameterProperty struct {
+	Type        string             // "string" | "integer" | "boolean" | "array"
+	Description string
+	Items       *ParameterProperty // non-nil for type="array"
+	Enum        []string           // optional; restricts allowed values
+}
+
+// BehaviorHints carries cross-provider guidance about a tool's behavior.
+// The Claude translator currently ignores BehaviorHints; future providers
+// (Codex, local Qwen) may consume them to inject safety notices or inject
+// tool descriptions into prompts.
+type BehaviorHints struct {
+	ModifiesFiles  bool // true for Write, Edit
+	Reads          bool // true for Read, Glob, Grep
+	ExecutesShell  bool // true for Bash
+	MaxOutputBytes int  // 0 = provider default
+	LongRunning    bool // true if tool may run >60s
+}
+
+// ValidateToolSchema returns an error if t is malformed. Providers call
+// this before translation to surface caller bugs early.
+func ValidateToolSchema(t ToolSchema) error {
+	if t.Name == "" {
+		return errors.New("toolschema: Name is required")
+	}
+	if t.Description == "" {
+		return errors.New("toolschema: Description is required")
+	}
+	if t.Parameters.Type != "object" {
+		return errors.New("toolschema: Parameters.Type must be \"object\"")
+	}
+	if t.Parameters.AdditionalProperties {
+		return errors.New("toolschema: Parameters.AdditionalProperties must be false")
+	}
+	return nil
+}
 
 // Provider is the interface every agent backend implements.
 //

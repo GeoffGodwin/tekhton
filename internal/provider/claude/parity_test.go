@@ -3,6 +3,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -73,10 +74,11 @@ func TestClaudeProvider_ParityWithDirectSupervisor(t *testing.T) {
 				if err == nil {
 					t.Error("want error, got nil")
 				}
-				// (nil, error) contract: pre-first-turn cancellation must return
-				// a nil Result so callers never see a partial result alongside an error.
+				// (nil, error) contract: when the supervisor returns context.Canceled,
+				// RunAgent must return (nil, error) — callers must never receive a
+				// partial Result alongside an error from a supervisor-level failure.
 				if got != nil {
-					t.Errorf("want nil Result on pre-first-turn cancellation, got %+v", got)
+					t.Errorf("want nil Result when supervisor returns context.Canceled, got %+v", got)
 				}
 				return
 			}
@@ -93,5 +95,43 @@ func TestClaudeProvider_ParityWithDirectSupervisor(t *testing.T) {
 				t.Error("RawProviderData: want non-empty JSON capture, got empty")
 			}
 		})
+	}
+}
+
+// TestClaudeProvider_PartialCompletionErrorPath exercises the branch where
+// the supervisor returns BOTH a non-nil AgentResultV1 AND a non-nil error.
+// This is the only place in the provider where (non-nil Result, non-nil error)
+// can legitimately arise — e.g. a partial run that completed some turns but
+// then encountered a network interruption.
+//
+// The contract: RunAgent must propagate both the partial result AND the error
+// to the caller. Callers that need to distinguish partial completion from a
+// clean run must inspect err alongside Result.
+func TestClaudeProvider_PartialCompletionErrorPath(t *testing.T) {
+	partialResult := loadFixture(t, "trivial_success")
+	partialErr := errors.New("partial: network interrupted after completion")
+
+	stub := &stubSup{result: partialResult, err: partialErr}
+	cp := &Provider{Supervisor: stub}
+
+	got, err := cp.RunAgent(context.Background(), &provider.Request{
+		Prompt:   "partial completion test",
+		MaxTurns: 10,
+		Model:    "claude-3-5-sonnet-20241022",
+		Label:    "partial_completion",
+	})
+
+	if err == nil {
+		t.Fatal("partial_completion: want error from supervisor, got nil")
+	}
+	if got == nil {
+		t.Fatal("partial_completion: want non-nil Result alongside error, got nil — " +
+			"the partial result must be returned so the caller can inspect turn count etc.")
+	}
+	if got.Outcome != provider.OutcomeSuccess {
+		t.Errorf("partial_completion: Outcome: want OutcomeSuccess (translated from partial result), got %d", got.Outcome)
+	}
+	if len(got.RawProviderData) == 0 {
+		t.Error("partial_completion: RawProviderData: must be populated even for partial results")
 	}
 }
