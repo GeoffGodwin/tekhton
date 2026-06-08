@@ -568,14 +568,15 @@ func TestWithDefaults_FillsZeroFields(t *testing.T) {
 	}
 }
 
-// --- File length / surface guards (m38.6-deferral evidence) -------------
+// --- File length / surface guards (m38.6 closure) -----------------------
 
-func TestPackage_BashFileStillExists(t *testing.T) {
-	// Sanity guard from the milestone Watch For block: the bash file
-	// MUST stay on disk through m38.5 (M38.6 deletes it). Asserting
-	// from here costs nothing and catches premature deletion.
-	if _, err := os.Stat("../../../stages/tester_tdd.sh"); err != nil {
-		t.Fatalf("stages/tester_tdd.sh must still exist pre-m38.6: %v", err)
+func TestPackage_BashFileDeleted(t *testing.T) {
+	// m38.6 regression-canary: the six stages/tester*.sh files were
+	// deleted in m38.6 — tester.go RunStage is the entry point and the
+	// bash dispatch is gone. Re-introducing tester_tdd.sh would silently
+	// fork the TDD pre-flight contract.
+	if _, err := os.Stat("../../../stages/tester_tdd.sh"); err == nil {
+		t.Fatalf("stages/tester_tdd.sh must NOT exist after m38.6 close")
 	}
 }
 

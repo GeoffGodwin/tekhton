@@ -11,9 +11,12 @@
 //     to runaway agent invocations that exhausted quota in seconds. The
 //     TestDefaultFixOptions_MaxDepthIs1 test is the regression-canary.
 //
-//  2. Baseline-aware short-circuit. When TEST_BASELINE_ENABLED=true and
-//     the failure output matches a pre-existing baseline, the fix loop
-//     returns FixResult{BaselineSkipped:true} without invoking the agent.
+//  2. Baseline-aware short-circuit. When the failure output matches a
+//     pre-existing baseline captured at the start of the milestone, the
+//     fix loop returns FixResult{BaselineSkipped:true} without invoking
+//     the agent. The call goes through internal/test_baseline as of
+//     m38.5 — the prior local seam and its bash subprocess shim are
+//     deleted; calls are in-process.
 //
 //  3. Test dedup integration. When TestDedup.CanSkip returns true, the
 //     re-test invocation is skipped — preserving the M105 optimization
@@ -33,6 +36,7 @@ import (
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/supervisor"
+	"github.com/geoffgodwin/tekhton/internal/test_baseline"
 )
 
 // Default values for FixOptions fields. Mirror the bash ${VAR:-DEFAULT}
@@ -103,26 +107,6 @@ type FixResult struct {
 	BaselineSkipped  bool
 }
 
-// BaselineVerdict mirrors the bash compare_test_with_baseline string
-// vocabulary. PreExisting means "all failures already existed before the
-// task started — skip the fix".
-type BaselineVerdict string
-
-const (
-	BaselinePreExisting BaselineVerdict = "pre_existing"
-	BaselineNew         BaselineVerdict = "new"
-	BaselineMixed       BaselineVerdict = "mixed"
-	BaselineUnknown     BaselineVerdict = ""
-)
-
-// BaselineChecker is the seam between RunInlineFix and the baseline
-// subsystem. At M38.3 close, the production implementation is a bash
-// shim; M38.5 swaps it for the native Go internal/test_baseline package.
-type BaselineChecker interface {
-	Has(projectDir string) bool
-	Compare(failureOutput string, exitCode int, projectDir string) (BaselineVerdict, error)
-}
-
 // TestDedup is the seam for the M105 working-tree fingerprint dedup. At
 // M38.3 the production implementation is a bash shim into lib/test_dedup.sh.
 // A future build-fix-loop port retires the shim and lands a native Go
@@ -158,12 +142,11 @@ type FixLogger interface {
 // defer-restore. Sequential test execution is safe; future t.Parallel()
 // adoption in this file requires sync protection.
 var (
-	fixAgentRunner     FixAgentRunner    = noopFixAgentRunner{}
-	fixPromptRenderer  FixPromptRenderer = noopFixPromptRenderer{}
-	fixBaselineChecker BaselineChecker   = noopBaselineChecker{}
-	fixTestDedup       TestDedup         = noopTestDedup{}
-	fixTestRunner      FixTestRunner     = execFixTestRunner{}
-	fixLogger          FixLogger         = noopFixLogger{}
+	fixAgentRunner    FixAgentRunner    = noopFixAgentRunner{}
+	fixPromptRenderer FixPromptRenderer = noopFixPromptRenderer{}
+	fixTestDedup      TestDedup         = noopTestDedup{}
+	fixTestRunner     FixTestRunner     = execFixTestRunner{}
+	fixLogger         FixLogger         = noopFixLogger{}
 )
 
 // SetFixAgentRunner overrides the supervisor seam.
@@ -180,16 +163,6 @@ func SetFixPromptRenderer(r FixPromptRenderer) FixPromptRenderer {
 	prev := fixPromptRenderer
 	if r != nil {
 		fixPromptRenderer = r
-	}
-	return prev
-}
-
-// SetFixBaselineChecker overrides the baseline-checker seam. Production
-// installs a bash shim; tests inject a fake to drive the short-circuit.
-func SetFixBaselineChecker(b BaselineChecker) BaselineChecker {
-	prev := fixBaselineChecker
-	if b != nil {
-		fixBaselineChecker = b
 	}
 	return prev
 }
@@ -276,9 +249,13 @@ func RunInlineFix(ctx context.Context, req *FixRequest) (*FixResult, error) {
 		failureOutput := extractFailureOutput(req.FailureLog, opts.OutputLimit)
 		truncated := SmartTruncateTestOutput(failureOutput, opts.OutputLimit)
 
-		if opts.BaselineCheck && fixBaselineChecker.Has(req.ProjectDir) {
-			verdict, err := fixBaselineChecker.Compare(truncated, 1, req.ProjectDir)
-			if err == nil && verdict == BaselinePreExisting {
+		// m38.5: native test_baseline call. The Has-then-Compare order
+		// preserves the bash semantics (no Compare when no baseline file
+		// is present) so the short-circuit log message fires for the
+		// same set of cases as the bash version did.
+		if opts.BaselineCheck && test_baseline.Has(req.Milestone, req.ProjectDir) {
+			verdict, err := test_baseline.Compare(truncated, 1, req.ProjectDir)
+			if err == nil && verdict == test_baseline.VerdictPreExisting {
 				fixLogger.Logf("All test failures are pre-existing — skipping tester fix.")
 				out.BaselineSkipped = true
 				return out, nil
@@ -465,13 +442,6 @@ type noopFixPromptRenderer struct{}
 
 func (noopFixPromptRenderer) Render(_, _ string, _ map[string]string) (string, error) {
 	return "", nil
-}
-
-type noopBaselineChecker struct{}
-
-func (noopBaselineChecker) Has(_ string) bool { return false }
-func (noopBaselineChecker) Compare(_ string, _ int, _ string) (BaselineVerdict, error) {
-	return BaselineUnknown, nil
 }
 
 type noopTestDedup struct{}

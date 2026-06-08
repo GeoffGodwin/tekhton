@@ -1,0 +1,9 @@
+{
+  "comment": "Fixture for the m39.3 buildfix mixed_uncertain + M130 save_exit path. Raw errors are 5 TypeScript compile errors (code) + 5 ECONNREFUSED entries (service_dep/noncode) → routing decision=mixed_uncertain. BUILD_FIX_CLASSIFICATION_REQUIRED=true → after attempt 1 fails the gate, M130 transitions to save_exit instead of running MaxAttempts=3.",
+  "decision": "mixed_uncertain",
+  "outcome": "exhausted",
+  "attempts": 1,
+  "classification_required": true,
+  "expected_state_exit_reason": "build_failure",
+  "expected_label": "Coder (build fix — mixed_uncertain)"
+}

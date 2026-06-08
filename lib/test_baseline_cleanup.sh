@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# test_baseline_cleanup.sh — Baseline cleanup and exit code helpers
+# test_baseline_cleanup.sh — Baseline cleanup and exit code helpers (bash).
 #
-# Extracted from test_baseline.sh to keep it under the 300-line ceiling.
-# Sourced by tekhton.sh after test_baseline.sh — do not run directly.
-# Depends on: _test_baseline_json(), _test_baseline_output() from test_baseline.sh
+# m38.5 — lib/test_baseline.sh was ported to internal/test_baseline/ and
+# deleted. The two trivial path helpers (_test_baseline_json,
+# _test_baseline_output) inlined here so this file no longer depends on a
+# missing source. get_baseline_exit_code now execs the Go CLI; the rest of
+# cleanup_stale_baselines stays bash through M38 — its port lands with
+# the acceptance-gate port in a later milestone.
+#
+# Sourced by tekhton.sh / lib/orchestrate.sh — do not run directly.
 # =============================================================================
 
+_test_baseline_json() {
+    echo "${PROJECT_DIR:-.}/.claude/TEST_BASELINE.json"
+}
+
+_test_baseline_output() {
+    echo "${PROJECT_DIR:-.}/.claude/TEST_BASELINE_OUTPUT.txt"
+}
+
 # get_baseline_exit_code
-# Returns the exit code from the baseline JSON, or empty string if unavailable.
+# m38.5: now execs `tekhton baseline get-exit-code`. Falls back to the
+# bash grep when the binary is unavailable so this still works in test
+# sandboxes that don't have `tekhton` on PATH.
 get_baseline_exit_code() {
+    if command -v tekhton >/dev/null 2>&1; then
+        tekhton baseline get-exit-code --project-dir "${PROJECT_DIR:-.}" 2>/dev/null || echo ""
+        return 0
+    fi
     local baseline_json
     baseline_json=$(_test_baseline_json)
     [[ -f "$baseline_json" ]] || { echo ""; return 0; }

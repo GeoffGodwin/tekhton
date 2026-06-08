@@ -1,0 +1,18 @@
+{
+  "comment": "Fixture for the m39.3 scout large-with-split path. Above-threshold complexity (RecommendedCoder=100) — the m39.4 orchestrator (NOT scout.Run itself) will see this and decide whether check_milestone_size trips a split. m39.3 only asserts the estimate is accurate so the orchestrator can decide.",
+  "estimate": {
+    "files_to_modify": 12,
+    "estimated_lines": 800,
+    "interconnected": "high",
+    "recommended_coder": 100,
+    "recommended_reviewer": 18,
+    "recommended_tester": 70
+  },
+  "applied_with_default_floors": {
+    "coder": 100,
+    "reviewer": 18,
+    "tester": 70
+  },
+  "above_split_threshold": true,
+  "note": "Split orchestration is m39.4's concern; m39.3 only surfaces the estimate via parse_estimate"
+}

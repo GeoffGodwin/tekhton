@@ -128,7 +128,10 @@ _check_callsite "4.5 hooks_final_checks"    "lib/hooks_final_checks.sh"
 # M112: new call sites — pre-coder initial check, pre-coder fix verification,
 # tester-fix retest loop.
 _check_callsite "4.6 coder_prerun"          "stages/coder_prerun.sh"
-_check_callsite "4.7 tester_fix"            "stages/tester_fix.sh"
+# m38.3: stages/tester_fix.sh ported to internal/tester/fix.go. The M105
+# dedup hook now lives on the package-level fixTestDedup seam — exercised
+# by internal/tester/fix_test.go::TestRunInlineFix_DedupSkipsRetest.
+# Skipping the bash assertion preserves the rest of Suite 4 coverage.
 
 # =============================================================================
 # Suite 4.8: M112 — coder_prerun has BOTH paths covered

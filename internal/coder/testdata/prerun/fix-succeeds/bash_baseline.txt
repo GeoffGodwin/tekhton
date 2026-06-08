@@ -1,0 +1,22 @@
+# Bash log sequence captured from stages/coder_prerun.sh.
+# Scenario: TEST_CMD fails pre-coder; fix agent runs; post-fix TEST_CMD passes.
+# Inputs:
+#   PRE_RUN_CLEAN_ENABLED=true
+#   TEST_CMD=go test ./...
+#   PRE_RUN_FIX_MAX_ATTEMPTS=1 (default)
+#   PRE_RUN_FIX_MAX_TURNS=20 (default)
+#   pre-coder test run: exit 1, output contains FAIL
+#   verify after attempt 1: exit 0
+# Expected Go Result:
+#   Status=fixed
+#   Attempts=1
+#   BaselineReCaptured=true
+#   FinalFails=0
+LOG: [coder/prerun] Checking pre-coder test state...
+WARN: [coder/prerun] Tests failing before coder runs (exit 1) — attempting pre-run fix.
+WARN: [coder/prerun] Fix attempt 1/1...
+EMIT: prerun_fix_start|prerun_fix|attempt 1/1
+LOG: [coder/prerun] Shell verifying with go test ./......
+SUCCESS: [coder/prerun] Tests pass after attempt 1.
+EMIT: prerun_fix_end|prerun_fix|fixed on attempt 1
+LOG: [coder/prerun] Baseline re-captured after successful fix.

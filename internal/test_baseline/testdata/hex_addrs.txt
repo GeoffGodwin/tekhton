@@ -1,0 +1,4 @@
+runtime error: invalid memory address (pid 12345)
+goroutine 0xDEADBEEF panicked at 2026-06-07T14:23:45Z after 3.14s
+heap dump at 0xFFFFAA00 (pid 67890)
+took 250ms total

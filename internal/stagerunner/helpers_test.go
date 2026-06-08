@@ -230,6 +230,26 @@ func TestDefaultStageDefs_SecurityHasGoImpl(t *testing.T) {
 	}
 }
 
+// TestDefaultStageDefs_TesterHasGoImpl asserts the m38.6 wiring: the
+// tester stage is the seventh port and its DefaultStageDefs entry MUST
+// carry a non-nil GoImpl. Regressions here mean the dispatcher would
+// fall through to the (deleted) bash script.
+func TestDefaultStageDefs_TesterHasGoImpl(t *testing.T) {
+	def, ok := DefaultStageDefs[proto.StageTester]
+	if !ok {
+		t.Fatalf("DefaultStageDefs missing tester entry")
+	}
+	if def.GoImpl == nil {
+		t.Fatalf("DefaultStageDefs[tester].GoImpl is nil — tester stage was ported in m38.6")
+	}
+	if def.Script != "" {
+		t.Errorf("DefaultStageDefs[tester].Script = %q, want empty (six stages/tester*.sh files deleted in m38.6)", def.Script)
+	}
+	if len(def.Helpers) != 0 {
+		t.Errorf("DefaultStageDefs[tester].Helpers = %v, want nil (tester family deleted in m38.6)", def.Helpers)
+	}
+}
+
 // TestStageDefForOverridePreservesHelpers asserts that overriding Stages with
 // a definition that includes Helpers carries those helpers through to
 // stageDefFor (and thus to the bash wrapper). The legacy adapter only stored

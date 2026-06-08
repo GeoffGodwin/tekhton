@@ -32,8 +32,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_aux.sh"
 # shellcheck source=lib/orchestrate_preflight.sh
 source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_preflight.sh"
 
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/test_baseline.sh"
+# m38.5: lib/test_baseline.sh was ported to internal/test_baseline/ and
+# deleted. The bash callers that gated on `declare -f has_test_baseline`
+# now silently skip the baseline branch — the Go-native call sites
+# (internal/tester/fix.go via test_baseline.Has + Compare) cover the
+# critical path. Future acceptance-gate port rewires the remaining bash
+# callers (lib/milestone_acceptance.sh, stages/coder.sh, stages/tester.sh)
+# to `tekhton baseline` CLI subcommands.
 
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/test_baseline_cleanup.sh"

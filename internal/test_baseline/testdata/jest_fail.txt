@@ -1,0 +1,13 @@
+PASS  src/users.test.ts
+FAIL  src/billing.test.ts
+  ● invoice total › computes tax correctly
+
+    expect(received).toBe(expected)
+
+    Expected: 10.50
+    Received: 10.05
+
+      at Object.<anonymous> (src/billing.test.ts:42:25)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 5 passed, 6 total

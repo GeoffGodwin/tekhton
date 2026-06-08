@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+collected 5 items
+
+tests/test_billing.py ..FF.                                               [100%]
+
+=================================== FAILURES ===================================
+___________________________ test_invoice_total ___________________________
+    def test_invoice_total():
+>       assert compute_total(10, 0.05) == 10.50
+E       AssertionError: assert 10.05 == 10.50
+
+___________________________ test_void_invoice ___________________________
+    def test_void_invoice():
+>       voided = void(1)
+E       assert.assertEquals failed: expected True, got False
+
+=========================== short test summary info ============================
+FAILED tests/test_billing.py::test_invoice_total
+FAILED tests/test_billing.py::test_void_invoice
+========================= 2 failed, 3 passed in 0.21s ==========================

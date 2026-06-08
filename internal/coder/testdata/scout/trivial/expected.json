@@ -1,0 +1,16 @@
+{
+  "comment": "Fixture for the m39.3 scout trivial path. Scout output: single-file change, low complexity. Apply with DefaultFloors(15,5,15) should produce TurnLimits{Coder:20, Reviewer:8, Tester:20} — Coder & Tester scaled above floor, Reviewer scaled above its floor.",
+  "estimate": {
+    "files_to_modify": 1,
+    "estimated_lines": 8,
+    "interconnected": "low",
+    "recommended_coder": 20,
+    "recommended_reviewer": 8,
+    "recommended_tester": 20
+  },
+  "applied_with_default_floors": {
+    "coder": 20,
+    "reviewer": 8,
+    "tester": 20
+  }
+}

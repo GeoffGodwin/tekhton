@@ -87,7 +87,7 @@ in-process dispatch. LOC delta counts bash deleted (stage + helpers + shim).
 | **architect** | **done — Go-native via `internal/stages/architect/RunStage`; plan parser + sr/jr router in package; m36.1 ban + parity gate live** | **m36.1**   | **414** |
 | **intake**    | **done — Go-native via `internal/stages/intake/RunStage`; helpers in `internal/intake/`; m36.3 ban + 8-scenario parity gate live; M36.2 CLI shim retired** | **m36.3** | **725 (377 stage + 267 helpers + 35 verdict + 46 prompts/passthrough tests)** |
 | **review**    | **done (m37 — review stage ported; 2 bash files deleted; cycle loop in-stage)** | **m37.2** | **463 (307 stage + 78 helpers + comments)** |
-| tester    | in flight                                             | m38       | TBD         |
+| **tester**    | **done (m38 — tester family ported; 13 bash files deleted: 6 stages/tester*.sh + 6 lib/test_audit*.sh + lib/test_baseline.sh; GoImpl dispatch; m38.6 ban + 10-fixture parity gate live)** | **m38.6** | **~2,082 (six tester stages + six test_audit helpers + test_baseline + ports)** |
 | coder     | in flight                                             | m39       | TBD         |
 
 ### m47 — Envelope-over-error rule for every Go-impl stage

@@ -263,22 +263,13 @@ if grep -nE 'StageReview' internal/stagerunner/helpers.go | grep -E 'Script:|Hel
     companion_failures=$(( companion_failures + 1 ))
 fi
 
-# m38.4 (Phase 5, tester-arc): the six lib/test_audit*.sh files ported
-# to internal/test_audit/. Re-introducing any of them silently forks the
-# test-audit contract and bypasses the native Go orchestrator. The
-# bash callers (run_test_audit shim in tekhton-legacy.sh, --audit-tests
-# CLI block) exec the Go binary; reintroducing the bash subsystem would
-# create a duplicate path with no guarantee of parity.
-_ta_re=$(find lib -maxdepth 1 -name 'test_audit*.sh' -print 2>/dev/null)
-if [[ -n "$_ta_re" ]]; then
-    printf 'wedge-audit: m38.4 violation — lib/test_audit*.sh file(s) re-introduced:\n' >&2
-    printf '%s\n' "$_ta_re" >&2
-    printf 'The test-audit subsystem lives in internal/test_audit/. Bash callers\n' >&2
-    printf 'reach it via the run_test_audit shim (tekhton-legacy.sh) which execs\n' >&2
-    printf '`tekhton test-audit run|run-standalone`.\n' >&2
-    companion_failures=$(( companion_failures + 1 ))
-fi
-unset _ta_re
+# m38 (Phase 5, tester-arc): the m38.4 test_audit, m38.5 test_baseline,
+# and m38.6 tester-stage gates live in a sibling file so this parent stays
+# under the 300-line bash ceiling. Sourced last so its violations are
+# tallied into companion_failures alongside the earlier gates.
+# shellcheck source=scripts/wedge-audit-companions-tester.sh
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/wedge-audit-companions-tester.sh"
 
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2

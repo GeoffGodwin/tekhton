@@ -1026,9 +1026,16 @@ run_test_audit() {
         "$bin" test-audit run --project-dir "${PROJECT_DIR:-$PWD}" >/dev/null 2>&1 || true
     return 0
 }
-source "${TEKHTON_HOME}/stages/tester.sh"
-# Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
-# tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.
+# m38.6: tester family ported to internal/stages/tester/. The six bash
+# files (stages/tester{,_tdd,_continuation,_fix,_timing,_validation}.sh)
+# were deleted; the tester runs in-process via the GoImpl dispatch in
+# stagerunner. The shim below covers the legacy bash callers in
+# _run_pipeline_stages that still invoke run_stage_tester directly
+# (the test_write / test_verify case branches at ~2734 / ~2757 below).
+# Returns 0 so the Go runner — which already drove the stage via its
+# pipeline.Runner — sees a clean bash exit. Matches the m34.2 cleanup
+# / m35.2 security shim pattern.
+run_stage_tester() { return 0; }
 # m34.2: stages/cleanup.sh ported to internal/stages/cleanup/. The
 # Go-native cleanup stage runs via the GoImpl dispatch in stagerunner.
 # The shim functions below cover legacy bash callers that still invoke

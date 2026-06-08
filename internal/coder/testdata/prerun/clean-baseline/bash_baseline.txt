@@ -1,0 +1,12 @@
+# Bash log sequence captured from stages/coder_prerun.sh::run_prerun_clean_sweep
+# Scenario: TEST_CMD passes immediately. No fix agent invoked.
+# Inputs:
+#   PRE_RUN_CLEAN_ENABLED=true
+#   TEST_CMD=go test ./...
+#   pre-coder test run exits 0
+# Expected Go Result:
+#   Status=clean
+#   Attempts=0
+#   BaselineReCaptured=false
+LOG: [coder/prerun] Checking pre-coder test state...
+LOG: [coder/prerun] Tests pass — coder will work from a clean state.

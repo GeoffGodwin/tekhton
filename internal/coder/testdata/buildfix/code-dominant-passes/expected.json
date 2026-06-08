@@ -1,0 +1,8 @@
+{
+  "comment": "Fixture for the m39.3 buildfix code-dominant happy path. Raw errors are 100% TypeScript compile errors → routing decision=code_dominant. Loop runs attempt 1 with budget=27 (default base = 80/3 = 26, raised to floor 27 — wait, integer 80/3=26, floored to 8 → 26). Agent fixes, gate passes on attempt 1.",
+  "decision": "code_dominant",
+  "outcome": "passed",
+  "attempts": 1,
+  "expected_label": "Coder (build fix — code_dominant)",
+  "expected_progress_gate_failures": 0
+}

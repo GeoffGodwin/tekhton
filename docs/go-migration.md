@@ -9,6 +9,71 @@ what needed adjustment / next-phase deltas) repeats every phase.
 
 ---
 
+## Phase 5 — M38 Closeout (Tester Family Port)
+
+Closed: 2026-06-07.
+
+Bash deleted across the M38 arc:
+
+- `stages/tester.sh` (255 LOC) — ported in m38.6.
+- `stages/tester_tdd.sh` — ported in m38.2, file deleted in m38.6.
+- `stages/tester_continuation.sh` — ported in m38.3, file deleted in m38.6.
+- `stages/tester_fix.sh` — ported in m38.3, file deleted in m38.6.
+- `stages/tester_timing.sh` — ported in m38.1, file deleted in m38.6.
+- `stages/tester_validation.sh` — ported in m38.1, file deleted in m38.6.
+- `lib/test_audit*.sh` (six files) — ported in m38.4.
+- `lib/test_baseline.sh` (344 LOC) — ported in m38.5.
+
+That's 13 bash files retired across the six decimal milestones — the
+largest stage-port arc in Phase 5 to date. Net delta: **~−2,082 LOC bash**
+(including supporting helpers + tests retired) for the M38 arc.
+
+Go added: `internal/stages/tester/` (~1,045 LOC across tester.go + dispatch +
+result + config + env + prompt + seams + tests) on top of the prior decimals'
+ports: `internal/tester/` (timing + validation + fix + continuation),
+`internal/tester/tdd/`, `internal/test_audit/`, `internal/test_baseline/`.
+
+Notable patterns established by m38.6:
+
+- **Routing seam pattern.** The tester stage has five distinct downstream
+  components (TDD, fix, continuation, audit, plus the validator). Each
+  reaches into a sibling Go package and is wrapped behind a single-method
+  interface in `seams.go`. Tests install fakes via `installFixtureSeams`
+  with a `fixtureSeams` struct — `nil` fields skip the override. Pattern
+  reusable verbatim for m39 coder family (which also has scout + buildfix
+  + analyze-cleanup sub-stages).
+- **UPSTREAM semantic split.** The MAIN tester UPSTREAM (recoverable, nil
+  error) and TDD UPSTREAM (fatal, non-nil error) are distinct. Captured by
+  separate fixtures (`upstream-error/` and `tdd-upstream-error/`); the
+  difference is documented in `tester.go`'s package doc so the next stage
+  port knows the rule.
+- **No-agent-call routing branches.** CompilationErrors flips checkboxes
+  inside ValidateOutput and never re-spawns. The fixture
+  (`compilation-errors/`) asserts the negative: agent must NOT be re-called.
+  Useful template for any future stage with a "validate-only" routing.
+
+Things that needed adjustment during the run:
+
+- The bash dispatch in `tekhton-legacy.sh` (`run_stage_tester` at
+  ~line 1029) was previously `source stages/tester.sh`. Replaced with a
+  `return 0` shim matching the m34.2 cleanup / m35.2 security pattern —
+  the Go runner already drives the stage via `pipeline.Runner`, so the
+  legacy bash dispatch becomes a no-op.
+- `internal/tester/tdd/tdd_test.go::TestPackage_BashFileStillExists` was
+  the m38.2-era guard asserting the bash file stays on disk pre-m38.6.
+  Flipped to `TestPackage_BashFileDeleted` asserting the inverse at
+  m38.6 close.
+- `scripts/wedge-audit-companions.sh` grew past the 300-line ceiling
+  with the m38.4 + m38.5 + m38.6 gates accumulated; extracted the m38
+  family into `scripts/wedge-audit-companions-tester.sh` to stay under.
+
+VERSION bumps during the dogfooded run: 1 patch bump (4.47.8 → 4.47.9).
+Lower than the m21/m22/m32 precedent (17/9/~10) because the routing-seam
+pattern was inherited from the prior decimal milestones — m38.6 was a
+wiring + cleanup arc more than a port.
+
+---
+
 ## Phase 5 — M36 Closeout (Architect + Intake Stage Port)
 
 Closed: 2026-06-05.

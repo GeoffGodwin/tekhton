@@ -107,7 +107,7 @@ tekhton/
 │   ├── causality.sh        # Causal event log infrastructure + query layer
 │   ├── causality_query.sh  # Causal log query helpers
 │   # test_audit subsystem ported to internal/test_audit/ in m38.4 — six bash files deleted
-│   ├── test_baseline.sh    # Test baseline capture + pre-existing failure detection
+│   # test_baseline.sh ported to internal/test_baseline/ in m38.5 — bash file deleted
 │   ├── test_dedup.sh       # Test run deduplication via working-tree fingerprint (M105)
 │   ├── mcp.sh              # MCP server lifecycle management (Serena)
 │   ├── health.sh           # Project health scoring orchestration
@@ -197,12 +197,7 @@ tekhton/
 │   ├── docs.sh             # Docs agent stage (optional, Haiku-powered)
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
-│   ├── tester.sh           # Test writing + validation
-│   ├── tester_tdd.sh       # TDD phase orchestration
-│   ├── tester_continuation.sh # Turn-exhaustion continuation logic
-│   ├── tester_fix.sh       # Test failure fix orchestration
-│   ├── tester_timing.sh    # Tester timing and duration estimation
-│   ├── tester_validation.sh # Post-tester output validation and routing
+│   # tester subsystem ported to internal/stages/tester/ in m38.6 — six stages/tester*.sh files deleted
 │   ├── cleanup.sh          # Post-success debt sweep stage
 │   ├── init_synthesize.sh  # Init synthesis stage
 │   ├── plan_interview.sh   # Planning: interactive interview agent

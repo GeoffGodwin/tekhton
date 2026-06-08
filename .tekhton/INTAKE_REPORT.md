@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-88
+95
 
 ## Reasoning
-- Scope is precisely defined: every file to create, modify, and delete is named with a description of the change
-- Acceptance criteria are fully testable — specific function names, expected return values, four-case table test for `Compare`, exact `grep` commands to verify deletion of bash shim, coverage floor (≥80%), and a named regression-canary test (`TestDefaultStuckPolicy_PassOnPreexistingIsFalse`)
-- Design section provides struct field order, exact regex patterns, and verdict logic for every branch — no guessing required
-- Watch For section calls out the load-bearing safety check (`PassOnStuck=true` + baseline exit_code=0 → NOT AutoPass) and the atomic-write requirement explicitly
-- One minor inconsistency: Goal 7's `newBaselineCmd` block lists four `AddCommand` calls (capture, has, compare, acceptance-stuck) but the acceptance criteria assert five children (adding `get-exit-code`). Both the `lib/test_baseline_cleanup.sh` modification and the acceptance criteria mention `get-exit-code`, so a competent developer will add it — not blocking, easily resolved from context
-- No UI components — UI testability criterion not applicable
-- No new user-visible config keys introduced (existing bash env vars mapped to Go defaults); no migration section needed
+- Scope is precisely defined: 13 files to create (with LOC estimates), 5 parity fixture directories, and an explicit "not deleted in this milestone" guard for the bash files
+- Acceptance criteria are concrete and machine-verifiable: grep commands, call-count tests, named fixture assertions, explicit table row counts, and a ≥80% coverage threshold
+- Watch For section pre-empts all likely misinterpretations (default-to-code_dominant fallback, M130 conditional gating, routing decision fixed at loop entry, floors-AND-scaling dual invariant, DYNAMIC_TURNS_ENABLED controls scouting vs applying)
+- No ambiguity in routing logic: exact thresholds (70% noncode → noncode_dominant, 70% code → code_dominant, both > 0 → mixed_uncertain) are spelled out in Go pseudocode
+- Dependencies on m17 (`ClassifyBuildErrorsWithStats`) and m39.2 (`ComputeBudget`, `ProgressSignal`, `AppendReport`, etc.) are explicitly named in the Prior arc context table
+- Seeds Forward section clearly delineates what is intentionally deferred to m39.4
+- No new user-facing config keys, file formats, or pipeline.conf variables are introduced — no migration impact section required
+- No UI components involved

@@ -1,0 +1,5 @@
+foo.ts(12,3): error TS1234: stuck error 1
+foo.ts(45,7): error TS2304: stuck error 2
+foo.ts(99,15): error TS2322: stuck error 3
+foo.ts(120,9): error TS7006: stuck error 4
+foo.ts(150,3): error TS2339: stuck error 5

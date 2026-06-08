@@ -1,0 +1,8 @@
+{
+  "comment": "Fixture for the m39.3 buildfix progress-stalls path. Raw errors stay constant (5 TS errors, same content) across two attempts. Routing=code_dominant. BUILD_FIX_REQUIRE_PROGRESS=true (default). After attempt 2's gate fails AND ProgressSignal=unchanged, the loop bails early with no_progress.",
+  "decision": "code_dominant",
+  "outcome": "no_progress",
+  "attempts": 2,
+  "expected_progress_gate_failures": 1,
+  "expected_state_exit_reason": "build_failure"
+}

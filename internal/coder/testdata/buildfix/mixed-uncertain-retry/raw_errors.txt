@@ -1,0 +1,10 @@
+foo.ts(12,3): error TS1234: 'bar' is not assignable to 'baz'
+src/handler.ts(45,7): error TS2304: Cannot find name 'qux'
+src/util.ts(8,11): error TS2322: Type 'string' is not assignable to type 'number'
+src/lib.ts(99,15): error TS2339: Property 'foo' does not exist on type 'Bar'
+src/cli.ts(120,9): error TS7006: Parameter 'arg' implicitly has an 'any' type
+net::ECONNREFUSED 127.0.0.1:5432 connecting to test database
+net::ECONNREFUSED 127.0.0.1:5432 retry attempt 1
+net::ECONNREFUSED 127.0.0.1:5432 retry attempt 2
+net::ECONNREFUSED 127.0.0.1:5432 retry attempt 3
+net::ECONNREFUSED 127.0.0.1:5432 retry attempt 4

@@ -10,6 +10,7 @@ import (
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/supervisor"
+	"github.com/geoffgodwin/tekhton/internal/test_baseline"
 )
 
 // --- Test seams --------------------------------------------------------
@@ -46,17 +47,31 @@ func (f *fakeFixPromptRenderer) Render(_, _ string, vars map[string]string) (str
 	return f.body, nil
 }
 
-type fakeBaselineChecker struct {
-	has     bool
-	verdict BaselineVerdict
-	err     error
-	calls   int
+// seedBaselineForFix writes a TEST_BASELINE.json at projectDir/.claude that
+// causes test_baseline.Has(milestone) to return true and Compare to return
+// the verdict the test wants. m38.5 replaced the BaselineChecker seam
+// with direct test_baseline.Has + test_baseline.Compare calls; this
+// helper drives the short-circuit by seeding real on-disk state instead
+// of a fake.
+func seedBaselineForFix(t *testing.T, projectDir, milestone string, exitCode int, failureHash string, failureCount int) {
+	t.Helper()
+	claudeDir := filepath.Join(projectDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{
+  "run_id": "test-run",
+  "timestamp": "2026-06-07T00:00:00Z",
+  "milestone": "` + milestone + `",
+  "exit_code": ` + intToString(exitCode) + `,
+  "output_hash": "abc",
+  "failure_hash": "` + failureHash + `",
+  "failure_count": ` + intToString(failureCount) + `
 }
-
-func (f *fakeBaselineChecker) Has(_ string) bool { return f.has }
-func (f *fakeBaselineChecker) Compare(_ string, _ int, _ string) (BaselineVerdict, error) {
-	f.calls++
-	return f.verdict, f.err
+`)
+	if err := os.WriteFile(filepath.Join(claudeDir, "TEST_BASELINE.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 type fakeTestDedup struct {
@@ -100,18 +115,16 @@ func (c *captureLogger) Logf(format string, args ...any) {
 	c.lines = append(c.lines, strings.TrimSpace(format))
 }
 
-func installFixSeams(t *testing.T, agent FixAgentRunner, render FixPromptRenderer, base BaselineChecker, dedup TestDedup, runner FixTestRunner, logger FixLogger) func() {
+func installFixSeams(t *testing.T, agent FixAgentRunner, render FixPromptRenderer, dedup TestDedup, runner FixTestRunner, logger FixLogger) func() {
 	t.Helper()
 	prevA := SetFixAgentRunner(agent)
 	prevP := SetFixPromptRenderer(render)
-	prevB := SetFixBaselineChecker(base)
 	prevD := SetFixTestDedup(dedup)
 	prevR := SetFixTestRunner(runner)
 	prevL := SetFixLogger(logger)
 	return func() {
 		SetFixAgentRunner(prevA)
 		SetFixPromptRenderer(prevP)
-		SetFixBaselineChecker(prevB)
 		SetFixTestDedup(prevD)
 		SetFixTestRunner(prevR)
 		SetFixLogger(prevL)
@@ -160,13 +173,23 @@ func TestRunInlineFix_BaselineShortCircuits(t *testing.T) {
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
 	render := &fakeFixPromptRenderer{}
-	base := &fakeBaselineChecker{has: true, verdict: BaselinePreExisting}
 	dedup := &fakeTestDedup{}
 	runner := &fakeFixTestRunner{}
-	restore := installFixSeams(t, agent, render, base, dedup, runner, &captureLogger{})
+	restore := installFixSeams(t, agent, render, dedup, runner, &captureLogger{})
 	defer restore()
 
 	req := newFixRequest(t)
+	req.Milestone = "m38.5"
+	// m38.5: seed an on-disk baseline whose failure_hash matches the
+	// hash test_baseline.Compare will compute against the truncated
+	// output. Compare returns VerdictPreExisting → fix loop short-
+	// circuits without invoking the agent.
+	opts := withFixDefaults(req.Options)
+	failureOutput := extractFailureOutput(req.FailureLog, opts.OutputLimit)
+	truncated := SmartTruncateTestOutput(failureOutput, opts.OutputLimit)
+	failureHash := test_baseline.FailureSignatureHashForTesting(truncated)
+	seedBaselineForFix(t, req.ProjectDir, "m38.5", 1, failureHash, 5)
+
 	res, err := RunInlineFix(context.Background(), req)
 	if err != nil {
 		t.Fatalf("RunInlineFix: %v", err)
@@ -176,9 +199,6 @@ func TestRunInlineFix_BaselineShortCircuits(t *testing.T) {
 	}
 	if agent.calls != 0 {
 		t.Errorf("agent.calls = %d, want 0 (agent should not run on baseline skip)", agent.calls)
-	}
-	if base.calls != 1 {
-		t.Errorf("baseline.calls = %d, want 1", base.calls)
 	}
 }
 
@@ -190,10 +210,11 @@ func TestRunInlineFix_DedupPreservedOnSecondCall(t *testing.T) {
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
 	render := &fakeFixPromptRenderer{}
-	base := &fakeBaselineChecker{} // baseline absent
+	// No baseline seeded — test_baseline.Has returns false, short-circuit
+	// skipped, full fix flow runs.
 	dedup := &fakeTestDedup{}
 	runner := &fakeFixTestRunner{exitCodes: []int{0}}
-	restore := installFixSeams(t, agent, render, base, dedup, runner, &captureLogger{})
+	restore := installFixSeams(t, agent, render, dedup, runner, &captureLogger{})
 	defer restore()
 
 	req := newFixRequest(t)
@@ -231,10 +252,9 @@ func TestRunInlineFix_DedupCanSkipCalledBeforeTestRunner(t *testing.T) {
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
 	render := &fakeFixPromptRenderer{}
-	base := &fakeBaselineChecker{}
 	dedup := &fakeTestDedup{canSkipReturn: true}
 	runner := &fakeFixTestRunner{}
-	restore := installFixSeams(t, agent, render, base, dedup, runner, &captureLogger{})
+	restore := installFixSeams(t, agent, render, dedup, runner, &captureLogger{})
 	defer restore()
 
 	req := newFixRequest(t)
@@ -263,7 +283,7 @@ func TestRunInlineFix_UpstreamErrorPropagates(t *testing.T) {
 			ErrorMessage:     "429 from API",
 		},
 	}
-	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
+	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
 	defer restore()
 
 	_, err := RunInlineFix(context.Background(), newFixRequest(t))
@@ -277,7 +297,7 @@ func TestRunInlineFix_UpstreamErrorPropagates(t *testing.T) {
 
 func TestRunInlineFix_AgentInvocationErrorReturnsError(t *testing.T) {
 	agent := &fakeFixAgentRunner{err: errors.New("supervisor crashed")}
-	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
+	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
 	defer restore()
 
 	_, err := RunInlineFix(context.Background(), newFixRequest(t))
@@ -288,7 +308,7 @@ func TestRunInlineFix_AgentInvocationErrorReturnsError(t *testing.T) {
 
 func TestRunInlineFix_PromptRenderErrorReturnsError(t *testing.T) {
 	render := &fakeFixPromptRenderer{err: errors.New("template missing")}
-	restore := installFixSeams(t, &fakeFixAgentRunner{}, render, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
+	restore := installFixSeams(t, &fakeFixAgentRunner{}, render, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
 	defer restore()
 
 	_, err := RunInlineFix(context.Background(), newFixRequest(t))
@@ -308,7 +328,7 @@ func TestRunInlineFix_TestCmdEmptyBreaksAfterOneAttempt(t *testing.T) {
 	agent := &fakeFixAgentRunner{
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
-	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
+	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeTestDedup{}, &fakeFixTestRunner{}, &captureLogger{})
 	defer restore()
 
 	req := newFixRequest(t)
@@ -328,7 +348,7 @@ func TestRunInlineFix_PromptVarsIncludeTestFiles(t *testing.T) {
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
 	render := &fakeFixPromptRenderer{}
-	restore := installFixSeams(t, agent, render, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{exitCodes: []int{0}}, &captureLogger{})
+	restore := installFixSeams(t, agent, render, &fakeTestDedup{}, &fakeFixTestRunner{exitCodes: []int{0}}, &captureLogger{})
 	defer restore()
 
 	req := newFixRequest(t)
@@ -348,7 +368,7 @@ func TestRunInlineFix_PromptVarsReadCoderSummary(t *testing.T) {
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
 	render := &fakeFixPromptRenderer{}
-	restore := installFixSeams(t, agent, render, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{exitCodes: []int{0}}, &captureLogger{})
+	restore := installFixSeams(t, agent, render, &fakeTestDedup{}, &fakeFixTestRunner{exitCodes: []int{0}}, &captureLogger{})
 	defer restore()
 
 	req := newFixRequest(t)
@@ -480,12 +500,6 @@ func TestExecFixTestRunner_ReportsExitCode(t *testing.T) {
 }
 
 func TestNoopSeams_ReturnSafeDefaults(t *testing.T) {
-	if v, _ := (noopBaselineChecker{}).Compare("", 1, ""); v != BaselineUnknown {
-		t.Errorf("baseline compare unexpected: %q", v)
-	}
-	if (noopBaselineChecker{}).Has("") {
-		t.Errorf("baseline has unexpected true")
-	}
 	d := noopTestDedup{}
 	if d.CanSkip() {
 		t.Errorf("dedup CanSkip unexpected true")
@@ -498,7 +512,7 @@ func TestRunInlineFix_RecordsRunningAttemptCount(t *testing.T) {
 	agent := &fakeFixAgentRunner{
 		result: &proto.AgentResultV1{Proto: proto.AgentResultProtoV1, Outcome: proto.OutcomeSuccess},
 	}
-	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeBaselineChecker{}, &fakeTestDedup{}, &fakeFixTestRunner{exitCodes: []int{1, 0}}, &captureLogger{})
+	restore := installFixSeams(t, agent, &fakeFixPromptRenderer{}, &fakeTestDedup{}, &fakeFixTestRunner{exitCodes: []int{1, 0}}, &captureLogger{})
 	defer restore()
 	req := newFixRequest(t)
 	req.Options.MaxDepth = 2

@@ -10,6 +10,7 @@ import (
 	intakestage "github.com/geoffgodwin/tekhton/internal/stages/intake"
 	reviewstage "github.com/geoffgodwin/tekhton/internal/stages/review"
 	securitystage "github.com/geoffgodwin/tekhton/internal/stages/security"
+	testerstage "github.com/geoffgodwin/tekhton/internal/stages/tester"
 )
 
 // StageImpl is the entry-point signature every Go-native stage exports. The
@@ -209,13 +210,16 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageReview: {
 		GoImpl: reviewstage.RunStage,
 	},
-	// m38.4: test-audit family ported to internal/test_audit/. The six
-	// bash files (lib/test_audit*.sh) were deleted; the audit runs
-	// in-process via test_audit.Run. The tester stage itself still
-	// ships as bash (stages/tester.sh) — m38.6 will port that and
-	// drop the Script field too.
+	// m38.6: tester is the seventh Go-native stage. GoImpl takes the
+	// dispatch; Script and Helpers are dropped because the six bash
+	// files (stages/tester*.sh) are deleted in the same milestone.
+	// The TDD pre-flight (m38.2), validation/timing helpers (m38.1),
+	// fix + continuation loops (m38.3), test_audit (m38.4), and
+	// test_baseline (m38.5) all reach into internal/tester,
+	// internal/test_audit, and internal/test_baseline in-process —
+	// no bash subprocess hop remains in the tester family.
 	proto.StageTester: {
-		Script: "stages/tester.sh",
+		GoImpl: testerstage.RunStage,
 	},
 	// m34.2: cleanup is the second Go-native stage (after docs in m34.1).
 	// Script stays set as the audit-trail signal — the dispatcher prefers
