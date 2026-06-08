@@ -2,13 +2,12 @@
 PASS
 
 ## Confidence
-95
+93
 
 ## Reasoning
-- Scope is tightly bounded: two narrow fixes to `internal/security/findings.go`, seven test fixtures, one new integration test, one modified test file — all listed explicitly
-- Both bugs are described with root-cause precision (H3 `### ...` starts with `##` so the old break triggered early; empty file list → `(true, nil)` was fail-open)
-- Acceptance criteria are fully testable: grep commands, specific test case names, exact CLI tools (`shellcheck`, `golangci-lint`, `go vet`, `go test ./...`), and a pass/fail integration test
-- Near-complete Go code is provided for all changed logic — two developers reading this would produce essentially identical implementations
-- No new user-facing config keys, no format changes, no migration impact section needed
-- The "Seeds Forward" and "Watch For" sections surface risks without expanding scope
-- No UI components involved; UI testability criterion is not applicable
+- Scope is explicitly bounded: files to create/modify are enumerated; out-of-scope directories (`lib/`, `stages/`, `prompts/`, `tools/`) are called out by name
+- Acceptance criteria are all mechanically testable — every criterion maps to a shell command with an observable exit code or stdout
+- The Watch For section resolves the two most common implementation ambiguities upfront: `-ldflags` vs `//go:embed` for version injection, and `CGO_ENABLED=0` for the static-binary requirement
+- Seeds Forward section makes inter-milestone dependencies explicit, preventing over-engineering (e.g., no `build-all` target yet)
+- No migration impact: this milestone creates new files only and touches nothing in the existing bash surface — no migration section needed
+- No UI components involved — UI testability not applicable
