@@ -1,8 +1,8 @@
 // Package codex is the OpenAI Codex CLI provider implementation.
 //
 // V5 m07 — Scaffold: factory, flag builder, exec invocation, exit-code
-// interpretation. JSON event parsing (m08), tool translation (m09),
-// streaming events (m10), and auth/retry (m11) are not implemented here.
+// interpretation. V5 m08 — JSON event decoder, item taxonomy, outcome
+// mapping. V5 m10 — streaming events, provider.Event emission parity.
 //
 // The three ProviderSpecific keys this package recognises:
 //
@@ -12,6 +12,7 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,16 +26,12 @@ import (
 var _ provider.Provider = (*Provider)(nil)
 
 // Provider implements provider.Provider against the OpenAI Codex CLI.
-//
-// V5 m07 — Scaffold only. RunAgent invokes the binary and returns a
-// basic Result based on exit code. JSON event parsing comes in m08.
 type Provider struct {
 	BinaryPath string // Path to the codex executable. Defaults to "codex" resolved via PATH.
 }
 
 // New constructs a Codex provider with the default binary lookup.
-// Returns an error if the codex binary isn't on PATH. The error surfaces
-// early so misconfigured pipelines fail at construction time.
+// Returns an error if the codex binary isn't on PATH.
 func New() (*Provider, error) {
 	path, err := exec.LookPath("codex")
 	if err != nil {
@@ -43,8 +40,7 @@ func New() (*Provider, error) {
 	return &Provider{BinaryPath: path}, nil
 }
 
-// NewWithBinary is the test-seam constructor — substitutes a stub binary
-// (e.g. /bin/echo) for the real codex CLI.
+// NewWithBinary is the test-seam constructor — substitutes a stub binary.
 func NewWithBinary(path string) *Provider {
 	return &Provider{BinaryPath: path}
 }
@@ -53,11 +49,9 @@ func NewWithBinary(path string) *Provider {
 func (p *Provider) Name() string { return "codex" }
 
 // RunAgent translates req into a codex exec invocation, runs it, and
-// returns a Result whose Outcome is derived from the exit code.
-//
-// V5 m07: TurnsUsed and NullRun stay at their zero values; m08 fills
-// them in from the JSON event stream. LastReportPath is set to the
-// --output-last-message path so the caller owns its lifecycle.
+// returns a Result. When req.EventChan is non-nil the streaming path
+// (m10) is used and provider.Events are emitted as Codex writes JSONL;
+// when nil the blocking path (m07) is used.
 func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
 	if req == nil {
 		return nil, errors.New("codex provider: nil request")
@@ -67,9 +61,8 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 		return nil, fmt.Errorf("codex provider: build args: %w", err)
 	}
 
-	// Extract the --output-last-message path embedded by buildExecArgs so
-	// we can propagate it to the caller (unblocks m08) and clean it up on
-	// the process-level error path (prevents tempfile leaks).
+	// Extract the --output-last-message path so we can propagate it
+	// and clean it up on process-level errors.
 	var outPath string
 	for i, a := range args {
 		if a == "--output-last-message" && i+1 < len(args) {
@@ -78,18 +71,46 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 		}
 	}
 
-	_, _, exitCode, runErr := runCodex(ctx, p.BinaryPath, args, req.Prompt, req.Timeout)
+	var (
+		stdout   []byte
+		events   []Event
+		exitCode int
+		runErr   error
+	)
+
+	if req.EventChan != nil {
+		// m10 — streaming path: emit events incrementally.
+		stdout, events, _, exitCode, runErr = runCodexStreaming(
+			ctx, p.BinaryPath, args, req.Prompt, req.EventChan, req.Timeout,
+		)
+	} else {
+		// m07 — blocking path: callers that don't need live events.
+		stdout, _, exitCode, runErr = runCodex(ctx, p.BinaryPath, args, req.Prompt, req.Timeout)
+		if runErr == nil {
+			events, _ = decodeStream(bytes.NewReader(stdout))
+		}
+	}
+
 	if runErr != nil {
-		// Process-level error (binary not found, permission denied, etc.).
-		// The tempfile won't be read — remove it to avoid leaking it.
+		// Process-level error — clean up the tempfile to prevent leaks.
 		if outPath != "" {
 			_ = os.Remove(outPath)
 		}
 		return nil, fmt.Errorf("codex provider: invoke: %w", runErr)
 	}
+
+	result, _ := deriveOutcome(events, exitCode)
+	result.LastReportPath = outPath
+
 	return &provider.Result{
-		Outcome:        interpretExitCode(exitCode),
-		ExitCode:       exitCode,
-		LastReportPath: outPath,
+		Outcome:          result.Outcome,
+		TurnsUsed:        result.TurnsUsed,
+		ExitCode:         exitCode,
+		ErrorCategory:    result.ErrorCategory,
+		ErrorSubcategory: result.ErrorSubcategory,
+		ErrorMessage:     result.ErrorMessage,
+		LastReportPath:   result.LastReportPath,
+		NullRun:          result.NullRun,
+		RawProviderData:  stdout,
 	}, nil
 }
