@@ -296,3 +296,56 @@ func TestBuildExecArgs_ExplicitToolsTakePrecedenceOverToolSet(t *testing.T) {
 		t.Errorf("--sandbox = %q, want %q (explicit req.Tools must override codex.tool_set)", args[sandboxIdx+1], "read-only")
 	}
 }
+
+// TestBuildExecArgs_ToolSetFromProviderSpecific_WorkspaceWrite verifies that
+// codex.tool_set values that include shell/write tools ("coder", "reviewer",
+// "tester") all produce workspace-write sandbox — covering the three
+// branches of the four-branch switch left untested by the intake-only test.
+func TestBuildExecArgs_ToolSetFromProviderSpecific_WorkspaceWrite(t *testing.T) {
+	cases := []string{"coder", "reviewer", "tester"}
+	for _, toolSet := range cases {
+		t.Run(toolSet, func(t *testing.T) {
+			req := newReqWithOut(t, func(r *provider.Request) {
+				r.ProviderSpecific["codex.tool_set"] = toolSet
+			})
+			args, err := buildExecArgs(req)
+			if err != nil {
+				t.Fatalf("codex.tool_set=%q: unexpected error: %v", toolSet, err)
+			}
+			sandboxIdx := slices.Index(args, "--sandbox")
+			if sandboxIdx == -1 || sandboxIdx+1 >= len(args) {
+				t.Fatalf("codex.tool_set=%q: --sandbox flag not found in argv %v", toolSet, args)
+			}
+			if args[sandboxIdx+1] != "workspace-write" {
+				t.Errorf("codex.tool_set=%q: --sandbox = %q, want %q", toolSet, args[sandboxIdx+1], "workspace-write")
+			}
+		})
+	}
+}
+
+// TestIsInlineConfigKey_Boundary is a table-driven test for isInlineConfigKey.
+// The critical boundary case is the exact prefix "codex.config." with no
+// suffix: the function uses strict len(k) > len(prefix), so exact-prefix
+// returns false (no key name to emit). Every other boundary is also covered.
+func TestIsInlineConfigKey_Boundary(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"codex.config.", false},          // exact prefix — zero-length suffix, must return false
+		{"codex.config.x", true},          // minimal suffix of one char
+		{"codex.config.model.provider", true}, // typical inline config key
+		{"codex.cwd", false},              // provider hint, not inline config
+		{"codex.output_last_message", false}, // provider hint
+		{"codex.tool_set", false},         // provider hint
+		{"", false},                       // empty string
+		{"codex.", false},                 // shorter than prefix
+		{"other.key", false},              // unrelated namespace
+	}
+	for _, tc := range cases {
+		got := isInlineConfigKey(tc.input)
+		if got != tc.want {
+			t.Errorf("isInlineConfigKey(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}

@@ -237,3 +237,31 @@ func TestCodexToolName_UnknownName(t *testing.T) {
 		t.Errorf("codexToolName(%q) returned non-empty key %q on miss", "NotATekhtonTool", got)
 	}
 }
+
+// TestCodexToolName_ExactMappings verifies the exact Codex permission key
+// returned for each canonical Tekhton tool name. A regression remapping
+// "Bash" from "shell" to "fs_read" would be caught here but not by
+// TestCodexToolName_KnownNames (which only checks non-empty).
+func TestCodexToolName_ExactMappings(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"Read", "fs_read"},
+		{"Write", "fs_write"},
+		{"Edit", "fs_write"},
+		{"Bash", "shell"},
+		{"Glob", "fs_read"},
+		{"Grep", "fs_read"},
+	}
+	for _, tc := range cases {
+		got, ok := codexToolName(tc.name)
+		if !ok {
+			t.Errorf("codexToolName(%q) = (%q, false), want (%q, true)", tc.name, got, tc.want)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("codexToolName(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

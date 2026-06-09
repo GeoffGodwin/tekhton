@@ -1,3 +1,37 @@
+## Test Audit Report
+
+### Audit Summary
+Tests audited: 2 files, 30 test functions
+Verdict: PASS
+
+### Findings
+
+#### COVERAGE: ValidateToolSchema error branches only partially exercised
+- File: internal/provider/codex/tools_test.go:135
+- Issue: `TestTranslateTools_ErrorOnInvalidSchema` constructs a ToolSchema with only empty Name. `provider.ValidateToolSchema` (provider.go:82) has four independent guard clauses — empty Name, empty Description, Parameters.Type != "object", and AdditionalProperties=true. Only the empty-Name branch is exercised; regressions in the other three guards would go undetected.
+- Severity: LOW
+- Action: Add a table-driven test or three additional sub-cases covering Description="", Parameters.Type="array", and AdditionalProperties=true.
+
+#### COVERAGE: Map iteration order unaddressed for future multi-key inline-config tests
+- File: internal/provider/codex/flags_test.go:118
+- Issue: `TestBuildExecArgs_InlineConfig` sets a single inline config key (`codex.config.model.provider`). `buildExecArgs` (flags.go:55) iterates `req.ProviderSpecific` with a plain `for k, v := range`, which is non-deterministic. The current single-key test is safe from flakiness; any future test with multiple `codex.config.*` keys that checks argv index positions would be intermittently flaky.
+- Severity: LOW
+- Action: Document the iteration-order caveat in a comment near the map range in `buildExecArgs`, and ensure any future multi-key test uses a contains-all check rather than an index-position assertion.
+
+#### COVERAGE: Duplicate permission keys in allowed list untested for Codex compatibility
+- File: internal/provider/codex/tools_test.go:67 (coder.json fixture)
+- Issue: The coder fixture records `tools.allowed=["fs_read","fs_write","fs_write","shell","fs_read","fs_read"]` — duplicates because Write/Edit both map to `fs_write`, and Read/Glob/Grep all map to `fs_read`. The fixture accurately captures the current implementation; no Codex rejection has been observed. This is a behavioral gap rather than a test integrity issue.
+- Severity: LOW
+- Action: No test change required now. Add a comment in `translateTools` noting that the allowed list is not deduplicated and that Codex treats it as a set, so duplicates are harmless.
+
+---
+
+No HIGH or MEDIUM findings. All 30 test functions call real implementation code with no excessive mocking, use controlled fixtures or `t.TempDir()`/`t.Setenv()` for isolation, produce deterministic assertions against values derived from implementation logic, and align with currently-existing symbols (no orphaned imports or stale references). The reviewer's prior notes about code quality (duplicate allowed keys, map iteration order, unknown tool_set silent fallback) are well-founded and the corresponding LOW coverage gaps above reinforce them from the test side.
+
+---
+
+## Prior Reviewer Notes (code quality — preserved from reviewer stage)
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,13 +42,17 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- retry.go:154 — `extractRateLimitsFromResult` always returns nil, making the entire rate-limit-driven backoff override path in `RunAgentWithRetry` (lines 89–96) permanently dead. The comment correctly marks this as out-of-m11-scope pending envelope widening. No action required now, but the dead path may mislead reviewers into thinking rate-limit-aware backoff is active.
-- codex.go:71 — `resolveAuth` error is intentionally discarded (`_, _, _ =`). The comment explains the rationale (no override needed for OAuth and process-env paths). Acceptable, but the tier return (`_`) is also discarded; if metrics ever need the tier, all call sites will require a revisit with no grep-searchable signal.
-- streaming.go:117–122 — The documented contract ("eventCh receives provider.EventRunEnd as the FINAL event") conflicts with the non-blocking send (`select { default }`). The channel-close guarantees for-range termination regardless, and the tester explicitly covers the drop case. The comment should be updated to say "attempts to send EventRunEnd" to avoid misleading callers who inspect the last event kind.
+- tools.go:55-64 — `allowed` slice accumulates duplicate Codex permission keys (e.g., CoderTools produces `["fs_read","fs_write","fs_write","shell","fs_read","fs_read"]`). Codex likely treats `tools.allowed` as a set, but a dedup pass with a `seen` map before `joinAllowed` would make the output minimal and remove the ambiguity entirely.
+- flags.go:55-60 — map iteration over `req.ProviderSpecific` for `codex.config.*` keys is non-deterministic. Current tests only check for presence of a single entry, so no flakiness today. Sort the keys before appending to make argv deterministic for future multi-key tests.
+- flags.go:64-76 — unknown `codex.tool_set` value (e.g., "architect") silently keeps the default workspace-write sandbox. Consider a default branch that logs a warning so misconfigured stages don't silently inherit the most-permissive tier.
+- tools.go:59-61 — unknown tool names silently escalate to the "shell" permission key (Security A04/LOW). Adding a structured warning log would make future unmapped tools immediately visible rather than silently privileged.
+- flags.go:46 — `codex.cwd` passed to `--cd` without path validation (Security A01/LOW). A comment on the ProviderSpecific key contract ("callers must sanitize") would prevent silent inheritance by future callers.
 
 ## Coverage Gaps
-- retry.go:89–96 — `extractRateLimitsFromResult` always returns nil, so the `ShouldRetryAfter`-driven wait override is unreachable by any test. When the V5 envelope widens to expose `RateLimitSnapshot` on `provider.Result`, a test case that returns a rate-limit snapshot with a future `ResetAt` should be added to verify the override correctly extends the computed backoff.
+- internal/provider/codex/tools_test.go:216 — `TestCodexToolName_KnownNames` checks only for non-empty return, not exact mapped values. A regression remapping "Bash" from "shell" to "fs_read" would pass this test. Add a table-driven check asserting exact mappings for all six canonical names.
+- internal/provider/codex/flags_test.go — `TestBuildExecArgs_ToolSetFromProviderSpecific` covers only the "intake" branch of the four-branch switch in flags.go:65-76. Add companion tests for "coder" (and optionally "reviewer" and "tester") asserting the correct sandbox value.
+- internal/provider/codex/flags_test.go — `isInlineConfigKey("codex.config.")` (exact prefix, zero-length suffix) is not tested. The strict `len(k) > len(prefix)` boundary is correct but unverified by any test.
 
 ## Drift Observations
-- ratelimit.go uses `*RateLimitSnapshot` throughout, but the type is defined in events.go rather than ratelimit.go. The cross-file dependency is within the same package and harmless, but `RateLimitSnapshot` is more of a rate-limit concept than a streaming event; consider relocating the type definition into ratelimit.go in a future cleanup.
-- auth.go — `storedAuthPath()` and `fileExists()` are unexported helpers that could serve other auth strategies in the same package, but are currently only reachable from `resolveAuth`. No action needed.
+- testdata/tool_translations/coder.json and tester.json are currently identical in content because CoderTools == TesterTools. The separate fixture files add maintenance surface without differentiation. If TesterTools ever diverges, the fixtures will correctly diverge too — acceptable until then.
+- flags.go:117-118 — manual prefix check `len(k) > len(prefix) && k[:len(prefix)] == prefix` is functionally correct but duplicates what `strings.HasPrefix` expresses. The `strings` package is not currently imported in flags.go; noting for a future cleanup pass if `strings` is added for another reason.
