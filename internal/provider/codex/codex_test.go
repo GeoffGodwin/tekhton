@@ -3,6 +3,7 @@ package codex_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -40,6 +41,76 @@ func TestRunAgent_NilRequest(t *testing.T) {
 	_, err := p.RunAgent(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil request, got nil")
+	}
+}
+
+// TestProvider_Tier_SubscriptionOAuth asserts Tier() returns "subscription"
+// when ~/.codex/auth.json exists.
+func TestProvider_Tier_SubscriptionOAuth(t *testing.T) {
+	// Clear the API key env var so only OAuth path applies.
+	t.Setenv("CODEX_API_KEY", "")
+
+	fakeHome := t.TempDir()
+	authDir := filepath.Join(fakeHome, ".codex")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(authDir, "auth.json"), []byte(`{"access_token":"tok"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", fakeHome)
+
+	p := codex.NewWithBinary("/bin/echo")
+	if got := p.Tier(); got != provider.TierSubscription {
+		t.Errorf("Tier() with auth.json: want %q, got %q", provider.TierSubscription, got)
+	}
+}
+
+// TestProvider_Tier_APIKey asserts Tier() returns "api" when CODEX_API_KEY
+// is set and no OAuth file is present.
+func TestProvider_Tier_APIKey(t *testing.T) {
+	t.Setenv("CODEX_API_KEY", "sk-test-api-key")
+	// Point HOME to a temp dir with no .codex/auth.json.
+	t.Setenv("HOME", t.TempDir())
+
+	p := codex.NewWithBinary("/bin/echo")
+	if got := p.Tier(); got != provider.TierAPI {
+		t.Errorf("Tier() with CODEX_API_KEY: want %q, got %q", provider.TierAPI, got)
+	}
+}
+
+// TestProvider_Tier_Unknown asserts Tier() returns "unknown" when neither
+// OAuth file nor CODEX_API_KEY is available.
+func TestProvider_Tier_Unknown(t *testing.T) {
+	t.Setenv("CODEX_API_KEY", "")
+	// Point HOME to a temp dir with no .codex/auth.json.
+	t.Setenv("HOME", t.TempDir())
+
+	p := codex.NewWithBinary("/bin/echo")
+	if got := p.Tier(); got != provider.TierUnknown {
+		t.Errorf("Tier() with no auth: want %q, got %q", provider.TierUnknown, got)
+	}
+}
+
+// TestProvider_Tier_OAuthPrecedesEnvKey asserts that OAuth takes precedence
+// over CODEX_API_KEY when both are present (subscription is cheaper).
+func TestProvider_Tier_OAuthPrecedesEnvKey(t *testing.T) {
+	t.Setenv("CODEX_API_KEY", "sk-env-key")
+
+	fakeHome := t.TempDir()
+	authDir := filepath.Join(fakeHome, ".codex")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(authDir, "auth.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", fakeHome)
+
+	p := codex.NewWithBinary("/bin/echo")
+	if got := p.Tier(); got != provider.TierSubscription {
+		t.Errorf("Tier() with OAuth+CODEX_API_KEY: want %q (OAuth wins), got %q",
+			provider.TierSubscription, got)
 	}
 }
 

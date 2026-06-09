@@ -145,6 +145,7 @@ func newFixtureAgent(t *testing.T, projectDir string, queues map[string][]fixtur
 }
 
 func (f *fixtureAgent) Name() string { return "fixture" }
+func (f *fixtureAgent) Tier() string { return provider.TierUnknown }
 
 func (f *fixtureAgent) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	cp := *req

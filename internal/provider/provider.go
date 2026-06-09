@@ -95,6 +95,31 @@ func ValidateToolSchema(t ToolSchema) error {
 	return nil
 }
 
+// Tier constants. The chain consults these to order providers and gate
+// fallthrough via --require-tier.
+const (
+	TierSubscription = "subscription" // Free within quota (ChatGPT Plus/Pro, etc.)
+	TierAPI          = "api"          // Paid per-token (Anthropic API, OpenAI API key)
+	TierLocal        = "local"        // Free, no quota (local llama.cpp / vLLM — V5 Phase 2)
+	TierUnknown      = "unknown"      // Provider cannot determine its tier
+)
+
+// TierCostRank returns an integer ordering: smaller is cheaper.
+// local (0) < subscription (1) < api (2) < unknown (3).
+// Used by Chain to sort providers when --cost-rank-chain is set.
+func TierCostRank(tier string) int {
+	switch tier {
+	case TierLocal:
+		return 0
+	case TierSubscription:
+		return 1
+	case TierAPI:
+		return 2
+	default:
+		return 3
+	}
+}
+
 // Provider is the interface every agent backend implements.
 //
 // RunAgent runs a full agent loop with the given prompt and tools and
@@ -103,8 +128,13 @@ func ValidateToolSchema(t ToolSchema) error {
 //
 // Name returns the provider's canonical name ("claude", "codex",
 // "qwen-local"). Used for routing, telemetry, and operator-facing banners.
+//
+// Tier returns the cost tier for this provider — one of TierSubscription,
+// TierAPI, TierLocal, or TierUnknown. The chain uses Tier to order
+// providers cheapest-first and to enforce --require-tier limits.
 type Provider interface {
 	Name() string
+	Tier() string
 	RunAgent(ctx context.Context, req *Request) (*Result, error)
 }
 
@@ -143,6 +173,10 @@ type Result struct {
 	LastReportPath   string // Where the agent wrote its output report, if any.
 	NullRun          bool   // True if the agent exited without producing work.
 	RawProviderData  []byte // Opaque per-provider capture for postmortem.
+	// TierUsed is set by Chain when a provider succeeds. One of the TierXxx
+	// constants. Empty string when the result came from a single (non-chained)
+	// provider invocation.
+	TierUsed string
 }
 
 // Outcome is the high-level categorization of how an agent run ended.

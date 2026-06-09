@@ -20,6 +20,7 @@ type fakeProvider struct {
 }
 
 func (f *fakeProvider) Name() string { return "fake-cleanup" }
+func (f *fakeProvider) Tier() string { return provider.TierUnknown }
 
 func (f *fakeProvider) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
 	if f.OnRun != nil {

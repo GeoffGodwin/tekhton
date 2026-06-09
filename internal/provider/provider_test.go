@@ -9,11 +9,76 @@ import (
 )
 
 // TestProviderInterface_MethodCount asserts the Provider interface has
-// exactly two methods.
+// exactly three methods: Name, Tier, RunAgent.
 func TestProviderInterface_MethodCount(t *testing.T) {
 	iface := reflect.TypeOf((*provider.Provider)(nil)).Elem()
-	if n := iface.NumMethod(); n != 2 {
-		t.Errorf("Provider: want 2 methods, got %d", n)
+	if n := iface.NumMethod(); n != 3 {
+		t.Errorf("Provider: want 3 methods, got %d", n)
+	}
+}
+
+// TestTierConstants verifies the four tier string values match the spec.
+func TestTierConstants(t *testing.T) {
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"TierSubscription", provider.TierSubscription, "subscription"},
+		{"TierAPI", provider.TierAPI, "api"},
+		{"TierLocal", provider.TierLocal, "local"},
+		{"TierUnknown", provider.TierUnknown, "unknown"},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+}
+
+// TestTierCostRank verifies the rank ordering: local(0) < subscription(1) < api(2) < unknown(3).
+func TestTierCostRank(t *testing.T) {
+	cases := []struct {
+		tier string
+		want int
+	}{
+		{provider.TierLocal, 0},
+		{provider.TierSubscription, 1},
+		{provider.TierAPI, 2},
+		{provider.TierUnknown, 3},
+		{"", 3},        // empty falls through to default
+		{"future", 3},  // unknown future tier
+	}
+	for _, c := range cases {
+		if got := provider.TierCostRank(c.tier); got != c.want {
+			t.Errorf("TierCostRank(%q) = %d, want %d", c.tier, got, c.want)
+		}
+	}
+}
+
+// TestTierCostRank_OrderProperty asserts local < subscription < api.
+func TestTierCostRank_OrderProperty(t *testing.T) {
+	if provider.TierCostRank(provider.TierLocal) >= provider.TierCostRank(provider.TierSubscription) {
+		t.Error("local must rank cheaper than subscription")
+	}
+	if provider.TierCostRank(provider.TierSubscription) >= provider.TierCostRank(provider.TierAPI) {
+		t.Error("subscription must rank cheaper than api")
+	}
+	if provider.TierCostRank(provider.TierAPI) >= provider.TierCostRank(provider.TierUnknown) {
+		t.Error("api must rank cheaper than unknown")
+	}
+}
+
+// TestResult_TierUsedField asserts provider.Result has a TierUsed string field.
+func TestResult_TierUsedField(t *testing.T) {
+	res := &provider.Result{TierUsed: provider.TierAPI}
+	if res.TierUsed != provider.TierAPI {
+		t.Errorf("TierUsed: want %q, got %q", provider.TierAPI, res.TierUsed)
+	}
+	// Zero value should be empty string (not set by single-provider invocations).
+	var zero provider.Result
+	if zero.TierUsed != "" {
+		t.Errorf("TierUsed zero value: want empty string, got %q", zero.TierUsed)
 	}
 }
 
@@ -24,7 +89,7 @@ func TestProviderInterface_MethodNames(t *testing.T) {
 	for i := range iface.NumMethod() {
 		have[iface.Method(i).Name] = true
 	}
-	for _, want := range []string{"Name", "RunAgent"} {
+	for _, want := range []string{"Name", "Tier", "RunAgent"} {
 		if !have[want] {
 			t.Errorf("Provider interface missing method: %s", want)
 		}
@@ -86,7 +151,8 @@ func TestEventKindConstants(t *testing.T) {
 // stubProvider satisfies provider.Provider for compile-time and runtime checks.
 type stubProvider struct{ name string }
 
-func (s *stubProvider) Name() string { return s.name }
+func (s *stubProvider) Name() string  { return s.name }
+func (s *stubProvider) Tier() string  { return provider.TierUnknown }
 func (s *stubProvider) RunAgent(_ context.Context, _ *provider.Request) (*provider.Result, error) {
 	return &provider.Result{Outcome: provider.OutcomeSuccess}, nil
 }

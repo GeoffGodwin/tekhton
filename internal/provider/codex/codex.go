@@ -28,6 +28,7 @@ var _ provider.Provider = (*Provider)(nil)
 // Provider implements provider.Provider against the OpenAI Codex CLI.
 type Provider struct {
 	BinaryPath string // Path to the codex executable. Defaults to "codex" resolved via PATH.
+	cachedTier string // m13 — set on first Tier() call after auth resolution.
 }
 
 // New constructs a Codex provider with the default binary lookup.
@@ -47,6 +48,29 @@ func NewWithBinary(path string) *Provider {
 
 // Name returns the provider's canonical name.
 func (p *Provider) Name() string { return "codex" }
+
+// Tier returns the cost tier based on the available auth source.
+// Caches the result after first discovery so the auth-file stat
+// doesn't repeat per invocation.
+//
+// Resolution order mirrors resolveAuth:
+//  1. stored OAuth at ~/.codex/auth.json → TierSubscription
+//  2. CODEX_API_KEY env var              → TierAPI
+//  3. neither available                  → TierUnknown
+func (p *Provider) Tier() string {
+	if p.cachedTier != "" {
+		return p.cachedTier
+	}
+	if authPath := storedAuthPath(); fileExists(authPath) {
+		p.cachedTier = provider.TierSubscription
+		return p.cachedTier
+	}
+	if os.Getenv("CODEX_API_KEY") != "" {
+		p.cachedTier = provider.TierAPI
+		return p.cachedTier
+	}
+	return provider.TierUnknown
+}
 
 // RunAgent translates req into a codex exec invocation, runs it, and
 // returns a Result. When req.EventChan is non-nil the streaming path

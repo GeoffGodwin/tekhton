@@ -20,6 +20,7 @@ type fakeProviderRunner struct {
 }
 
 func (f *fakeProviderRunner) Name() string { return "fake-docs" }
+func (f *fakeProviderRunner) Tier() string { return provider.TierUnknown }
 
 func (f *fakeProviderRunner) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	f.gotReq = req

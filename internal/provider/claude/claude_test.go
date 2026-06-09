@@ -264,3 +264,38 @@ func TestLabelOrDefault(t *testing.T) {
 		t.Errorf("non-empty: want reviewer, got %s", got)
 	}
 }
+
+// TestProvider_Tier_Default asserts Tier() returns "api" by default
+// (post-June-15 Anthropic API-metered pricing).
+func TestProvider_Tier_Default(t *testing.T) {
+	t.Setenv("TEKHTON_CLAUDE_PRE_JUNE_15", "")
+	p := &Provider{Supervisor: &stubSup{result: successResult(1)}}
+	if got := p.Tier(); got != provider.TierAPI {
+		t.Errorf("Tier() default: want %q, got %q", provider.TierAPI, got)
+	}
+}
+
+// TestProvider_Tier_PreJune15Override asserts Tier() returns "subscription"
+// when TEKHTON_CLAUDE_PRE_JUNE_15=true.
+func TestProvider_Tier_PreJune15Override(t *testing.T) {
+	t.Setenv("TEKHTON_CLAUDE_PRE_JUNE_15", "true")
+	p := &Provider{Supervisor: &stubSup{result: successResult(1)}}
+	if got := p.Tier(); got != provider.TierSubscription {
+		t.Errorf("Tier() with env override: want %q, got %q", provider.TierSubscription, got)
+	}
+}
+
+// TestProvider_Tier_EnvFalse asserts that non-"true" values for the override
+// env do not activate the subscription tier override.
+func TestProvider_Tier_EnvFalse(t *testing.T) {
+	for _, v := range []string{"false", "1", "yes", "TRUE"} {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv("TEKHTON_CLAUDE_PRE_JUNE_15", v)
+			p := &Provider{Supervisor: &stubSup{result: successResult(1)}}
+			if got := p.Tier(); got != provider.TierAPI {
+				t.Errorf("Tier() with env=%q: want %q (only 'true' activates override), got %q",
+					v, provider.TierAPI, got)
+			}
+		})
+	}
+}

@@ -2,15 +2,12 @@
 PASS
 
 ## Confidence
-88
+92
 
 ## Reasoning
-- Scope is tightly bounded: 12 files listed with LOC estimates and change types; out-of-scope items (Tier() visibility, local models, cost-aware routing) are explicitly deferred to m13+
-- Acceptance criteria are specific and testable — each criterion names the method, env var, or file to exercise and states how it is verified
-- Design section includes Go code sketches for all three new Go files, eliminating ambiguity about interface shape, fallthrough policy, and env-key capitalization convention
-- Watch For section calls out the two most likely implementation mistakes (fallthrough set ≠ retry set; `strings.ToUpper(stage)` for env key lookup)
-- Dependencies on m07-m11 are explicit; `OutcomeUpstreamError`, `ErrorSubcategory`, and the `provider.Provider` interface are defined there
-- The `Chain.Name()` method in the design uses `strings.Join` but the import block shown for `provider_chain.go` omits `"strings"` — trivially resolved by the developer, not a blocker
-- No UI components involved; UI testability criterion is N/A
-- Migration impact is low (new optional config keys with fallback defaults; existing projects omitting `PROVIDER=` fall through to last-resort `"claude"`, preserving prior behaviour); the milestone describes the `pipeline.conf.example` and `lib/init_config_sections.sh` changes that encode this, so no separate Migration Impact section is required
-- Dogfood evidence requirement is realistic: the shim-boundary test self-skips when Codex is absent, and the evidence document is produced by a human-driven run on a Codex-capable machine — the acceptance criterion reflects this ("Verified manually")
+- Scope is precisely bounded: seven numbered goals, each with a target file, LOC estimate, and concrete code snippet. Out-of-scope items (TierLocal wiring, per-provider cost models, subscription quota observability) are explicitly called out in Seeds Forward.
+- Acceptance criteria are highly testable and specific: reflection-based method count, go doc constant verification, table-driven TierCostRank test, exact env-override behavior, auth-file/env-var scenarios for Codex, named ErrorSubcategory string for --require-tier rejection, snapshot test for RUN_SUMMARY. Nothing vague.
+- Ambiguity is pre-empted by the Watch For section — it explicitly resolves the three most likely misinterpretations (construction-time vs fallthrough rejection, TierUsed provenance rule, env-not-config-file for the override).
+- Dependencies on m11/m12 are declared and the interface-widening non-breaking property is justified (only two existing implementations, both updated here).
+- No UI components involved; UI testability criterion is not applicable.
+- The only minor gap: no explicit "Migration impact" section for the new `--require-tier` CLI flag, `TEKHTON_CLAUDE_PRE_JUNE_15` env var, and modified RUN_SUMMARY schema. These are all additive (new flag, new env, new output column) with no backward-compatibility break, so the omission does not block implementation.

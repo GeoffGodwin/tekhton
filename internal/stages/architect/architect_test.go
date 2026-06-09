@@ -401,6 +401,7 @@ func contains(haystack []string, needle string) bool {
 type upstreamProvider struct{}
 
 func (upstreamProvider) Name() string { return "fake-upstream" }
+func (upstreamProvider) Tier() string { return provider.TierUnknown }
 
 func (upstreamProvider) RunAgent(_ context.Context, _ *provider.Request) (*provider.Result, error) {
 	return &provider.Result{

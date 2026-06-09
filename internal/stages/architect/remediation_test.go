@@ -16,6 +16,7 @@ type fakeProvider struct {
 }
 
 func (f *fakeProvider) Name() string { return "fake-architect" }
+func (f *fakeProvider) Tier() string { return provider.TierUnknown }
 
 func (f *fakeProvider) RunAgent(_ context.Context, req *provider.Request) (*provider.Result, error) {
 	f.calls = append(f.calls, req)

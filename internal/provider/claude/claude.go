@@ -48,6 +48,23 @@ func New(sup *supervisor.Supervisor) *Provider {
 // Name returns the provider's canonical name.
 func (p *Provider) Name() string { return "claude" }
 
+// Tier returns the cost tier of this Claude provider invocation.
+//
+// Post-2026-06-15: Anthropic switched `claude --print` to API-metered
+// pricing regardless of Max subscription. Every invocation costs at
+// API rates (~15x prior subscription cost). Tier returns TierAPI.
+//
+// Operators who are verifiably pre-June-15 OR have grandfathered
+// subscription access can set TEKHTON_CLAUDE_PRE_JUNE_15=true to
+// override. This is intentionally an env, not a config file knob,
+// to keep it explicit + per-environment.
+func (p *Provider) Tier() string {
+	if os.Getenv("TEKHTON_CLAUDE_PRE_JUNE_15") == "true" {
+		return provider.TierSubscription
+	}
+	return provider.TierAPI
+}
+
 // RunAgent translates req into a supervisor invocation, runs it, and
 // returns the translated provider.Result. When req.EventChan is non-nil,
 // RunAgent emits EventTurnStart before the run, then EventTurnEnd and
