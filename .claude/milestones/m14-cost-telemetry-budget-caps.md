@@ -22,8 +22,74 @@ status: "todo"
 ### Sequencing note
 
 m14 lands AFTER m13 — needs `Tier()` to attribute cost per provider.
-m14 is also the V5 Phase 1 closer; everything after is Phase 2 work
-(local Qwen, parallel execution, cross-provider quality benchmarks).
+After m14 + m15 (the operator-wiring milestone closing m12/m13 gaps),
+V5 Phase 1 is feature-complete.
+
+### HARD SCOPE BOUNDARY (m14 ONLY)
+
+**m12 and m13 each shipped only their Go-side type/interface work and
+SKIPPED operator-facing wiring (CLI flags, pipeline.conf blocks, docs).
+m09 skipped its core deliverable entirely. m14 has the same risk shape —
+this scope boundary is the fix.**
+
+CREATE (5 files):
+1. `internal/provider/cost.go` — `CostEstimator` interface + `DefaultEstimator` + rate loading
+2. `internal/provider/cost_aggregator.go` — `RunCostAggregator` struct + `Record` + `WouldExceedStageBudget`
+3. `internal/provider/costrates.json` — rate fixture per the m14 design
+4. `cmd/tekhton/forecast.go` — `--forecast` subcommand body
+5. `docs/v5-cost-banner-example.md` — example RUN_SUMMARY with cost banner
+
+TESTS (3 files):
+6. `internal/provider/cost_test.go` — estimator + rate-loading
+7. `internal/runner/budget_test.go` — runner-level budget enforcement
+8. `tests/test_budget_enforcement.sh` — shim-boundary
+
+MODIFY (5 files):
+9. `internal/runner/runner.go` — pre-stage budget check + aggregator wiring
+10. `internal/finalize/emit_run_summary.go` — cost banner section
+11. `cmd/tekhton/run.go` — `--max-cost-usd` flag + `--forecast` subcommand registration
+12. `lib/init_config_sections.sh` — emit `STAGE_BUDGET_USD_<STAGE>=` + `RUN_BUDGET_USD=` section
+13. `templates/pipeline.conf.example` — append the budget block
+
+PLUS `VERSION` bump.
+
+**Verification command for the coder before reporting COMPLETE:**
+
+```
+test -f internal/provider/cost.go && \
+test -f internal/provider/cost_aggregator.go && \
+test -f internal/provider/costrates.json && \
+test -f cmd/tekhton/forecast.go && \
+test -f docs/v5-cost-banner-example.md && \
+grep -q 'type CostEstimator' internal/provider/cost.go && \
+grep -q 'RunCostAggregator' internal/provider/cost_aggregator.go && \
+grep -q 'max-cost-usd' cmd/tekhton/run.go && \
+grep -q 'forecast' cmd/tekhton/run.go && \
+grep -q 'STAGE_BUDGET_USD' templates/pipeline.conf.example && \
+grep -q 'Cost Summary' internal/finalize/emit_run_summary.go && \
+echo "m14 deliverables present"
+```
+
+If this echoes "m14 deliverables present", the coder MAY mark
+COMPLETE. Otherwise INCOMPLETE + Drift Observation surfacing the gap.
+
+**DO NOT create/modify in m14** — these are out-of-scope:
+- Any file under `internal/provider/codex/` — the Codex provider is done (m07-m11)
+- Any file under `internal/provider/claude/` — Claude Tier landed in m13
+- `internal/provider/provider.go` — the Tier() interface landed in m13
+- `internal/runner/provider_chain.go` or `provider_select.go` — m12/m15 own those
+- Any docs/v5-polyglot.md / v5-tier-model.md — m15's scope
+
+### Critical: operator-facing pieces are MILESTONE deliverables, not "nice-to-have"
+
+The previous m12 / m13 attempts treated the CLI flags, config emitters,
+and docs as optional add-ons and skipped them when "the Go code is
+done." m14's `--forecast` subcommand, `--max-cost-usd` flag,
+`STAGE_BUDGET_USD_<STAGE>=` config, and RUN_SUMMARY cost banner are NOT
+optional. An operator who can't see cost in RUN_SUMMARY OR can't cap
+spend via config has no useful budget feature. Missing any of these
+deliverables = INCOMPLETE milestone, regardless of how clean
+`internal/provider/cost.go` looks.
 
 ### Goal 1 — Cost estimator
 
