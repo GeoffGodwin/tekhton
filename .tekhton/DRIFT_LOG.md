@@ -4,15 +4,16 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 230
+- Runs since audit: 231
 =======
-- Runs since audit: 230
+- Runs since audit: 231
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 230
+- Runs since audit: 231
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-09 | "Implement Milestone m08: Codex JSON Event Decoder + Item Taxonomy + Outcome Mapping"] exec_test.go:14-19 â `requireBin` is only used in exec_test.go today. If the pattern gets copied to other test files with the same duplicate-LookPath bug, it will silently never skip on platforms where absolute-path detection matters. Fix the helper now before it spreads.
 - [ ] [2026-06-09 | "Implement Milestone m07: Codex Provider Scaffold (invocation, flag builder, exit codes)"] [m12 â provider_chain.go] Watch For mandates fallthrough warning logs and a `Result.FallthroughCount` field; neither appears in the acceptance criteria list. Carry-forward from cycle 1.
 - [ ] [2026-06-09 | "Implement Milestone m07: Codex Provider Scaffold (invocation, flag builder, exit codes)"] [m11 + m13] Dual `fileExists(storedAuthPath())` stat: once in `auth.go` and once in `codex.go` `Tier()` heuristic. Benign now; divergence risk on path changes. Carry-forward from cycle 1.
 - [ ] [2026-06-09 | "Implement Milestone m07: Codex Provider Scaffold (invocation, flag builder, exit codes)"] [m14 â costrates.json] No test for unknown/misspelled JSON keys being silently dropped by the Go loader. A zeroed rate from a typo would go undetected. Carry-forward from cycle 1.
