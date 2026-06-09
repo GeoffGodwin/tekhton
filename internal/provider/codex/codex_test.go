@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -111,6 +112,48 @@ func TestProvider_Tier_OAuthPrecedesEnvKey(t *testing.T) {
 	if got := p.Tier(); got != provider.TierSubscription {
 		t.Errorf("Tier() with OAuth+CODEX_API_KEY: want %q (OAuth wins), got %q",
 			provider.TierSubscription, got)
+	}
+}
+
+// TestProvider_Tier_Concurrent exercises Provider.Tier() from multiple goroutines
+// to expose the non-atomic lazy-init identified by the reviewer
+// (internal/provider/codex/codex.go:61-73 — read-then-write on cachedTier with
+// no synchronization). Run with -race to surface the data race; without -race
+// the test validates that all goroutines observe a consistent tier value.
+//
+// Reviewer gap: codex.go lacks sync.Once or sync/atomic on cachedTier.
+func TestProvider_Tier_Concurrent(t *testing.T) {
+	// Use API-key path so we don't need a real filesystem auth file.
+	t.Setenv("CODEX_API_KEY", "sk-concurrent-test")
+	t.Setenv("HOME", t.TempDir()) // no ~/.codex/auth.json
+
+	p := codex.NewWithBinary("/bin/echo")
+	want := provider.TierAPI
+
+	const goroutines = 20
+	results := make([]string, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	// Barrier so all goroutines call Tier() as simultaneously as possible.
+	var barrier sync.WaitGroup
+	barrier.Add(1)
+
+	for i := 0; i < goroutines; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			barrier.Wait()
+			results[i] = p.Tier()
+		}()
+	}
+	barrier.Done() // release all goroutines at once
+	wg.Wait()
+
+	for i, got := range results {
+		if got != want {
+			t.Errorf("goroutine %d: Tier() = %q, want %q", i, got, want)
+		}
 	}
 }
 

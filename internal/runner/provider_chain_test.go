@@ -213,3 +213,20 @@ func TestChain_Name(t *testing.T) {
 		t.Errorf("Name: want chain(codex,claude), got %s", got)
 	}
 }
+
+// TestChain_RunAgent_EmptyProviders documents the (nil, nil) return when no
+// providers are registered. The for-loop body never executes, so both
+// lastResult and lastErr remain their zero values. Callers must nil-check
+// the result before dereferencing. Reviewer gap: internal/runner/provider_chain.go
+// lacks an early guard for this case, making it a silent hazard.
+func TestChain_RunAgent_EmptyProviders(t *testing.T) {
+	c := runner.NewChain() // zero providers
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if err != nil {
+		t.Errorf("RunAgent on empty chain: want nil error, got %v", err)
+	}
+	if res != nil {
+		t.Errorf("RunAgent on empty chain: want nil result, got %+v", res)
+	}
+}

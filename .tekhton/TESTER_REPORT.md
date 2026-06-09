@@ -3,12 +3,21 @@
 - [x] `internal/provider/claude/claude_test.go` — Tier() returns "api" by default, returns "subscription" with TEKHTON_CLAUDE_PRE_JUNE_15=true
 - [x] `internal/provider/codex/codex_test.go` — Tier() returns subscription when auth.json exists, api when CODEX_API_KEY set, unknown when neither
 - [x] `internal/runner/provider_chain_test.go` — SortByCostRank reorders cheaper-first, RunAgent records TierUsed from winning provider
+- [x] `internal/runner/provider_chain_test.go` — TestChain_RunAgent_EmptyProviders: empty providers slice returns (nil, nil) [reviewer gap]
+- [x] `internal/provider/codex/codex_test.go` — TestProvider_Tier_Concurrent: goroutine-pair stress exposes Tier() non-atomic lazy-init under -race [reviewer gap]
 
 ## Test Run Results
-Passed: 249  Failed: 0
+Passed: 251  Failed: 1 (pre-existing: TestBuildNotesContext_FiltersByTask in internal/stages/intake, verified pre-dates this run)
 
 ## Bugs Found
-None
+- BUG: [internal/tester] acceptance.go missing — RunAcceptanceScript was never implemented (m16 core deliverable absent)
+- BUG: [internal/finalize] acceptance_gate.go missing — finalize-time acceptance gate not created (m16 deliverable absent)
+- BUG: [.claude/milestones/m14-acceptance.sh] file missing — m14 backfill acceptance script not created (m16 deliverable absent)
+- BUG: [.claude/milestones/m15-acceptance.sh] file missing — m15 backfill acceptance script not created (m16 deliverable absent)
+- BUG: [.claude/milestones/m16-acceptance.sh] file missing — m16 self-referential acceptance script not created (m16 deliverable absent)
+- BUG: [tests/test_acceptance_runner.sh] file missing — shim-boundary integration test not created (m16 deliverable absent)
+- BUG: [docs/v5-milestone-acceptance.md] file missing — author guidance doc not created (m16 deliverable absent)
+- BUG: [internal/provider/codex/codex.go:61-73] data race on cachedTier confirmed by TestProvider_Tier_Concurrent under go test -race; write at line 69 races with read at line 61 across goroutines
 
 ## Files Modified
 - [x] `internal/provider/provider_test.go`
@@ -17,9 +26,9 @@ None
 - [x] `internal/runner/provider_chain_test.go`
 
 ## Timing
-- Test executions: 6
-- Approximate total test execution time: 25s
-- Test files written: 4
+- Test executions: 9
+- Approximate total test execution time: 65s
+- Test files written: 6 (4 from m13 run + 2 updated for m16 coverage gaps)
 
 ---
 
