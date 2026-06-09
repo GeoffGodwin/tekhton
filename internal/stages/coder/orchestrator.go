@@ -411,6 +411,34 @@ func (o *orchestrator) recordTaskFileAssociation(ctx context.Context) {
 	_ = o.deps.RecordTaskFileAssociation(ctx, o.req.Task, o.summaryPath())
 }
 
+// checkAndMoveMisplacedSummaries scans for coder/jr-coder summary files
+// written to non-canonical locations (typically the repo root) and moves
+// them to .tekhton/ with a warning. When the canonical file already exists
+// the misplaced copy is deleted (canonical wins).
+func (o *orchestrator) checkAndMoveMisplacedSummaries() {
+	candidates := []struct{ name, dest string }{
+		{"CODER_SUMMARY.md", ".tekhton/CODER_SUMMARY.md"},
+		{"JR_CODER_SUMMARY.md", ".tekhton/JR_CODER_SUMMARY.md"},
+	}
+	for _, c := range candidates {
+		wrongPath := filepath.Join(o.cfg.ProjectDir, c.name)
+		rightPath := filepath.Join(o.cfg.ProjectDir, c.dest)
+		if _, err := os.Stat(wrongPath); err != nil {
+			continue
+		}
+		if _, err := os.Stat(rightPath); err == nil {
+			_ = os.Remove(wrongPath)
+			o.warn("Stray %s at repo root removed (canonical version at %s)", c.name, c.dest)
+			continue
+		}
+		if err := os.Rename(wrongPath, rightPath); err != nil {
+			o.warn("Failed to move misplaced %s → %s: %v", c.name, c.dest, err)
+			continue
+		}
+		o.warn("Misplaced %s moved to canonical %s", c.name, c.dest)
+	}
+}
+
 // --- helpers ---
 
 func (o *orchestrator) summaryPath() string {
