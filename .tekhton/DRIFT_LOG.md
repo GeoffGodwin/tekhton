@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 234
+- Runs since audit: 235
 =======
-- Runs since audit: 234
+- Runs since audit: 235
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 234
+- Runs since audit: 235
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-09 | "Implement Milestone m09: Codex Tool Schema Translator"] ratelimit.go uses `*RateLimitSnapshot` throughout, but the type is defined in events.go rather than ratelimit.go. The cross-file dependency is within the same package and harmless, but `RateLimitSnapshot` is more of a rate-limit concept than a streaming event; consider relocating the type definition into ratelimit.go in a future cleanup.
+- [ ] [2026-06-09 | "Implement Milestone m09: Codex Tool Schema Translator"] auth.go â `storedAuthPath()` and `fileExists()` are unexported helpers that could serve other auth strategies in the same package, but are currently only reachable from `resolveAuth`. No action needed.
 - [ ] [2026-06-09 | "Implement Milestone m11: Codex Auth + Rate-Limit Detection + Retry"] streaming.go / event_mapper.go â helper functions `parseTurnID`, `formatInt`, and `extractAgentText` are defined in streaming.go but are logically event-mapping utilities consumed by event_mapper.go. Their placement is not wrong (same package), but if the streaming file ever splits, these helpers will need to move. No action required now.
 - [ ] [2026-06-09 | "Implement Milestone m11: Codex Auth + Rate-Limit Detection + Retry"] internal/provider/codex package overall coverage is 64.9% (statements). The m10 additions themselves are well-covered (streaming.go 87.3%, event_mapper.go 92.0%), but m08-origin files events.go (41.9% / 0% on two functions), items.go (0%), and outcome.go (0% on mapErrorToOutcome) pull the total below the 80% threshold. These gaps pre-date m10 and should be addressed in a dedicated coverage milestone rather than treated as m10 blockers.
 - [ ] [2026-06-09 | "Implement Milestone m10: Codex Streaming Events (provider.Event emission parity with Claude)"] codex.go package comment explicitly states "tool translation (m09) ... not implemented here." This means the m09 milestone (Codex Tool Schema Translator) was accepted complete without its primary deliverables: `tools.go`, `tool_map.go`, and `tools_test.go` were never created. Similarly, `events.go` (m08 JSON event decoder) is absent. The codex package has no event decoding, no deriveOutcome, no tool restriction surface. m10 (Streaming Events) depends on m08's event type definitions â building m10 on this foundation will compound the missing implementation. Recommend a pipeline audit of m08/m09 acceptance criteria before advancing to m10.
