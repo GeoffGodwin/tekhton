@@ -55,6 +55,7 @@ _pipeline_bookkeeping_globs() {
 .claude/milestones/m
 VERSION
 CHANGELOG.md
+.gitignore
 internal/
 cmd/
 tests/

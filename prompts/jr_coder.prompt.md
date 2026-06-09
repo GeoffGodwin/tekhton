@@ -12,4 +12,7 @@ prefer over grep for symbol lookup.
 {{ENDIF:SERENA_ACTIVE}}
 Read `{{REVIEWER_REPORT_FILE}}` — fix **only items under 'Simple Blockers (send to jr coder)'**.
 Read only the specific files those blockers reference. Nothing else.
-Write `{{JR_CODER_SUMMARY_FILE}}`.
+Write `.tekhton/JR_CODER_SUMMARY.md` — the canonical location (the
+`{{JR_CODER_SUMMARY_FILE}}` template variable resolves to the same
+path when set; the explicit path here is a defensive fallback for
+invocations where env propagation hiccupped).

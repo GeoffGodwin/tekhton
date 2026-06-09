@@ -154,7 +154,7 @@ description. The pipeline routes these to the appropriate cleanup mechanism. Fix
 out-of-scope issues wastes review cycles and creates unnecessary non-blocking findings.
 
 ## Execution Order (mandatory — do not skip step 1)
-**Step 1:** Write `{{CODER_SUMMARY_FILE}}` immediately with this skeleton before touching any code:
+**Step 1:** Write `.tekhton/CODER_SUMMARY.md` — the canonical location (the `{{CODER_SUMMARY_FILE}}` template variable resolves to the same path when set) — immediately with this skeleton before touching any code:
 ```
 # Coder Summary
 ## Status: IN PROGRESS
