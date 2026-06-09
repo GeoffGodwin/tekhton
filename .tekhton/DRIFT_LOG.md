@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 233
+- Runs since audit: 234
 =======
-- Runs since audit: 233
+- Runs since audit: 234
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 233
+- Runs since audit: 234
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-09 | "Implement Milestone m11: Codex Auth + Rate-Limit Detection + Retry"] streaming.go / event_mapper.go â helper functions `parseTurnID`, `formatInt`, and `extractAgentText` are defined in streaming.go but are logically event-mapping utilities consumed by event_mapper.go. Their placement is not wrong (same package), but if the streaming file ever splits, these helpers will need to move. No action required now.
+- [ ] [2026-06-09 | "Implement Milestone m11: Codex Auth + Rate-Limit Detection + Retry"] internal/provider/codex package overall coverage is 64.9% (statements). The m10 additions themselves are well-covered (streaming.go 87.3%, event_mapper.go 92.0%), but m08-origin files events.go (41.9% / 0% on two functions), items.go (0%), and outcome.go (0% on mapErrorToOutcome) pull the total below the 80% threshold. These gaps pre-date m10 and should be addressed in a dedicated coverage milestone rather than treated as m10 blockers.
 - [ ] [2026-06-09 | "Implement Milestone m10: Codex Streaming Events (provider.Event emission parity with Claude)"] codex.go package comment explicitly states "tool translation (m09) ... not implemented here." This means the m09 milestone (Codex Tool Schema Translator) was accepted complete without its primary deliverables: `tools.go`, `tool_map.go`, and `tools_test.go` were never created. Similarly, `events.go` (m08 JSON event decoder) is absent. The codex package has no event decoding, no deriveOutcome, no tool restriction surface. m10 (Streaming Events) depends on m08's event type definitions â building m10 on this foundation will compound the missing implementation. Recommend a pipeline audit of m08/m09 acceptance criteria before advancing to m10.
 - [ ] [2026-06-09 | "Implement Milestone m10: Codex Streaming Events (provider.Event emission parity with Claude)"] flags.go:54 â inline config `-c` entries are emitted in map iteration order (non-deterministic in Go). Carry-forward from the previous cycle's non-blocking notes. Safe for current use but risks test flakiness in any future test that asserts on full argv ordering.
 - [ ] [2026-06-09 | "Implement Milestone m08: Codex JSON Event Decoder + Item Taxonomy + Outcome Mapping"] exec_test.go:14-19 â `requireBin` is only used in exec_test.go today. If the pattern gets copied to other test files with the same duplicate-LookPath bug, it will silently never skip on platforms where absolute-path detection matters. Fix the helper now before it spreads.
