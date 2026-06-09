@@ -200,12 +200,14 @@ func (c *Chain) Name() string {
 // failures should hedge; backend-independent failures should fail
 // fast.
 var fallthroughSubcategories = map[string]bool{
-    "QUOTA":           true,
-    "OVERLOADED":      true,
-    "NETWORK":         true,
-    "STREAM":          true,
-    "SERVER_5XX":      true,
-    "RETRY_EXHAUSTED": true,
+    "QUOTA":      true,
+    "OVERLOADED": true,
+    "NETWORK":    true,
+    "STREAM":     true,
+    "SERVER_5XX": true,
+    // RETRY_EXHAUSTED intentionally omitted: if Provider A exhausted
+    // retries, Provider B will likely exhaust them too. Fall through
+    // only for fast-failure categories.
 }
 
 func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {

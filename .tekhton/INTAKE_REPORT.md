@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-96
+95
 
 ## Reasoning
-- Scope is precisely bounded: three named goals (A/B/C), exact files listed, no scope creep
-- Acceptance criteria are specific and machine-verifiable (grep commands, named test cases with explicit assertions)
-- Design section provides ready-to-use before/after diffs for bash and a full Go function body — minimal interpretation required
-- Watch For section pre-empts the two most likely over-reaches (widening allowlist beyond observed files, relaxing the prompt because the hook exists)
-- No new user-facing config keys introduced; no migration impact section needed
-- No UI components; UI testability criterion not applicable
-- The one flexibility point (`orchestrator.go` vs sibling `path_check.go`) is explicitly called out and acceptable — both options are correct
+- Scope is precisely bounded: 4 production files + 3 test files, with explicit LOC estimates and exact function signatures
+- Out-of-scope items are explicitly enumerated (JSON parsing, tool translation, streaming, auth/retry) — no ambiguity about where m07 ends
+- Acceptance criteria are fully testable: each criterion names the specific test function (`TestNew_BinaryMissing`, `TestBuildExecArgs/defaults_present`, etc.) and the verification command
+- Full code scaffolding is provided for all four production files — two developers will arrive at essentially the same implementation
+- Provider contract assumptions (`provider.Request`, `provider.Result`, `provider.Outcome` constants) are established in prior milestones (m01–m06) and referenced correctly
+- Watch For section covers the key implementation pitfalls (exit-code-vs-error distinction, `-` stdin marker, WaitDelay contract, no auth in m07)
+- No user-facing config, file format, or schema changes — no migration impact section needed
+- No UI components — UI testability criterion not applicable

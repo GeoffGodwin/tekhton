@@ -1,21 +1,25 @@
 ## Planned Tests
-- [x] `internal/provider/claude/claude_test.go` — Coverage gap: add Timestamp.IsZero() assertions for TurnStart and RunEnd events in TestProvider_StreamingEvents
-- [x] `tests/test_finalize_allows_gitignore.sh` — m06 Goal A regression: assert _is_path_allowed returns 0 for .gitignore AND that a full _do_git_commit with only .gitignore staged succeeds
-- [x] `internal/stages/coder/coder_summary_path_test.go` — m06 Goal B/C: three cases for checkAndMoveMisplacedSummaries (misplaced+no-canonical→move, misplaced+canonical-present→delete-misplaced-preserve-canonical, clean→no-op)
+- [x] `internal/provider/codex/exit_codes_test.go` — table-driven coverage of interpretExitCode for all 5 exit code mappings
+- [x] `internal/provider/codex/flags_test.go` — table tests: defaults present, model override, stdin marker, inline config, empty prompt error, cwd fallback
+- [x] `internal/provider/codex/codex_test.go` — factory (New binary missing), NewWithBinary, Name(), RunAgent nil-request guard, RunAgent exit-code→Result round-trip, interface satisfaction
+- [x] `internal/provider/codex/exec_test.go` — runCodex: stdout captured, exit non-zero not an error, context cancel terminates subprocess, timeout propagated
+- [x] `tests/test_v5_codex_dogfood.sh` — grep assertion: docs/v5-codex-dogfood-evidence.md exists and contains required fields (RUN_SUMMARY, total cost, commit subject)
 
 ## Test Run Results
-Passed: 17 (provider packages)  Failed: 4 (allowlist test) + build failure (path-check test)
+Passed: 0  Failed: 5 (all build failures — codex package not created)
 
 ## Bugs Found
-- BUG: [lib/finalize_commit_staging.sh:50-66] `.gitignore` is absent from `_pipeline_bookkeeping_globs`; `_is_path_allowed .gitignore` returns 1 (rejected) and `_do_git_commit` silently skips .gitignore with a warning instead of staging it — m06 Goal A unimplemented
-- BUG: [internal/stages/coder/orchestrator.go] `checkAndMoveMisplacedSummaries` method does not exist on `*orchestrator`; `coder_summary_path_test.go` fails to compile with "undefined" errors — m06 Goal B hook unimplemented
+- BUG: [internal/provider/codex/] m07 implementation package missing — internal/provider/codex/*.go not created; all 4 test files fail to compile with "undefined" errors for Provider, New, NewWithBinary, buildExecArgs, runCodex, interpretExitCode
+- BUG: [docs/v5-codex-dogfood-evidence.md] m12 dogfood evidence document not created — tests/test_v5_codex_dogfood.sh exits 1 (file not found); m12 acceptance criterion unmet
 
 ## Files Modified
-- [x] `internal/provider/claude/claude_test.go`
-- [x] `tests/test_finalize_allows_gitignore.sh`
-- [x] `internal/stages/coder/coder_summary_path_test.go`
+- [x] `internal/provider/codex/exit_codes_test.go`
+- [x] `internal/provider/codex/flags_test.go`
+- [x] `internal/provider/codex/codex_test.go`
+- [x] `internal/provider/codex/exec_test.go`
+- [x] `tests/test_v5_codex_dogfood.sh`
 
 ## Timing
-- Test executions: 6
-- Approximate total test execution time: 25s
-- Test files written: 3
+- Test executions: 4
+- Approximate total test execution time: 8s
+- Test files written: 5
