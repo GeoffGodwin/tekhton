@@ -4,15 +4,18 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 227
+- Runs since audit: 228
 =======
-- Runs since audit: 227
+- Runs since audit: 228
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 227
+- Runs since audit: 228
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-09 | "Implement Milestone m07: Codex Provider Scaffold (invocation, flag builder, exit codes)"] [m12 â provider_chain.go] Watch For mandates fallthrough warning logs and a `Result.FallthroughCount` field; neither appears in the acceptance criteria list. Carry-forward from cycle 1.
+- [ ] [2026-06-09 | "Implement Milestone m07: Codex Provider Scaffold (invocation, flag builder, exit codes)"] [m11 + m13] Dual `fileExists(storedAuthPath())` stat: once in `auth.go` and once in `codex.go` `Tier()` heuristic. Benign now; divergence risk on path changes. Carry-forward from cycle 1.
+- [ ] [2026-06-09 | "Implement Milestone m07: Codex Provider Scaffold (invocation, flag builder, exit codes)"] [m14 â costrates.json] No test for unknown/misspelled JSON keys being silently dropped by the Go loader. A zeroed rate from a typo would go undetected. Carry-forward from cycle 1.
 - [ ] [2026-06-08 | "Implement Milestone m06: Staging allowlist hardening + coder summary path discipline"] .tekhton/CODER_SUMMARY.md â Contains V5 m01 content (internal/provider/ package) rather than the current m06 deliverable (milestone design document). The m06 coder correctly produced no source-code changes, but the summary file was not updated to describe the design-document output. As m06's Goal B prompt-discipline fix lands, verify that a design-only milestone populates CODER_SUMMARY.md with a "design-only: files created/modified" summary rather than leaving stale content from a prior run.
 - [ ] [2026-06-08 | "Implement Milestone m06: Staging allowlist hardening + coder summary path discipline"] docs/v5-provider-seam.md:170 â m01 non-goals section says "`provider.ToolSchema` is an empty struct placeholder"; the implemented code defines ToolSchema fully (ParameterSchema, ParameterProperty, BehaviorHints, ValidateToolSchema). The doc is now inaccurate. Update the non-goals note to "m01 ships a full ToolSchema definition; m03 wires the Claude translator to populate Request.Tools."
 - [ ] [2026-06-08 | "Implement Milestone m06: Staging allowlist hardening + coder summary path discipline"] -- **Cycle 1 blocker verification:** Blocker 1 â `EventChan` not closed on `writePromptFile` error path: **FIXED.** `defer close(req.EventChan)` is at claude.go:69, immediately after the nil-request/nil-supervisor guards, covering every return path including the prompt-file write failure. `TestProvider_EventChan_ClosedOnWritePromptFileError` pins this regression. Blocker 2 â `(non-nil result, context.Canceled)` path not tested: **FIXED.** `TestClaudeProvider_ContextCancelledWithPartialResult` in parity_test.go exercises this branch and asserts `errors.Is(err, context.Canceled)` and `got != nil`. Blocker 3 â No `ValidateToolSchema` coverage: **FIXED.** Verified via TestCoderTools_ValidateToolSchema in the tools canonical test.
