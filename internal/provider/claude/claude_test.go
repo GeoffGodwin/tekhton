@@ -102,6 +102,15 @@ func TestProvider_StreamingEvents(t *testing.T) {
 	if events[1].Turn != 3 {
 		t.Errorf("TurnEnd.Turn: want 3 (from stub), got %d", events[1].Turn)
 	}
+	// Reviewer coverage gap: Timestamp must be set on TurnStart and RunEnd.
+	// A struct-literal change that drops time.Now() would produce a zero Timestamp,
+	// causing callers that compute elapsed duration to report nonsense values.
+	if events[0].Timestamp.IsZero() {
+		t.Errorf("TurnStart.Timestamp is zero — provider must set time.Now() on emission")
+	}
+	if events[2].Timestamp.IsZero() {
+		t.Errorf("RunEnd.Timestamp is zero — provider must set time.Now() on emission")
+	}
 }
 
 // TestTranslateOutcome_NullRun asserts exit!=0 with turns<=threshold maps
