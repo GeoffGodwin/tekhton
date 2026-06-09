@@ -9,7 +9,7 @@ status: "todo"
 
 | Item | Detail |
 |------|--------|
-| **Arc motivation** | V5 Phase 1, Milestone 12 — closes the Codex provider arc and the V5 Phase 1 polyglot MVP. m07-m11 ship a fully-functional Codex provider with parity to Claude on all the seam-defined surfaces (interface, events, tools, auth, retry). m12 makes it *usable* in production: per-stage provider selection via `pipeline.conf`, a fallback chain when the primary provider returns `UpstreamError`, and end-to-end dogfooding by running a real milestone through Codex as the primary provider. After m12, an operator can set `PROVIDER=codex` in pipeline.conf, run `tekhton --milestone X`, and have the full pipeline (intake → coder → review → tester) execute on Codex. The fallback chain (`PROVIDER=codex,claude`) lets a Codex `UpstreamError` route automatically to Claude — the same hedging V4 m08 implemented for Claude quota pauses, generalized across providers. m12 also captures the operator-facing documentation so the polyglot story is teachable. |
+| **Arc motivation** | V5 Phase 1, Milestone 12 — wires Codex into the pipeline via per-stage provider selection + cost-ranked fallback chain + end-to-end dogfood. m07-m11 ship a fully-functional Codex provider with parity to Claude on all the seam-defined surfaces. m12 makes it *usable* in production. **Cost framing (post-June-15 reality)**: Anthropic's June 15 2026 change forces `claude --print` to API-metered pricing regardless of Max subscription tier — a ~15x cost increase per call. Codex with ChatGPT subscription is the ONLY subscription/free-quota route Tekhton has in V5 Phase 1 (local models land in Phase 2). The chain default is therefore **explicitly cost-ranked**: Codex (subscription tier) FIRST, Claude (api tier) as the paid fallback the operator opts into. Per-stage provider selection via `pipeline.conf` (PROVIDER=, PROVIDER_<STAGE>=) plus the chain's UpstreamError fallthrough means a Codex quota exhaustion routes to Claude with operator awareness. After m12, an operator can `PROVIDER=codex` and have the full pipeline run on subscription-tier Codex with no surprise paid Claude calls. The fallback to Claude requires explicit opt-in via chain config OR exhaustion of the Codex tier — never silent. m12 also captures the operator-facing documentation. Note: full cross-provider Tier() visibility lands in m13; m12 implements the cost-ranked default chain using m11's internal tier reporting via OutcomeResult metadata. |
 | **Gap** | At m11 close, the Codex provider is feature-complete but nothing instantiates it. The runner constructs `claude.New()` unconditionally as its single Provider (m02). `pipeline.conf` has no `PROVIDER=` key. Stages don't know how to consume a Provider other than the default. There's no fallback chain — a Provider returning `OutcomeUpstreamError` propagates the failure to the pipeline-level retry without consulting alternatives. And critically: no operator-facing dogfood evidence proves Codex works end-to-end. m12 wires every piece: pipeline.conf gains a `PROVIDER=` per-stage key (`PROVIDER_intake=`, `PROVIDER_coder=`, etc.) AND a global `PROVIDER=` default. The runner consults config, constructs the right provider per stage, falls back through a comma-separated chain on UpstreamError. A new shim-boundary test executes a fixture milestone on Codex and asserts the full envelope round-trip. Documentation in `docs/v5-polyglot.md` explains the operator workflow. |
 | **m12 fills** | (1) `lib/init_config_sections.sh` + `pipeline.conf.example` — adds `PROVIDER=claude` global default plus optional `PROVIDER_<STAGE>=` overrides. (2) `internal/runner/provider_select.go` — `ResolveProvider(stage string) provider.Provider` consulting env (loaded from pipeline.conf), constructing the right provider via factory functions. (3) `internal/runner/provider_chain.go` — `Chain` wrapping multiple providers; `(*Chain).RunAgent` calls them in order, falling through to the next on `OutcomeUpstreamError` per attempt. Honors the `RetryableSubcategories` set from m11. (4) `internal/runner/runner.go` modification — stage dispatch path consults `ResolveProvider(stage)` and injects per-stage. The single `r.Provider` field becomes per-stage configurable. (5) `cmd/tekhton/run.go` modification — new `--provider <name>` flag override (single-shot, overrides pipeline.conf) and `--provider-chain <list>` for explicit chain specification. (6) `docs/v5-polyglot.md` — operator-facing guide: pipeline.conf shape, environment setup (CODEX_API_KEY, OAuth login, Claude key), troubleshooting. (7) Tests: per-stage selection test, chain fallback test, AND a shim-boundary integration test (`tests/test_v5_codex_dogfood.sh`) that drives a fixture milestone through Codex. (8) Dogfood evidence: run a real milestone on Codex; commit the run log under `docs/v5-codex-dogfood-evidence.md`. |
 | **Depends on** | m07-m11 (the full Codex provider) |
@@ -38,16 +38,33 @@ Add a new section:
 #   claude — Anthropic Claude CLI (legacy default)
 #   codex  — OpenAI Codex CLI (V5 polyglot path)
 #
-# PROVIDER sets the default provider for every stage. Individual stages
-# can override via PROVIDER_<STAGE>= (snake_case stage name).
+# PROVIDER sets the default provider chain for every stage. Individual
+# stages can override via PROVIDER_<STAGE>= (snake_case stage name).
+#
+# Cost framing (post-Anthropic June 15 2026 change):
+#   - codex with ChatGPT subscription = FREE within quota (preferred)
+#   - codex with API key             = paid per-token
+#   - claude (any auth)              = paid per-token (API-metered)
+#
+# The default chain "codex,claude" exhausts the free Codex subscription
+# tier FIRST, then falls back to paid Claude only when Codex returns
+# UpstreamError (quota exhausted, network, server overload, etc.).
+# Fallthrough does NOT happen for non-retryable errors (auth, context
+# overflow, policy) — those return the original failure.
 #
 # Examples:
-#   PROVIDER=claude                           # Default — Claude for everything
-#   PROVIDER=codex                            # All stages on Codex
-#   PROVIDER=codex,claude                     # Codex primary, Claude fallback
-#   PROVIDER_coder=codex                      # Codex for the coder stage only
-#   PROVIDER_reviewer=claude,codex            # Reviewer hedges Claude → Codex
-PROVIDER=claude
+#   PROVIDER=codex,claude        # DEFAULT — cost-ranked (subscription → paid fallback)
+#   PROVIDER=codex               # Codex only — fail rather than fall to paid
+#   PROVIDER=claude              # All stages on paid Claude (operator opt-in)
+#   PROVIDER_coder=codex,claude  # Per-stage chain
+#
+# Override with --provider <chain> or --provider-chain <list> at CLI
+# for one-off runs.
+#
+# Use --require-tier subscription to FAIL rather than fall through to
+# paid tiers when subscription quota exhausts. Operator opt-in for
+# strict cost control.
+PROVIDER=codex,claude
 
 # Per-stage overrides (uncomment to enable):
 # PROVIDER_intake=

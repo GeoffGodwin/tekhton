@@ -9,7 +9,7 @@ status: "todo"
 
 | Item | Detail |
 |------|--------|
-| **Arc motivation** | V5 Phase 1, Milestone 11 — fifth of the Codex provider arc. m07-m10 ship invocation + decode + tool translation + streaming. m11 adds the resilience layer: authentication wiring (CODEX_API_KEY env vs `~/.codex/auth.json` OAuth), rate-limit interpretation (extracting Codex's `RateLimitSnapshot` from token_count events), and retry logic with exponential backoff for `UpstreamError`-classified outcomes. The audit established three critical facts: (1) Codex's primary env var is `CODEX_API_KEY` not `OPENAI_API_KEY`, (2) the CLI stores OAuth tokens in `~/.codex/auth.json` and Codex prefers stored auth when present, (3) Codex doesn't surface HTTP 429 well (GitHub issue #4840) — rate-limit signaling comes via the `RateLimitSnapshot` payload of `token_count` events and the `UsageLimitExceeded` CodexErrorKind. m11 implements every piece + matches the retry semantics of the Claude provider's quota-pause machinery (m08 in V4) so the cross-provider fallback chain (m12) routes failures consistently. |
+| **Arc motivation** | V5 Phase 1, Milestone 11 — fifth of the Codex provider arc. m07-m10 ship invocation + decode + tool translation + streaming. m11 adds the resilience layer AND establishes the cost-tier story that drives V5: authentication wiring (CODEX_API_KEY env vs `~/.codex/auth.json` OAuth), rate-limit interpretation, and retry logic. **Cost framing**: Codex CLI has TWO billing modes — sign-in with ChatGPT (uses your Plus/Pro/Team subscription quota = FREE within window) vs API key (paid per-token = expensive). With Anthropic's June 15 2026 change forcing `claude --print` to API-metered pricing regardless of Max subscription tier, Codex's ChatGPT-subscription path becomes the ONLY subscription/free-quota route Tekhton can use until local models land in V5 Phase 2. m11's auth resolution is therefore a cost decision, not just a wiring detail: stored OAuth at `~/.codex/auth.json` is the preferred path because it's free within quota; API key is the explicit paid fallback the operator opts into. Three critical audit facts: (1) Codex's primary env var is `CODEX_API_KEY` not `OPENAI_API_KEY`, (2) the CLI stores OAuth tokens in `~/.codex/auth.json` and Codex prefers stored auth when present, (3) Codex doesn't surface HTTP 429 well (GitHub issue #4840) — rate-limit signaling comes via the `RateLimitSnapshot` payload of `token_count` events and the `UsageLimitExceeded` CodexErrorKind. m11 implements every piece + matches the retry semantics of the Claude provider's quota-pause machinery (m08 in V4). The cross-provider tier visibility lands in m13; m12 wires the cost-ranked chain. |
 | **Gap** | At m10 close, the Codex provider has zero auth awareness: it assumes the operator's environment is correctly configured before runtime. When auth fails, the run gets `OutcomeUpstreamError / ErrorSubcategory=AUTH` (from m08) and gives up. Rate-limit handling is similarly absent: m08 captures `RateLimitSnapshot` in `OutcomeResult.RateLimits` but no code consumes it. There's no retry policy — every `UpstreamError` is a single-shot failure. The V4 supervisor (Claude provider's backing) has the quota-pause + Retry-After + exponential-backoff machinery from m08 of V4; the Codex provider needs equivalent behavior. The semantics need to be cross-provider consistent: a Tekhton stage that fails with `UpstreamError` on one provider should fall back to the other (m12) with the same retry policy. |
 | **m11 fills** | (1) `internal/provider/codex/auth.go` — auth resolution: precedence is `req.ProviderSpecific["codex.api_key"]` > `CODEX_API_KEY` env > stored OAuth at `~/.codex/auth.json`. When using an explicit API key, exports `CODEX_API_KEY` to the subprocess env via `cmd.Env`. (2) `internal/provider/codex/ratelimit.go` — typed `RateLimitSnapshot` decoder (m08 left it as `json.RawMessage`) with `Window`, `Used`, `Limit`, `ResetAt`, `Remaining()` fields. Helper `(*RateLimitSnapshot).ShouldRetryAfter() (time.Duration, bool)` returns the suggested wait time when remaining is low. (3) `internal/provider/codex/retry.go` — `RetryPolicy` struct with `MaxAttempts`, `BaseDelay`, `MaxDelay`, `RetryableSubcategories`. `(*Provider).RunAgentWithRetry(ctx, req)` wraps `RunAgent` with the policy: classifies the result's `ErrorSubcategory` against the retryable list, sleeps per backoff schedule, re-invokes. Sleep durations adapt to `RateLimitSnapshot.ShouldRetryAfter()` when available. (4) `RetryableSubcategories` defaults match Tekhton's recovery taxonomy: `QUOTA` (with RateLimitSnapshot-driven backoff), `OVERLOADED`, `NETWORK`, `STREAM`, `RETRY_EXHAUSTED`. NOT retryable: `AUTH`, `BAD_REQUEST`, `CONTEXT_OVERFLOW`, `POLICY`, `SANDBOX`. (5) Tests covering each branch + a recorded retry sequence with stub binary emitting transient errors then success. |
 | **Depends on** | m07, m08, m10 (m09 independent — tool translation orthogonal to retry) |
@@ -45,26 +45,37 @@ import (
 )
 
 // resolveAuth determines which auth method to use for a Codex
-// invocation. Precedence (highest to lowest):
+// invocation AND returns the cost tier the resolved auth represents.
+// Precedence (highest to lowest):
 //
-//   1. req.ProviderSpecific["codex.api_key"]  — explicit per-request override
-//   2. CODEX_API_KEY env var                  — process-level config
-//   3. stored OAuth at ~/.codex/auth.json     — Codex's default sign-in path
+//   1. req.ProviderSpecific["codex.api_key"]  — explicit per-request override → tier "api" (paid)
+//   2. stored OAuth at ~/.codex/auth.json     — ChatGPT subscription          → tier "subscription" (free within quota)
+//   3. CODEX_API_KEY env var                  — process-level API key         → tier "api" (paid)
 //
-// Returns an env slice to pass via cmd.Env (alongside os.Environ()).
-// When the stored OAuth path is used, returns nil — the Codex CLI
-// auto-discovers ~/.codex/auth.json without explicit env.
-func resolveAuth(req *provider.Request) ([]string, error) {
+// IMPORTANT: subscription OAuth precedes the env-var API key. The
+// previous m11 draft had API key first; we corrected this so the
+// default path stays in the free tier whenever ChatGPT OAuth is
+// present. Operators who want to force API-key usage do so explicitly
+// via ProviderSpecific["codex.api_key"] OR by removing ~/.codex/auth.json.
+//
+// Returns:
+//   - envOverrides: env slice to pass via cmd.Env (nil when using OAuth)
+//   - tier: "subscription" | "api" — surfaced via m13's Provider.Tier()
+//   - err: when no auth source is available
+func resolveAuth(req *provider.Request) (envOverrides []string, tier string, err error) {
+    // Per-request explicit override (paid tier — operator's choice).
     if key := req.ProviderSpecific["codex.api_key"]; key != "" {
-        return []string{"CODEX_API_KEY=" + key}, nil
+        return []string{"CODEX_API_KEY=" + key}, "api", nil
     }
-    if envKey := os.Getenv("CODEX_API_KEY"); envKey != "" {
-        return nil, nil  // Already in process env, no override needed.
-    }
+    // Stored OAuth — ChatGPT subscription. Free within quota. PREFERRED.
     if authPath := storedAuthPath(); fileExists(authPath) {
-        return nil, nil  // CLI auto-discovers.
+        return nil, "subscription", nil
     }
-    return nil, errors.New("codex auth: no api key in env, no CODEX_API_KEY ProviderSpecific override, no stored OAuth at ~/.codex/auth.json — run `codex login` or set CODEX_API_KEY")
+    // Env-var API key — fallback paid tier.
+    if envKey := os.Getenv("CODEX_API_KEY"); envKey != "" {
+        return nil, "api", nil  // Already in process env, no override needed.
+    }
+    return nil, "", errors.New("codex auth: no stored OAuth at ~/.codex/auth.json and no CODEX_API_KEY — run `codex login` for subscription (free within quota) or set CODEX_API_KEY for API-tier (paid)")
 }
 
 func storedAuthPath() string {
