@@ -4,15 +4,18 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 226
+- Runs since audit: 227
 =======
-- Runs since audit: 226
+- Runs since audit: 227
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 226
+- Runs since audit: 227
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-08 | "Implement Milestone m06: Staging allowlist hardening + coder summary path discipline"] .tekhton/CODER_SUMMARY.md â Contains V5 m01 content (internal/provider/ package) rather than the current m06 deliverable (milestone design document). The m06 coder correctly produced no source-code changes, but the summary file was not updated to describe the design-document output. As m06's Goal B prompt-discipline fix lands, verify that a design-only milestone populates CODER_SUMMARY.md with a "design-only: files created/modified" summary rather than leaving stale content from a prior run.
+- [ ] [2026-06-08 | "Implement Milestone m06: Staging allowlist hardening + coder summary path discipline"] docs/v5-provider-seam.md:170 â m01 non-goals section says "`provider.ToolSchema` is an empty struct placeholder"; the implemented code defines ToolSchema fully (ParameterSchema, ParameterProperty, BehaviorHints, ValidateToolSchema). The doc is now inaccurate. Update the non-goals note to "m01 ships a full ToolSchema definition; m03 wires the Claude translator to populate Request.Tools."
+- [ ] [2026-06-08 | "Implement Milestone m06: Staging allowlist hardening + coder summary path discipline"] -- **Cycle 1 blocker verification:** Blocker 1 â `EventChan` not closed on `writePromptFile` error path: **FIXED.** `defer close(req.EventChan)` is at claude.go:69, immediately after the nil-request/nil-supervisor guards, covering every return path including the prompt-file write failure. `TestProvider_EventChan_ClosedOnWritePromptFileError` pins this regression. Blocker 2 â `(non-nil result, context.Canceled)` path not tested: **FIXED.** `TestClaudeProvider_ContextCancelledWithPartialResult` in parity_test.go exercises this branch and asserts `errors.Is(err, context.Canceled)` and `got != nil`. Blocker 3 â No `ValidateToolSchema` coverage: **FIXED.** Verified via TestCoderTools_ValidateToolSchema in the tools canonical test.
 - [ ] [2026-06-08 | "Implement Milestone m04: Restore [MILESTONE X ✓] commit subject prefix during auto-advance"] tests/test_no_tracked_sentinels.sh:15 â Test reads live `git ls-files` state (intentional repo-state gate, not a unit test). Add a header comment documenting this so future contributors do not attempt fixture isolation.
 - [ ] [2026-06-08 | "Implement Milestone m04: Restore [MILESTONE X ✓] commit subject prefix during auto-advance"] .gitignore â Sentinel files under `.tekhton/.*` are listed individually while `test_no_tracked_sentinels.sh` enforces a broader glob. A new sentinel created but missing from .gitignore will only be caught after it has already been accidentally committed and the test fails. Consider a single glob entry `.tekhton/.*` in .gitignore, or document the two-step process (add to .gitignore + `git rm --cached`) explicitly in `docs/sentinel-hygiene.md`.
 - [ ] [2026-06-08 | "Implement Milestone m04: Restore [MILESTONE X ✓] commit subject prefix during auto-advance"] -- **Cycle 1 blocker verification:** Blocker 1 â `EventChan` not closed on `writePromptFile` error path: **FIXED.** `defer close(req.EventChan)` is at claude.go:69, immediately after the nil-request/nil-supervisor guards, covering every return path including the prompt-file write failure. `TestProvider_EventChan_ClosedOnWritePromptFileError` pins this regression. Blocker 2 â `(non-nil result, context.Canceled)` path not tested: **FIXED.** `TestClaudeProvider_ContextCancelledWithPartialResult` in parity_test.go exercises this branch and asserts `errors.Is(err, context.Canceled)` and `got != nil`. Blocker 3 â No `ValidateToolSchema` coverage over `CoderTools`: **FIXED.** `TestCoderTools_ValidateToolSchema` in canonical_test.go iterates all six tools and calls `ValidateToolSchema` on each.
