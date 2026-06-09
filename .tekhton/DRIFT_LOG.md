@@ -4,15 +4,18 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 225
+- Runs since audit: 226
 =======
-- Runs since audit: 225
+- Runs since audit: 226
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 225
+- Runs since audit: 226
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-08 | "Implement Milestone m04: Restore [MILESTONE X ✓] commit subject prefix during auto-advance"] tests/test_no_tracked_sentinels.sh:15 â Test reads live `git ls-files` state (intentional repo-state gate, not a unit test). Add a header comment documenting this so future contributors do not attempt fixture isolation.
+- [ ] [2026-06-08 | "Implement Milestone m04: Restore [MILESTONE X ✓] commit subject prefix during auto-advance"] .gitignore â Sentinel files under `.tekhton/.*` are listed individually while `test_no_tracked_sentinels.sh` enforces a broader glob. A new sentinel created but missing from .gitignore will only be caught after it has already been accidentally committed and the test fails. Consider a single glob entry `.tekhton/.*` in .gitignore, or document the two-step process (add to .gitignore + `git rm --cached`) explicitly in `docs/sentinel-hygiene.md`.
+- [ ] [2026-06-08 | "Implement Milestone m04: Restore [MILESTONE X ✓] commit subject prefix during auto-advance"] -- **Cycle 1 blocker verification:** Blocker 1 â `EventChan` not closed on `writePromptFile` error path: **FIXED.** `defer close(req.EventChan)` is at claude.go:69, immediately after the nil-request/nil-supervisor guards, covering every return path including the prompt-file write failure. `TestProvider_EventChan_ClosedOnWritePromptFileError` pins this regression. Blocker 2 â `(non-nil result, context.Canceled)` path not tested: **FIXED.** `TestClaudeProvider_ContextCancelledWithPartialResult` in parity_test.go exercises this branch and asserts `errors.Is(err, context.Canceled)` and `got != nil`. Blocker 3 â No `ValidateToolSchema` coverage over `CoderTools`: **FIXED.** `TestCoderTools_ValidateToolSchema` in canonical_test.go iterates all six tools and calls `ValidateToolSchema` on each.
 - [ ] [2026-06-08 | "Implement Milestone m05: Sentinel hygiene: all .tekhton/.* gitignored + regression guard"] [internal/provider/provider.go] `OutcomeAborted` remains defined but unset by any code path in `internal/provider/claude/`. Still consistent with the current design; still worth tracking for when context-cancellation handling is standardised across providers.
 - [ ] [2026-06-08 | "Implement Milestone m05: Sentinel hygiene: all .tekhton/.* gitignored + regression guard"] -- **Cycle 1 blocker verification:** Prior blocker: `EventChan` not closed on `writePromptFile` error path â callers draining with `range` would block forever. **FIXED.** `defer close(req.EventChan)` is now placed at line 69, immediately after the nil-request/nil-supervisor guards, covering every return path including the `writePromptFile` error return. The earlier explicit `close` that previously appeared only at one return path is gone; the defer handles all paths. Contract satisfied.
 - [ ] [2026-06-08 | "Implement Milestone m03: Tekhton ToolSchema + Claude Translator"] [internal/stages/intake/context.go:133-139] `buildNotesContext` resolves `notesPath` via `resolveProjectRelative` and uses it only for the existence guard; the path is then discarded. The actual document load goes through `notes.ExtractFromProject(cfg.ProjectDir, â¦)` which re-resolves the path independently from `$HUMAN_NOTES_FILE`. The two resolution paths can diverge. Long-term: `buildNotesContext` should load the document directly via the already-resolved path rather than going through `ExtractFromProject`.

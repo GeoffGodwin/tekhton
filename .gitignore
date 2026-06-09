@@ -65,6 +65,7 @@ service-account*.json
 # (mark_done / cleanup_milestone / clear_state). Per-run state, never
 # tracked. See internal/finalize/clear_state.go:commitWasApproved.
 .tekhton/.commit_decision
+.tekhton/.tests_run_state
 
 # Test artifacts
 /tmp/
