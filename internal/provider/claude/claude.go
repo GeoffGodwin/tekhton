@@ -65,6 +65,9 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 	if p.Supervisor == nil {
 		return nil, errors.New("claude provider: nil supervisor")
 	}
+	if req.EventChan != nil {
+		defer close(req.EventChan)
+	}
 
 	promptPath, cleanup, err := writePromptFile(req.Prompt)
 	if err != nil {
@@ -108,7 +111,6 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 			Kind:      provider.EventRunEnd,
 			Timestamp: time.Now(),
 		}
-		close(req.EventChan)
 	}
 
 	if supErr != nil {

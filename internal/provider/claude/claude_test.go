@@ -3,7 +3,9 @@ package claude
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -204,6 +206,44 @@ func TestTranslateOutcome_UpstreamWithLowTurns(t *testing.T) {
 	}
 	if got == provider.OutcomeUpstreamError {
 		t.Error("UPSTREAM with turns=1: OutcomeUpstreamError must not be returned when IsNullRun is true")
+	}
+}
+
+// TestProvider_EventChan_ClosedOnWritePromptFileError verifies that EventChan
+// is closed even when writePromptFile fails. Before the m05 fix, the channel
+// was closed only on the happy path — callers draining with `range ch` would
+// block forever on a prompt-file write failure. The fix adds
+// `defer close(req.EventChan)` before the writePromptFile call so all return
+// paths close the channel.
+func TestProvider_EventChan_ClosedOnWritePromptFileError(t *testing.T) {
+	// Force os.CreateTemp to fail by pointing TMPDIR at a non-existent directory.
+	nonExistentTmpDir := filepath.Join(t.TempDir(), "nonexistent-for-test")
+	t.Setenv("TMPDIR", nonExistentTmpDir)
+
+	p := &Provider{Supervisor: &stubSup{result: successResult(1)}}
+	ch := make(chan provider.Event, 10)
+	req := &provider.Request{
+		Prompt:    "test prompt",
+		MaxTurns:  10,
+		Model:     "claude-sonnet",
+		Label:     "test",
+		EventChan: ch,
+	}
+
+	_, err := p.RunAgent(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error from writePromptFile failure when TMPDIR is unwritable, got nil")
+	}
+
+	// Channel must be closed — drain it with a deadline to detect if close never fires.
+	select {
+	case ev, ok := <-ch:
+		if ok {
+			t.Errorf("channel not closed: received event %+v", ev)
+		}
+		// ok == false means channel closed with no events — correct new behavior.
+	case <-time.After(200 * time.Millisecond):
+		t.Error("EventChan not closed after writePromptFile error — callers using `range ch` would block forever")
 	}
 }
 

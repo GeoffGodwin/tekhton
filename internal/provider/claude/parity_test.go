@@ -12,6 +12,41 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
+// TestClaudeProvider_ContextCancelledWithPartialResult pins the
+// (non-nil result, context.Canceled) path — supervisor completes a run AND
+// returns context.Canceled (e.g. cancellation delivered just after the run
+// finishes). The reviewer noted this specific error type was not pinned in
+// cycle 1; callers must be able to use errors.Is(err, context.Canceled)
+// rather than branching on result.Outcome for this case.
+// See docs/v5-provider-seam.md § Outcome Mapping Table.
+func TestClaudeProvider_ContextCancelledWithPartialResult(t *testing.T) {
+	partialResult := loadFixture(t, "trivial_success")
+
+	stub := &stubSup{result: partialResult, err: context.Canceled}
+	cp := &Provider{Supervisor: stub}
+
+	got, err := cp.RunAgent(context.Background(), &provider.Request{
+		Prompt:   "context cancelled with partial result",
+		MaxTurns: 10,
+		Model:    "claude-3-5-sonnet-20241022",
+		Label:    "context_cancelled_partial",
+	})
+
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("want errors.Is(err, context.Canceled) true, err = %v", err)
+	}
+	if got == nil {
+		t.Fatal("want non-nil Result alongside context.Canceled, got nil — " +
+			"partial result must be returned so callers can inspect TurnsUsed etc.")
+	}
+	if got.Outcome != provider.OutcomeSuccess {
+		t.Errorf("Outcome: want OutcomeSuccess (translated from trivial_success fixture), got %v", got.Outcome)
+	}
+}
+
 // loadFixture reads a testdata/<name>.json file and unmarshals it as
 // AgentResultV1. The test is skipped if the file does not exist.
 func loadFixture(t *testing.T, name string) *proto.AgentResultV1 {

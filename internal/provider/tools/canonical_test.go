@@ -111,6 +111,29 @@ func TestPerStageSlices(t *testing.T) {
 	}
 }
 
+// TestCoderTools_ValidateToolSchema iterates CoderTools and calls
+// ValidateToolSchema on each entry. This is a dedicated guard against
+// accidental constant corruption — e.g. an edit that zeroes out a Name or
+// Description field on one of the six coder tools. TestPerStageSlices covers
+// this transitively, but an explicit named test makes the failure message
+// unambiguous when a specific constant is broken.
+func TestCoderTools_ValidateToolSchema(t *testing.T) {
+	for _, tool := range tools.CoderTools {
+		tool := tool
+		t.Run(tool.Name, func(t *testing.T) {
+			if err := provider.ValidateToolSchema(tool); err != nil {
+				t.Errorf("CoderTools[%q] failed ValidateToolSchema: %v", tool.Name, err)
+			}
+			if tool.Name == "" {
+				t.Error("CoderTools entry has empty Name — constant corruption detected")
+			}
+			if tool.Description == "" {
+				t.Errorf("CoderTools[%q] has empty Description — constant corruption detected", tool.Name)
+			}
+		})
+	}
+}
+
 // TestCoderTools_ContainsSixTools asserts CoderTools has the full coder set.
 func TestCoderTools_ContainsSixTools(t *testing.T) {
 	if got := len(tools.CoderTools); got != 6 {
