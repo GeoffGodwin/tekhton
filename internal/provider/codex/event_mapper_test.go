@@ -321,3 +321,26 @@ func TestMapToProviderEvent_Timestamp(t *testing.T) {
 		t.Error("Timestamp is zero; mapToProviderEvent must set it")
 	}
 }
+
+// TestMapToProviderEvent_OutOfRangeEventKind verifies that an EventKind value
+// not listed in the switch (e.g., a future protocol addition) is not surfaced.
+// This exercises the implicit fallthrough at the bottom of mapToProviderEvent
+// that provides forward-compatibility with unknown event types.
+func TestMapToProviderEvent_OutOfRangeEventKind(t *testing.T) {
+	ev := Event{Msg: EventMsg{Kind: EventKind(999), RawType: "future_unknown_event"}}
+	_, ok := mapToProviderEvent(ev)
+	if ok {
+		t.Error("out-of-range EventKind(999) should not be surfaced (expected false)")
+	}
+}
+
+// TestMapToProviderEvent_TaskComplete_NilPayload verifies that a task_complete
+// event with a nil payload returns (_, false) without panicking. Mirrors the
+// analogous test for task_started and mcp_tool_call.
+func TestMapToProviderEvent_TaskComplete_NilPayload(t *testing.T) {
+	ev := Event{Msg: EventMsg{Kind: EventTaskComplete, TaskComplete: nil}}
+	_, ok := mapToProviderEvent(ev)
+	if ok {
+		t.Error("expected false for task_complete with nil payload, got true")
+	}
+}

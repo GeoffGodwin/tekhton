@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -26,6 +27,9 @@ import (
 // then is closed. Callers MUST drain eventCh with a for-range loop.
 // eventCh may be nil — in that case events are still decoded and
 // returned but nothing is emitted to a channel.
+//
+// envExtra, when non-nil, is appended to os.Environ() for the subprocess.
+// Used by m11 auth wiring; pass nil to inherit the process environment.
 func runCodexStreaming(
 	parent context.Context,
 	bin string,
@@ -33,6 +37,7 @@ func runCodexStreaming(
 	prompt string,
 	eventCh chan<- provider.Event,
 	timeout time.Duration,
+	envExtra []string,
 ) (rawStdout []byte, events []Event, stderr []byte, exitCode int, err error) {
 	ctx := parent
 	if timeout > 0 {
@@ -43,6 +48,9 @@ func runCodexStreaming(
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdin = strings.NewReader(prompt)
+	if len(envExtra) > 0 {
+		cmd.Env = append(os.Environ(), envExtra...)
+	}
 
 	stdoutPipe, pipeErr := cmd.StdoutPipe()
 	if pipeErr != nil {

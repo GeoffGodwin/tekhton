@@ -52,6 +52,10 @@ func (p *Provider) Name() string { return "codex" }
 // returns a Result. When req.EventChan is non-nil the streaming path
 // (m10) is used and provider.Events are emitted as Codex writes JSONL;
 // when nil the blocking path (m07) is used.
+//
+// m11: resolveAuth is called to determine env overrides for auth. Errors
+// from resolveAuth are not fatal — the subprocess handles auth naturally
+// (OAuth via ~/.codex/auth.json, or process-inherited CODEX_API_KEY).
 func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
 	if req == nil {
 		return nil, errors.New("codex provider: nil request")
@@ -60,6 +64,11 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 	if err != nil {
 		return nil, fmt.Errorf("codex provider: build args: %w", err)
 	}
+
+	// m11: resolve auth; apply env overrides only when an explicit API key
+	// was provided. Errors are non-fatal: OAuth and process-env paths need
+	// no override (codex reads them directly).
+	envOverrides, _, _ := resolveAuth(req)
 
 	// Extract the --output-last-message path so we can propagate it
 	// and clean it up on process-level errors.
@@ -81,11 +90,11 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 	if req.EventChan != nil {
 		// m10 — streaming path: emit events incrementally.
 		stdout, events, _, exitCode, runErr = runCodexStreaming(
-			ctx, p.BinaryPath, args, req.Prompt, req.EventChan, req.Timeout,
+			ctx, p.BinaryPath, args, req.Prompt, req.EventChan, req.Timeout, envOverrides,
 		)
 	} else {
 		// m07 — blocking path: callers that don't need live events.
-		stdout, _, exitCode, runErr = runCodex(ctx, p.BinaryPath, args, req.Prompt, req.Timeout)
+		stdout, _, exitCode, runErr = runCodex(ctx, p.BinaryPath, args, req.Prompt, req.Timeout, envOverrides)
 		if runErr == nil {
 			events, _ = decodeStream(bytes.NewReader(stdout))
 		}

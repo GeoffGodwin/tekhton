@@ -129,9 +129,10 @@ type TokenUsageInfo struct {
 }
 
 // RateLimitSnapshot holds rate-limit window data from "token_count" events.
-// Stored as raw JSON; m11 interprets the schema.
+// m11 parses the Windows slice; Raw is preserved for forward-compat.
 type RateLimitSnapshot struct {
-	Raw json.RawMessage `json:"-"`
+	Windows []RateLimitWindow `json:"windows"`
+	Raw     json.RawMessage   `json:"-"`
 }
 
 // ErrorEvent payload for "error" events.

@@ -1,0 +1,10 @@
+{
+  "windows": [
+    {
+      "name": "primary",
+      "used": 1000,
+      "limit": 1000,
+      "window_secs": 3600
+    }
+  ]
+}

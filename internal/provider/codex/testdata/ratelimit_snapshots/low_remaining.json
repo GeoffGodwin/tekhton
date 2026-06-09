@@ -1,0 +1,16 @@
+{
+  "windows": [
+    {
+      "name": "primary",
+      "used": 950,
+      "limit": 1000,
+      "window_secs": 3600
+    },
+    {
+      "name": "secondary",
+      "used": 100,
+      "limit": 5000,
+      "window_secs": 86400
+    }
+  ]
+}

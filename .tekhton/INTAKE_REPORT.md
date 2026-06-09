@@ -2,16 +2,15 @@
 PASS
 
 ## Confidence
-91
+92
 
 ## Reasoning
-- Scope is precisely defined: three new files + one modification, each with approximate LOC and explicit purpose
-- Acceptance criteria are specific and testable — every criterion names the test function that verifies it (`TestRunCodexStreaming_EmitsTurnStart`, `TestRunCodexStreaming_EmitsRunEnd`, etc.)
-- Race safety is explicitly called out with `-race` as the verification mechanism
-- The Codex-event → provider.Event mapping table is complete and unambiguous; two developers would arrive at the same implementation
-- Dependencies on m07/m08 types are stated; the milestone design references three small private helpers (`extractAgentText`, `parseTurnID`, `formatInt`) that are not shown in full — competent developers will define these as 5–10 line helpers without ambiguity
-- Closing semantics (EventRunEnd emitted last, channel closed by provider) are explicitly documented and enforced by acceptance criteria
-- Non-streaming fallback path preservation is explicitly required; no deprecation ambiguity
-- No new user-facing config keys → no Migration impact section needed
-- No UI components → UI testability criterion not applicable
-- Watch For section covers the highest-risk failure modes (leaked channel, race, scanner buffer overflow, context cancel leak)
+- Scope is precisely defined: three new files to create (auth.go, ratelimit.go, retry.go), one to modify (codex.go), three test files, testdata fixtures — each with LOC estimates
+- Acceptance criteria are specific and testable: named functions, named test cases (`TestRunAgentWithRetry_RetriesUpToMax`), explicit subcategory membership checks (`AUTH=false`, `QUOTA=true`, `BAD_REQUEST=false`), and behavioral assertions (ctx cancellation mid-backoff, backoff bounded by MaxDelay)
+- Design section provides concrete code stubs with exact function signatures and package structure, leaving almost no interpretation ambiguity
+- Auth precedence order includes an explicit correction note (subscription OAuth before env-var API key) so the implementer cannot misorder tiers
+- `extractRateLimitsFromResult` returning `nil` placeholder is called out explicitly in Watch For as an intentional soft seam — the acceptance criterion still requires the fixture-driven retry-backoff test to pass, so the implementer must complete the implementation
+- No user-facing config keys or file format changes; no migration impact section needed
+- No UI components; UI testability rubric does not apply
+- Watch For section pre-empts the highest-risk implementation mistakes (key logging, backoff overflow, retryable set contract, HTTP 429 absence)
+- Out-of-scope items are explicitly enumerated (mid-stream observation, cross-provider shared policy, telemetry, storage hardening)

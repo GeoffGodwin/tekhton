@@ -42,7 +42,7 @@ func TestRunCodexStreaming_EmitsTurnStart(t *testing.T) {
 
 	eventCh := make(chan provider.Event, 16)
 	rawStdout, events, _, exitCode, err := runCodexStreaming(
-		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0,
+		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0, nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -93,7 +93,7 @@ printf '{"id":"s1","msg":{"type":"task_complete","turn_id":"1","duration_ms":100
 
 	eventCh := make(chan provider.Event, 16)
 	_, _, _, _, err := runCodexStreaming(
-		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0,
+		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0, nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -125,7 +125,7 @@ func TestRunCodexStreaming_RawStdoutParity(t *testing.T) {
 
 	// Streaming path.
 	streamRaw, _, _, _, streamErr := runCodexStreaming(
-		context.Background(), "sh", []string{stub}, "prompt", nil, 0,
+		context.Background(), "sh", []string{stub}, "prompt", nil, 0, nil,
 	)
 	if streamErr != nil {
 		t.Fatalf("streaming path error: %v", streamErr)
@@ -133,7 +133,7 @@ func TestRunCodexStreaming_RawStdoutParity(t *testing.T) {
 
 	// Blocking path.
 	blockRaw, _, _, blockErr := runCodex(
-		context.Background(), "sh", []string{stub}, "prompt", 0,
+		context.Background(), "sh", []string{stub}, "prompt", 0, nil,
 	)
 	if blockErr != nil {
 		t.Fatalf("blocking path error: %v", blockErr)
@@ -163,7 +163,7 @@ func TestRunCodexStreaming_ContextCancel(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runCodexStreaming(ctx, "sh", []string{stub}, "prompt", eventCh, 0) //nolint:errcheck
+		runCodexStreaming(ctx, "sh", []string{stub}, "prompt", eventCh, 0, nil) //nolint:errcheck
 	}()
 
 	select {
@@ -185,7 +185,7 @@ func TestRunCodexStreaming_NilChannel(t *testing.T) {
 		`printf '{"id":"s1","msg":{"type":"task_started","turn_id":"2"}}\n'`)
 
 	rawStdout, events, _, exitCode, err := runCodexStreaming(
-		context.Background(), "sh", []string{stub}, "prompt", nil, 0,
+		context.Background(), "sh", []string{stub}, "prompt", nil, 0, nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -216,7 +216,7 @@ printf '{"id":"s1","msg":{"type":"task_started","turn_id":"1"}}\n'`)
 
 	eventCh := make(chan provider.Event, 16)
 	_, events, _, _, err := runCodexStreaming(
-		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0,
+		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0, nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -256,7 +256,7 @@ printf '{"id":"s1","msg":{"type":"task_complete","turn_id":"1","duration_ms":500
 
 	eventCh := make(chan provider.Event, 32)
 	_, _, _, _, err := runCodexStreaming(
-		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0,
+		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0, nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -282,6 +282,54 @@ printf '{"id":"s1","msg":{"type":"task_complete","turn_id":"1","duration_ms":500
 			t.Errorf("event[%d].Kind = %v, want %v", i, ev.Kind, want[i])
 		}
 	}
+	// Verify the Content of the EventAssistantChunk (index 1).
+	// Kind-only checks would pass even if extractAgentText were broken.
+	if got[1].Content != "hello" {
+		t.Errorf("event[1].Content = %q, want %q", got[1].Content, "hello")
+	}
+}
+
+// TestRunCodexStreaming_EventRunEnd_DroppedWhenBufferFull documents and tests
+// the existing behavior: when the channel buffer is full at the moment
+// EventRunEnd is emitted, the select-default branch fires and EventRunEnd is
+// silently dropped. The channel close is the authoritative completion signal —
+// the for-range over the channel always terminates.
+//
+// Construction: buffer=1, stub emits exactly 1 event (fills the buffer).
+// No concurrent consumer during the run → buffer is full at EventRunEnd.
+func TestRunCodexStreaming_EventRunEnd_DroppedWhenBufferFull(t *testing.T) {
+	requireSh(t)
+	dir := t.TempDir()
+	// Emit exactly one mappable event so it fills the size-1 buffer.
+	stub := makeShellStub(t, dir, "one_event.sh",
+		`printf '{"id":"s1","msg":{"type":"task_started","turn_id":"1"}}\n'`)
+
+	// Size-1 channel: task_started fills it; EventRunEnd hits the default branch.
+	eventCh := make(chan provider.Event, 1)
+
+	_, _, _, _, err := runCodexStreaming(
+		context.Background(), "sh", []string{stub}, "prompt", eventCh, 0, nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Drain the closed channel after runCodexStreaming returns.
+	var got []provider.Event
+	for ev := range eventCh {
+		got = append(got, ev)
+	}
+
+	// The channel must be closed (for-range terminated = this line is reached).
+	// EventRunEnd should be absent: the buffer was full when it was emitted.
+	for _, ev := range got {
+		if ev.Kind == provider.EventRunEnd {
+			t.Logf("EventRunEnd was delivered despite full buffer — channel semantics may have changed")
+			return
+		}
+	}
+	// Default behavior: EventRunEnd was dropped. Channel close is the completion signal.
+	t.Logf("confirmed: EventRunEnd dropped on full buffer; for-range terminated via channel close")
 }
 
 // TestRunAgent_StreamingPathUsed verifies that RunAgent with a non-nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -16,10 +17,14 @@ import (
 // cancellation propagates via exec.CommandContext — codex receives SIGTERM on
 // cancel, with WaitDelay enforcing SIGKILL escalation after 5s.
 //
+// envExtra, when non-nil, is appended to the process environment (os.Environ())
+// so subprocess sees the merged env. Used by m11 auth wiring to inject
+// CODEX_API_KEY without mutating the process environment.
+//
 // The returned error is non-nil ONLY for process-level failures (binary
 // missing, fork failure, permission denied). A non-zero exit code is NOT an
 // error — the caller inspects exitCode to determine outcome.
-func runCodex(parent context.Context, bin string, args []string, prompt string, timeout time.Duration) (stdout, stderr []byte, exitCode int, err error) {
+func runCodex(parent context.Context, bin string, args []string, prompt string, timeout time.Duration, envExtra []string) (stdout, stderr []byte, exitCode int, err error) {
 	ctx := parent
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -32,6 +37,9 @@ func runCodex(parent context.Context, bin string, args []string, prompt string, 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
+	if len(envExtra) > 0 {
+		cmd.Env = append(os.Environ(), envExtra...)
+	}
 
 	// Give codex 5s to respond to SIGTERM before SIGKILL escalation.
 	cmd.WaitDelay = 5 * time.Second
