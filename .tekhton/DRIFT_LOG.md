@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 235
+- Runs since audit: 236
 =======
-- Runs since audit: 235
+- Runs since audit: 236
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 235
+- Runs since audit: 236
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-09 | "Implement Milestone m12: Per-Stage Provider Selection + Fallback Chain + End-to-End Codex Dogfood"] testdata/tool_translations/coder.json and tester.json are currently identical in content because CoderTools == TesterTools. The separate fixture files add maintenance surface without differentiation. If TesterTools ever diverges, the fixtures will correctly diverge too â acceptable until then.
+- [ ] [2026-06-09 | "Implement Milestone m12: Per-Stage Provider Selection + Fallback Chain + End-to-End Codex Dogfood"] flags.go:117-118 â manual prefix check `len(k) > len(prefix) && k[:len(prefix)] == prefix` is functionally correct but duplicates what `strings.HasPrefix` expresses. The `strings` package is not currently imported in flags.go; noting for a future cleanup pass if `strings` is added for another reason.
 - [ ] [2026-06-09 | "Implement Milestone m09: Codex Tool Schema Translator"] ratelimit.go uses `*RateLimitSnapshot` throughout, but the type is defined in events.go rather than ratelimit.go. The cross-file dependency is within the same package and harmless, but `RateLimitSnapshot` is more of a rate-limit concept than a streaming event; consider relocating the type definition into ratelimit.go in a future cleanup.
 - [ ] [2026-06-09 | "Implement Milestone m09: Codex Tool Schema Translator"] auth.go â `storedAuthPath()` and `fileExists()` are unexported helpers that could serve other auth strategies in the same package, but are currently only reachable from `resolveAuth`. No action needed.
 - [ ] [2026-06-09 | "Implement Milestone m11: Codex Auth + Rate-Limit Detection + Retry"] streaming.go / event_mapper.go â helper functions `parseTurnID`, `formatInt`, and `extractAgentText` are defined in streaming.go but are logically event-mapping utilities consumed by event_mapper.go. Their placement is not wrong (same package), but if the streaming file ever splits, these helpers will need to move. No action required now.
