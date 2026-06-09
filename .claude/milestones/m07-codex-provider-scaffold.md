@@ -38,6 +38,42 @@ based purely on the exit code — the returned `*provider.Result` will
 have `Outcome` set, but `TurnsUsed`, `LastReportPath`, and other
 event-derived fields will be empty/zero. m08 fills them in.
 
+### HARD SCOPE BOUNDARY (m07 ONLY)
+
+**The coder MUST create exactly these eight files. Creating any file
+outside this list FAILS m07 and the coder MUST stop and surface the
+attempt in `## Drift Observations` of CODER_SUMMARY.md instead:**
+
+PRODUCTION (4 files under `internal/provider/codex/`):
+1. `codex.go`
+2. `flags.go`
+3. `exec.go`
+4. `exit_codes.go`
+
+TESTS (4 files under `internal/provider/codex/`):
+5. `codex_test.go`
+6. `flags_test.go`
+7. `exec_test.go`
+8. `exit_codes_test.go`
+
+**DO NOT create in m07** — these are explicitly later-milestone scope:
+- `tests/test_v5_codex_dogfood.sh` — m12 deliverable (out of scope)
+- `internal/provider/codex/events.go` / `items.go` / `decoder.go` / `outcome.go` — m08
+- `internal/provider/codex/tools.go` / `tool_map.go` — m09
+- `internal/provider/codex/streaming.go` / `event_mapper.go` — m10
+- `internal/provider/codex/auth.go` / `ratelimit.go` / `retry.go` — m11
+- Any file under `internal/runner/provider_*.go` — m12
+- Any modification to `internal/provider/provider.go` — already shipped by m01
+
+If a test for one of the 4 production files needs a type/function that
+m08-m12 will provide, the test MUST stub that dependency locally (or
+omit the assertion) — do NOT create the m08+ file early.
+
+The previous m07 attempt failed because the coder created
+`tests/test_v5_codex_dogfood.sh` (m12 scope) and the tests it wrote
+referenced symbols m08/m11 will provide. Tests failed. safety_net
+rolled back the run. This scope boundary is the fix.
+
 ### Goal 1 — Provider struct + factory
 
 **File:** `internal/provider/codex/codex.go`.
