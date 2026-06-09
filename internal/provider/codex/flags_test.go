@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -152,5 +154,34 @@ func TestBuildExecArgs_FirstElementIsExec(t *testing.T) {
 	}
 	if len(args) == 0 || args[0] != "exec" {
 		t.Errorf("expected first arg to be \"exec\", got %v", args)
+	}
+}
+
+// TestMakeOutputLastMessagePath_CreatesTempfile verifies that when
+// codex.output_last_message is absent from ProviderSpecific, a temp file is
+// created on disk and its path is returned. This is the path that RunAgent
+// propagates to Result.LastReportPath.
+func TestMakeOutputLastMessagePath_CreatesTempfile(t *testing.T) {
+	// Redirect os.CreateTemp("", ...) to a controlled directory.
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+
+	req := &provider.Request{
+		Prompt:           "test",
+		ProviderSpecific: map[string]string{},
+	}
+	path, err := makeOutputLastMessagePath(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path == "" {
+		t.Fatal("makeOutputLastMessagePath returned empty path")
+	}
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Errorf("tempfile %q was not created on disk: %v", path, statErr)
+	}
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "tekhton-codex-last-") {
+		t.Errorf("tempfile name %q does not match expected prefix tekhton-codex-last-*", base)
 	}
 }

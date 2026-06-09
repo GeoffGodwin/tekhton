@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -78,5 +79,61 @@ func TestRunAgent_ProcessLevelError(t *testing.T) {
 	_, err := p.RunAgent(context.Background(), req)
 	if err == nil {
 		t.Fatal("expected error when binary path does not exist, got nil")
+	}
+}
+
+// TestRunAgent_LastReportPathSetOnSuccess verifies that when no fixed
+// codex.output_last_message is provided, RunAgent creates a tempfile and
+// propagates its path to Result.LastReportPath. This is the primary
+// observable behaviour of the m07 tempfile-lifecycle fix.
+func TestRunAgent_LastReportPathSetOnSuccess(t *testing.T) {
+	if _, err := os.Stat("/bin/echo"); err != nil {
+		t.Skip("/bin/echo not available")
+	}
+	p := codex.NewWithBinary("/bin/echo")
+	req := &provider.Request{
+		Prompt:           "hello",
+		ProviderSpecific: map[string]string{},
+		// codex.output_last_message intentionally absent — forces tempfile creation.
+	}
+	res, err := p.RunAgent(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.LastReportPath == "" {
+		t.Error("LastReportPath is empty; expected it to be set to the tempfile path")
+	}
+}
+
+// TestRunAgent_TempfileCleanedOnProcessError verifies that when the binary
+// cannot be launched (process-level error) and no fixed
+// codex.output_last_message was supplied, the tempfile created by
+// buildExecArgs is removed before RunAgent returns. Prevents silent leaks
+// when the pipeline retries or errors out.
+func TestRunAgent_TempfileCleanedOnProcessError(t *testing.T) {
+	// Redirect os.CreateTemp to a controlled directory so we can observe
+	// whether any tekhton-codex-last-*.md files remain afterward.
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+
+	p := codex.NewWithBinary("/nonexistent/bin/codex")
+	req := &provider.Request{
+		Prompt:           "hello",
+		ProviderSpecific: map[string]string{},
+		// codex.output_last_message intentionally absent — forces tempfile creation.
+	}
+	_, err := p.RunAgent(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error when binary path does not exist, got nil")
+	}
+
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("cannot read tmpdir: %v", readErr)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "tekhton-codex-last-") {
+			t.Errorf("tempfile leaked after process-level error: %s", filepath.Join(dir, e.Name()))
+		}
 	}
 }

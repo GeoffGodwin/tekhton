@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -54,8 +55,9 @@ func (p *Provider) Name() string { return "codex" }
 // RunAgent translates req into a codex exec invocation, runs it, and
 // returns a Result whose Outcome is derived from the exit code.
 //
-// V5 m07: TurnsUsed, LastReportPath, and NullRun stay at their zero
-// values. m08 fills them in from the JSON event stream.
+// V5 m07: TurnsUsed and NullRun stay at their zero values; m08 fills
+// them in from the JSON event stream. LastReportPath is set to the
+// --output-last-message path so the caller owns its lifecycle.
 func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
 	if req == nil {
 		return nil, errors.New("codex provider: nil request")
@@ -64,13 +66,30 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 	if err != nil {
 		return nil, fmt.Errorf("codex provider: build args: %w", err)
 	}
+
+	// Extract the --output-last-message path embedded by buildExecArgs so
+	// we can propagate it to the caller (unblocks m08) and clean it up on
+	// the process-level error path (prevents tempfile leaks).
+	var outPath string
+	for i, a := range args {
+		if a == "--output-last-message" && i+1 < len(args) {
+			outPath = args[i+1]
+			break
+		}
+	}
+
 	_, _, exitCode, runErr := runCodex(ctx, p.BinaryPath, args, req.Prompt, req.Timeout)
 	if runErr != nil {
 		// Process-level error (binary not found, permission denied, etc.).
+		// The tempfile won't be read — remove it to avoid leaking it.
+		if outPath != "" {
+			_ = os.Remove(outPath)
+		}
 		return nil, fmt.Errorf("codex provider: invoke: %w", runErr)
 	}
 	return &provider.Result{
-		Outcome:  interpretExitCode(exitCode),
-		ExitCode: exitCode,
+		Outcome:        interpretExitCode(exitCode),
+		ExitCode:       exitCode,
+		LastReportPath: outPath,
 	}, nil
 }
