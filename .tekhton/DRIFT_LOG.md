@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 224
+- Runs since audit: 225
 =======
-- Runs since audit: 224
+- Runs since audit: 225
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 224
+- Runs since audit: 225
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-08 | "Implement Milestone m05: Sentinel hygiene: all .tekhton/.* gitignored + regression guard"] [internal/provider/provider.go] `OutcomeAborted` remains defined but unset by any code path in `internal/provider/claude/`. Still consistent with the current design; still worth tracking for when context-cancellation handling is standardised across providers.
+- [ ] [2026-06-08 | "Implement Milestone m05: Sentinel hygiene: all .tekhton/.* gitignored + regression guard"] -- **Cycle 1 blocker verification:** Prior blocker: `EventChan` not closed on `writePromptFile` error path â callers draining with `range` would block forever. **FIXED.** `defer close(req.EventChan)` is now placed at line 69, immediately after the nil-request/nil-supervisor guards, covering every return path including the `writePromptFile` error return. The earlier explicit `close` that previously appeared only at one return path is gone; the defer handles all paths. Contract satisfied.
 - [ ] [2026-06-08 | "Implement Milestone m03: Tekhton ToolSchema + Claude Translator"] [internal/stages/intake/context.go:133-139] `buildNotesContext` resolves `notesPath` via `resolveProjectRelative` and uses it only for the existence guard; the path is then discarded. The actual document load goes through `notes.ExtractFromProject(cfg.ProjectDir, â¦)` which re-resolves the path independently from `$HUMAN_NOTES_FILE`. The two resolution paths can diverge. Long-term: `buildNotesContext` should load the document directly via the already-resolved path rather than going through `ExtractFromProject`.
 - [ ] [2026-06-08 | "Implement Milestone m02: Stages Consume Provider Interface (Supervisor Direct-Call Retirement)"] [.tekhton/NON_BLOCKING_LOG.md:18-23] Double-nested conflict markers (`<<<<<<< Updated upstream` appears twice, `>>>>>>> Stashed changes` appears twice) suggest a stash-pop was applied on top of an already-conflicted tree, or a rebase was interrupted mid-run. The pipeline's finalize path writes to `.tekhton/` files without checking for existing conflict markers first â worth adding a pre-commit guard that aborts if any `.tekhton/*.md` file contains `<<<<<<<`.
 - [ ] [2026-06-08 | "Implement Milestone m01: Provider Interface and Claude Reference Implementation"] [internal/provider/claude/claude.go:75-107] The EventChan send-and-close block runs even when `supErr != nil` (including the `v1 == nil` path). This matches the seam contract doc ("Close exactly once before returning"), so the behavior is correct, but the code does not have an inline comment explaining why both the error and close paths are intentionally combined. This pattern will be reproduced by m02âm08 implementers who may not read the seam doc first; a brief comment at the close site would prevent future mis-ports.

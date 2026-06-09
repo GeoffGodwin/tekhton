@@ -238,6 +238,62 @@ echo "disposition=[${_CACHED_DISPOSITION}]" >> "$PROJECT_DIR/disposition.txt"
 	}
 }
 
+// TestBashHookRunnerFinalizeMillestoneModeEnvContract_M04 is the m04
+// acceptance test for the env-propagation fix. Before m04, MILESTONE_MODE
+// and _CURRENT_MILESTONE were absent from the bash hook subprocess env
+// when the auto-advance loop's finalize chain ran, causing _hook_commit to
+// fall through to the m44 largest-file-fallback subject rather than the
+// [MILESTONE X ✓] prefix.
+//
+// This test wires an EnvBuilder (the production path — buildRunner in
+// cmd/tekhton/run.go assigns the same builder to BashHookRunner.Env) and
+// asserts the stub shim subprocess captures both vars with their correct values.
+func TestBashHookRunnerFinalizeMillestoneModeEnvContract_M04(t *testing.T) {
+	home := t.TempDir()
+	libDir := filepath.Join(home, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proj := t.TempDir()
+
+	// Stub shim: append MILESTONE_MODE and _CURRENT_MILESTONE to a capture
+	// file on every hook invocation so the test can assert the full env
+	// contract for a milestone run.
+	shimBody := `#!/usr/bin/env bash
+echo "MILESTONE_MODE=${MILESTONE_MODE}" >> "$PROJECT_DIR/env_capture.txt"
+echo "_CURRENT_MILESTONE=${_CURRENT_MILESTONE}" >> "$PROJECT_DIR/env_capture.txt"
+`
+	if err := os.WriteFile(filepath.Join(libDir, "finalize_shim.sh"), []byte(shimBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wire BashHookRunner with an EnvBuilder configured for a milestone run.
+	// This mirrors the production wiring in cmd/tekhton/run.go::buildRunner.
+	envBuilder := NewEnvBuilder(nil, LogContext{})
+	h := &BashHookRunner{TekhtonHome: home, Env: envBuilder}
+	req := &proto.RunRequestV1{
+		ProjectDir: proj,
+		Mode:       proto.RunModeMilestone,
+		Milestone:  "m04",
+	}
+	res := &proto.RunResultV1{Disposition: proto.RunDispositionSuccess}
+	if err := h.Finalize(context.Background(), req, res); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(proj, "env_capture.txt"))
+	if err != nil {
+		t.Fatalf("env_capture.txt not written by stub shim: %v", err)
+	}
+	captured := string(got)
+	if !strings.Contains(captured, "MILESTONE_MODE=true") {
+		t.Errorf("m04 fix: MILESTONE_MODE not true in bash shim env; captured:\n%s", captured)
+	}
+	if !strings.Contains(captured, "_CURRENT_MILESTONE=m04") {
+		t.Errorf("m04 fix: _CURRENT_MILESTONE not m04 in bash shim env; captured:\n%s", captured)
+	}
+}
+
 func TestStdoutOrStderrOrFallsBack(t *testing.T) {
 	if stdoutOr(nil) != os.Stdout {
 		t.Fatalf("stdoutOr(nil) should return os.Stdout")

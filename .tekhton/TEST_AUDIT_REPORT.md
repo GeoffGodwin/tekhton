@@ -1,39 +1,33 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (internal/provider/claude/parity_test.go), 2 test functions
+Tests audited: 2 files, 15 test functions (14 Go, 5 bash scenarios)
 Verdict: PASS
 
 ### Findings
 
-#### SCOPE: Audit manifest lists parity_test.go twice; claude_test.go and tools_test.go absent
-- File: internal/provider/claude/parity_test.go (manifest entry, listed twice)
-- Issue: The audit context lists `internal/provider/claude/parity_test.go` twice and omits `internal/provider/claude/claude_test.go` (git status: M — modified this run) and `internal/provider/claude/tools_test.go` (git status: ?? — new this run). Both omitted files contain substantive behavioral tests: `claude_test.go` covers `translateOutcome` branches, streaming events, `writePromptFile` lifecycle, and `labelOrDefault`; `tools_test.go` covers the tool-schema translation layer. Per audit rules these files cannot be evaluated here, but their absence from the audit manifest means 11 of the 14 test functions written this run received no independent review.
-- Severity: MEDIUM
-- Action: Resubmit with `claude_test.go` and `tools_test.go` added to the audit manifest. No changes to the test files themselves are required.
-
-#### COVERAGE: Supervisor returning (nil, nil) is not exercised
-- File: internal/provider/claude/parity_test.go (no line — gap, not an existing line)
-- Issue: `claude.go:120-122` contains a defensive guard for the case where `p.Supervisor.Run` returns a nil result with a nil error (`"supervisor returned nil result without error"`). No test case in `parity_test.go` exercises this path. It is a reachable guard in the implementation.
+#### COVERAGE: Scenario A3 in bash test duplicates Scenario A1 exactly
+- File: tests/test_autoadvance_milestone_prefix.sh:126-135
+- Issue: Scenario A3 ("pre-m04 env-gap simulation") calls `generate_commit_message "Implement m04 fix" "" ""` — byte-for-byte identical to Scenario A1 (lines 104-111). Both pass the same three arguments. The distinction exists only in the comment; no distinct code path is exercised. A future reader may assume two cases are covered when only one is.
 - Severity: LOW
-- Action: Add a `stubSup` case with `result: nil, err: nil` and assert that `RunAgent` returns `(nil, non-nil error)` containing "nil result". One table entry in `TestClaudeProvider_ParityWithDirectSupervisor` suffices.
+- Action: Either remove Scenario A3 or differentiate it by installing a distinct ambient env state (e.g. `export MILESTONE_MODE=true` before calling with an empty milestone_num) to confirm the env variable alone does not produce a prefix without the positional arg.
 
-#### NAMING: loadFixture comment says "skipped" but behavior is "failed"
-- File: internal/provider/claude/parity_test.go:16
-- Issue: The comment reads "The test is skipped if the file does not exist" but the body calls `t.Fatalf`, which marks the test as failed (not skipped). The behavior (fail on missing fixture) is correct — silently skipping would mask a missing fixture — but the comment misstates it.
+#### COVERAGE: TestBashHookRunnerPreflightWritesReport asserts an internal rule-title string
+- File: internal/runner/hooks_test.go:78
+- Issue: `strings.Contains(string(body), "Dependencies (Go)")` hardcodes the display title of an internal preflight check rule. If `internal/preflight` renames the Go-deps rule title, this test fails for a non-behavioral reason. The string is not drawn from any exported constant.
 - Severity: LOW
-- Action: Update comment to "The test fails if the file does not exist" or simply remove the inaccurate sentence.
+- Action: Assert on a more stable marker — e.g. that the report file is non-empty and `Preflight` returned nil — or extract the expected string from a preflight package constant if one exists. If the coupling is intentional, add a comment pointing to the rule title source so a rename finds this line.
 
----
+#### COVERAGE: Scenario B binary-string check is a weak linkage guard
+- File: tests/test_autoadvance_milestone_prefix.sh:148-161
+- Issue: `strings "$TEKHTON_BIN" | grep -c -F "MILESTONE_MODE="` counts occurrences of the literal string anywhere in the binary, including embedded test data or documentation. A passing result does not prove `EnvBuilder.AsKV` specifically is the source. The Go unit test `TestBashHookRunnerFinalizeMillestoneModeEnvContract_M04` (hooks_test.go:251-295) is the authoritative contract guard and directly asserts the captured subprocess env from a real `Finalize` invocation.
+- Severity: LOW
+- Action: Add a comment noting that the Go unit test is the primary contract guard, and that Scenario B is a secondary smoke check. No code change required unless the scenario is presented as authoritative.
 
-### Rubric Summary
-
-| Criterion | Result | Notes |
-|---|---|---|
-| Assertion Honesty | PASS | All assertions trace to real implementation logic via `translateResult`/`translateOutcome`/`IsNullRun`. No hard-coded magic values. |
-| Edge Case Coverage | PASS (minor gap) | Covers 5 outcome categories + context cancellation + partial completion. Missing: (nil, nil) supervisor return. |
-| Implementation Exercise | PASS | Stub replaces only the subprocess call; the translation layer (`translateResult`, `translateOutcome`, `supervisor.FromProto`, `IsNullRun`) is fully exercised on every path. |
-| Test Weakening | PASS | No removed assertions or broadened expectations observed. |
-| Test Naming | PASS | All test names encode scenario and expected outcome clearly. |
-| Scope Alignment | PASS | No orphaned imports; both deleted files are non-test files and are not referenced. |
-| Test Isolation | PASS | All inputs come from checked-in fixture files under `testdata/` or in-memory stubs. No reads of mutable project state. |
+### No Findings in these categories
+- INTEGRITY: No hard-coded return-value assertions, no always-passing assertions. Every assertion traces to observable implementation output.
+- WEAKENING: No existing tests were modified; all changes are additions.
+- NAMING: All 14 Go test functions encode scenario and expected outcome. Bash scenarios are labeled A1/A2/A3/B1/B2 with printed descriptions.
+- EXERCISE: `BashHookRunner.Preflight` and `.Finalize` are called directly with real in-process orchestrators (preflight.NewOrchestrator, finalize.NewOrchestrator). Stub shims replace only the bash finalize_shim.sh subprocess, not the Go hook chain.
+- ISOLATION: All test state lives under `t.TempDir()` / `mktemp -d` with a cleanup trap. Env vars use `t.Setenv()`. No test reads `.tekhton/`, `.claude/logs/`, or any mutable project artifact without first writing its own fixture.
+- SCOPE: No orphaned references to the deleted `.claude/milestones/m05-sentinel-hygiene-gitignore.md`. The m05 milestone appears nowhere in any audited test file. All imports (`manifest`, `proto`, `finalize`, `preflight`) point to packages that exist in the current tree.

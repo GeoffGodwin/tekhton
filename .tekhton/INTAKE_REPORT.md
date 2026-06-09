@@ -2,12 +2,13 @@
 PASS
 
 ## Confidence
-95
+92
 
 ## Reasoning
-- Scope is tightly defined: exactly 3 files to create/modify (`.gitignore`, `tests/test_no_tracked_sentinels.sh`, `docs/sentinel-hygiene.md`) plus VERSION bump
-- Acceptance criteria are concrete and mechanically verifiable: specific shell commands to run, specific exit-code expectations, specific grep patterns to check
-- The design section provides actual implementation code for the regression test — zero guesswork on the developer's part
-- Watch For section addresses the one real risk (broad glob + future exceptions)
-- No UI, no user-facing config, no migration impact section needed
-- Two developers reading this would converge on essentially the same implementation
+- Scope is tightly defined: bug is isolated to env-propagation between the Go finalize orchestrator and the bash hook subprocess; out-of-scope paths (bash-side fix, retroactive commit cleanup, modifying `generate_commit_message`) are explicitly named
+- Root cause is well-characterized: `MILESTONE_MODE` and `_CURRENT_MILESTONE` not appearing in the hook subprocess env block, with the likely fix site identified (step 4 of the traced call chain) and a code sketch provided
+- Acceptance criteria are specific and testable: self-verifying via the m04 commit subject itself, Go unit test asserting env-block contents, new shim-boundary bash test, linter/vet clean gates
+- Watch For section guards the two most tempting wrong approaches (bash-side workaround, sentinel-reset red herring)
+- No user-facing config changes, new keys, or file format changes — Migration Impact section not required
+- No UI components — UI testability criterion not applicable
+- The "iteration 2+" callout in Watch For is a precise, actionable note for the regression test author
