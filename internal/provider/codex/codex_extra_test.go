@@ -103,6 +103,9 @@ func TestRunAgent_LastReportPathSetOnSuccess(t *testing.T) {
 	if res.LastReportPath == "" {
 		t.Error("LastReportPath is empty; expected it to be set to the tempfile path")
 	}
+	if res.Outcome != provider.OutcomeSuccess {
+		t.Errorf("Outcome = %v, want OutcomeSuccess", res.Outcome)
+	}
 }
 
 // TestRunAgent_TempfileCleanedOnProcessError verifies that when the binary

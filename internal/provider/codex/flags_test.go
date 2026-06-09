@@ -122,10 +122,10 @@ func TestBuildExecArgs_InlineConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Look for a -c entry with key=value form.
+	// Look for the exact -c model.provider=openai entry.
 	found := false
 	for i, a := range args {
-		if a == "-c" && i+1 < len(args) && strings.HasPrefix(args[i+1], "model.provider=") {
+		if a == "-c" && i+1 < len(args) && args[i+1] == "model.provider=openai" {
 			found = true
 			break
 		}
@@ -154,6 +154,28 @@ func TestBuildExecArgs_FirstElementIsExec(t *testing.T) {
 	}
 	if len(args) == 0 || args[0] != "exec" {
 		t.Errorf("expected first arg to be \"exec\", got %v", args)
+	}
+}
+
+// TestMakeOutputLastMessagePath_ErrorWhenTmpUnavailable verifies that
+// makeOutputLastMessagePath returns a non-nil error when os.CreateTemp
+// cannot create the tempfile (e.g., TMPDIR points to a non-existent
+// directory). This covers the error branch that was previously untested.
+func TestMakeOutputLastMessagePath_ErrorWhenTmpUnavailable(t *testing.T) {
+	// Point TMPDIR at a path that cannot exist, causing os.CreateTemp to fail.
+	t.Setenv("TMPDIR", "/nonexistent-tekhton-test-dir-should-not-exist")
+
+	req := &provider.Request{
+		Prompt:           "test",
+		ProviderSpecific: map[string]string{},
+		// codex.output_last_message intentionally absent — forces os.CreateTemp path.
+	}
+	path, err := makeOutputLastMessagePath(req)
+	if err == nil {
+		t.Fatalf("expected error when TMPDIR is unavailable, got path %q", path)
+	}
+	if path != "" {
+		t.Errorf("expected empty path on error, got %q", path)
 	}
 }
 

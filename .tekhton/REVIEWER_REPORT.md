@@ -1,55 +1,39 @@
-## Verdict
-APPROVED_WITH_NOTES
-
-## Complex Blockers (senior coder)
-- None
-
-## Simple Blockers (jr coder)
-- None
-
-## Non-Blocking Notes
-- exec_test.go:14-19 — `requireBin` fallback is a dead duplicate: both branches call `exec.LookPath(binPath)` with identical arguments. Comment says "check absolute path directly" but the code does the same lookup again. Should use `os.Stat(binPath)` for the absolute-path case, or just remove the inner branch entirely.
-- flags.go:54 — `-c` entries are emitted in map iteration order, which is non-deterministic in Go. Harmless for most codex configs but could cause test flakiness if any future test asserts on full argv ordering. Consider sorting inline-config keys before appending.
-- flags.go:54-59 (security LOW) — Inline config values containing `=` produce a silently malformed entry (extra `=` becomes part of the value string). No shell-injection risk via `exec.CommandContext`, but a caller supplying `codex.config.key=val=ue` gets `key=val=ue` with no warning. Document the constraint or add a guard.
-- flags.go:37-45 (security LOW) — `codex.cwd` is passed verbatim to `--cd` with no path validation. Acceptable for the scaffold milestone given callers are internal, but add an absolute-path and project-root-containment check when `ProviderSpecific` gains a public API surface.
-
-## Coverage Gaps
-- No test exercises the `makeOutputLastMessagePath` tempfile creation path (all tests inject a fixed `codex.output_last_message`, bypassing `os.CreateTemp`). A test covering tempfile creation, cleanup on error, and `LastReportPath` propagation on success is needed — this is the path the blocker fix addresses.
-- No test verifies the `WaitDelay` SIGKILL escalation path in `runCodex` (5s SIGTERM→SIGKILL window). Low priority for the scaffold; worth adding in m08 hardening.
-
-## Drift Observations
-- exec_test.go:14-19 — `requireBin` is only used in exec_test.go today. If the pattern gets copied to other test files with the same duplicate-LookPath bug, it will silently never skip on platforms where absolute-path detection matters. Fix the helper now before it spreads.
-
-## Prior Blocker Resolution
-
-**FIXED** — cycle-1 simple blocker: tempfile leak in `RunAgent`.
-
-The fix correctly scans `args` post-`buildExecArgs` to recover `outPath`, removes it immediately on the process-error path (`runErr != nil`), and propagates it via `Result.LastReportPath` on success so the caller owns the lifecycle. The `defer os.Remove` alternative was correctly rejected — it would delete the file before any m08 consumer could read it. Doc comment on `RunAgent` was also updated. Implementation is clean and minimal.
-
-## Test Audit (independent)
+## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 15 test functions
+Tests audited: 3 files, 25 test functions (flags_test.go: 11, exec_test.go: 7, codex_extra_test.go: 7)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: InlineConfig test verifies key prefix but not full value
-- File: internal/provider/codex/flags_test.go:128
-- Issue: `TestBuildExecArgs_InlineConfig` uses `strings.HasPrefix(args[i+1], "model.provider=")` but never checks the value portion equals `"openai"`. A regression producing `model.provider=wrong` would pass the test. The error message claims `"expected -c model.provider=openai"` but the predicate would accept any value suffix.
-- Severity: LOW
-- Action: Replace `strings.HasPrefix(args[i+1], "model.provider=")` with `args[i+1] == "model.provider=openai"` for a tight equality assertion.
+#### EXERCISE: Tautological fallback in requireBin is dead code
+- File: internal/provider/codex/exec_test.go:16-19
+- Issue: `requireBin` calls `exec.LookPath(binPath)` twice with identical arguments. The outer call is on line 15; the inner "fallback" on line 17 is byte-for-byte the same. The comment says "Fall back: check absolute path directly" but the inner branch doesn't do that — it repeats the same LookPath. If the first call fails, the second fails identically; the fallback is unreachable-effective dead code. The reviewer's prior-cycle note (REVIEWER_REPORT, "exec_test.go:14-19") flagged this in the previous cycle and it remains unfixed. No false-pass risk: if a binary is absent, both calls fail and the test skips correctly. But the misleading comment will propagate if `requireBin` is copied to future test files.
+- Severity: MEDIUM
+- Action: Replace the inner `exec.LookPath(binPath)` with `os.Stat(binPath)` to implement the stated intent (absolute-path existence check), or collapse to a single-branch check. The outer call is sufficient for absolute paths like `/bin/echo` since `exec.LookPath` accepts absolute paths.
 
-#### COVERAGE: RunAgent success path omits Outcome assertion
-- File: internal/provider/codex/codex_extra_test.go:99
-- Issue: `TestRunAgent_LastReportPathSetOnSuccess` uses `/bin/echo` (exits 0) and only checks `res.LastReportPath != ""`. It never asserts `res.Outcome == provider.OutcomeSuccess`. A regression in `interpretExitCode` for exit code 0 would go undetected by this test.
+#### ISOLATION: TestRunAgent_LastReportPathSetOnSuccess does not redirect TMPDIR
+- File: internal/provider/codex/codex_extra_test.go:89-109
+- Issue: The test forces tempfile creation by omitting `codex.output_last_message`, but does not redirect `TMPDIR` to `t.TempDir()`. The tempfile created by `makeOutputLastMessagePath` lands in the system temp directory and is never cleaned up (RunAgent correctly leaves it — the caller owns it on success). The parallel test `TestRunAgent_TempfileCleanedOnProcessError` (same file, line 116) redirects TMPDIR for controlled observation. No correctness risk: `res.LastReportPath != ""` and `res.Outcome == OutcomeSuccess` will not produce false positives or negatives.
 - Severity: LOW
-- Action: Add `if res.Outcome != provider.OutcomeSuccess { t.Errorf(...) }` after the `LastReportPath` assertion.
+- Action: Add `t.Setenv("TMPDIR", t.TempDir())` before calling `RunAgent`, then `defer os.Remove(res.LastReportPath)` after verifying the path. Matches the pattern in `TestMakeOutputLastMessagePath_CreatesTempfile` (flags_test.go:188-189).
 
-#### Rubric summary — all other points clear
-- **Assertion Honesty**: All asserted values (flag names, argv ordering, outcome constants, exit codes, file-name prefixes) are directly derived from the implementation. No magic constants or tautological assertions.
-- **Implementation Exercise**: `buildExecArgs`, `makeOutputLastMessagePath`, `codex.New`, and `p.RunAgent` are called against real or stub binaries. Nothing is fully mocked away.
-- **Test Weakening**: Both files contain exclusively new additions per the tester report. No prior assertions were removed or broadened.
-- **Naming**: All 15 test names encode both the scenario and expected outcome.
-- **Scope Alignment**: Every referenced symbol exists in the current codebase with the expected signature. No orphaned imports.
-- **Isolation**: All tests use `t.TempDir()` and `t.Setenv` for fixture management. No reads from live pipeline state, `.claude/logs/*`, or other mutable project files.
+### Passing criteria by rubric point
+
+**1. Assertion Honesty** — All assertions trace to implementation constants or logic:
+- `"exec"` as args[0] matches flags.go:27. `"codex"` from `Name()` matches codex.go:53. `OutcomeUpstreamError` for exit code 1 matches exit_codes.go:21. `"tekhton-codex-last-"` prefix matches the `os.CreateTemp("", "tekhton-codex-last-*.md")` call at flags.go:72. Exit code `-1` for process-level errors matches exec.go:45. No hard-coded magic numbers ungrounded in the implementation.
+
+**2. Edge Case Coverage** — Error paths are well represented: empty prompt (flags_test.go:138), TMPDIR unavailable (flags_test.go:164), binary missing (exec_test.go:75, codex_extra_test.go:71), non-zero exit (exec_test.go:36, codex_extra_test.go:40), context cancellation (exec_test.go:64), SIGTERM-immune process / SIGKILL escalation (exec_test.go:102). Ratio of error-path tests to happy-path tests is approximately 1:1.
+
+**3. Implementation Exercise** — Tests call real functions directly with no mocked implementations. `codex_extra_test.go` (external package) uses `NewWithBinary` to inject stub binaries, which is the correct and documented test seam. `flags_test.go` and `exec_test.go` are internal tests and call unexported functions directly.
+
+**4. Test Weakening** — The two reviewer-flagged items from the prior cycle are both correctly addressed:
+- `TestBuildExecArgs_InlineConfig` (flags_test.go:128) now uses exact equality (`args[i+1] == "model.provider=openai"`) rather than the prior `strings.HasPrefix` that accepted any value suffix.
+- `TestRunAgent_LastReportPathSetOnSuccess` (codex_extra_test.go:103-108) now includes `res.Outcome != provider.OutcomeSuccess` assertion as directed.
+  No existing assertions were removed or broadened.
+
+**5. Test Naming** — All names encode scenario and expected outcome. No generic `test_1` or `test_thing` names present.
+
+**6. Scope Alignment** — All referenced symbols (`codex.New`, `codex.NewWithBinary`, `codex.Provider`, `buildExecArgs`, `makeOutputLastMessagePath`, `runCodex`, `interpretExitCode`, `provider.OutcomeSuccess`, `provider.OutcomeUpstreamError`) exist in the current implementation. The two coverage gaps noted in the prior cycle are now closed: `makeOutputLastMessagePath` error path is covered by `TestMakeOutputLastMessagePath_ErrorWhenTmpUnavailable`; `WaitDelay` SIGKILL escalation is covered by `TestRunCodex_WaitDelayKillsAfterSIGTERMIgnored`.
+
+**7. Test Isolation** — `flags_test.go` and `codex_extra_test.go` (excluding the LOW finding above) use `t.TempDir()` and `t.Setenv` consistently. No tests read live build reports, pipeline logs, or run artifacts.

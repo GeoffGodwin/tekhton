@@ -2,7 +2,9 @@ package codex
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -91,4 +93,42 @@ func TestRunCodex_TimeoutApplied(t *testing.T) {
 	if elapsed > 10*time.Second {
 		t.Errorf("runCodex didn't respect timeout: elapsed %v", elapsed)
 	}
+}
+
+// TestRunCodex_WaitDelayKillsAfterSIGTERMIgnored exercises the SIGKILL
+// escalation path in runCodex. When a process traps and ignores SIGTERM,
+// cmd.WaitDelay (5s) eventually fires cmd.Process.Kill — the process must
+// terminate. Without WaitDelay, runCodex would hang for the full sleep duration.
+func TestRunCodex_WaitDelayKillsAfterSIGTERMIgnored(t *testing.T) {
+	sh, shErr := exec.LookPath("sh")
+	if shErr != nil {
+		t.Skip("sh not available")
+	}
+
+	// Write a script that traps SIGTERM (ignores it) and sleeps indefinitely.
+	dir := t.TempDir()
+	script := filepath.Join(dir, "sigterm-immune.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntrap '' TERM\nsleep 60\n"), 0o755); err != nil {
+		t.Fatalf("failed to write test script: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel the context shortly after the process starts so it receives SIGTERM
+	// but ignores it. WaitDelay (5s) then causes SIGKILL escalation.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	_, _, _, _ = runCodex(ctx, sh, []string{script}, "", 0)
+	elapsed := time.Since(start)
+
+	// WaitDelay is 5s. Add a generous CI buffer of 7s on top.
+	const maxElapsed = 12 * time.Second
+	if elapsed > maxElapsed {
+		t.Errorf("WaitDelay SIGKILL escalation did not fire within %v (elapsed %v); process may have hung", maxElapsed, elapsed)
+	}
+	t.Logf("SIGTERM-immune process killed via SIGKILL after %v", elapsed)
 }
