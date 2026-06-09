@@ -1,10 +1,8 @@
 ## Summary
-This change introduces the V5 multi-provider architecture: a `provider.Provider` interface, a Claude reference implementation, a canonical tool schema layer, a `run-stage` subcommand, `finalize_commit_staging.sh` allowlist helpers, and the Go coder-stage orchestrator. The overall security posture is sound — no hardcoded credentials, no injection vulnerabilities in the Go code, temp files are created with 0600 permissions and cleaned up via `defer`, and all external inputs are validated before use. Two low-severity observations relate to the bash allowlist logic and one to the synthetic-request env-var path in the new CLI subcommand.
+This change adds two bash regression-guard test scripts (`tests/test_m06_prompt_path_discipline.sh`, `tests/test_v5_codex_dogfood.sh`) and updates pipeline state files (`.tekhton/INTAKE_REPORT.md`, `.tekhton/PREFLIGHT_REPORT.md`). Both shell scripts are read-only, exercising only local file reads via `grep` and `wc`. No production code, authentication paths, network communication, or credential handling were introduced. Security posture is clean.
 
 ## Findings
-- [LOW] [category:A01] [lib/finalize_commit_staging.sh:79-84] fixable:yes — Both `case` arms in `_is_path_allowed` execute the same prefix-match (`[[ "$path" == "$entry"* ]]`), so non-slash entries like `VERSION`, `CHANGELOG.md`, and `Makefile` act as prefix matches rather than exact matches. A file named `VERSION_BACKUP` or `Makefile.am` in the working tree would be auto-staged. Separate the exact-match case from the prefix-match case, or append a sentinel character before comparing.
-- [LOW] [category:A01] [lib/finalize_commit_staging.sh:58-66] fixable:unknown — `_pipeline_bookkeeping_globs` includes entire source trees (`internal/`, `cmd/`, `tests/`, `scripts/`, `docs/`) as bookkeeping prefixes. Any file under these trees will be auto-committed regardless of whether the coder agent declared it. A misbehaving agent that silently modifies files in an unrelated subsystem will have those changes committed without declaration. The file comment acknowledges the tradeoff; consider adding a human-visible warning when the staged set exceeds the declared set.
-- [LOW] [category:A05] [cmd/tekhton/run_stage.go:113-120] fixable:yes — The synthetic-request path (no `--request-file`) sources `Task` directly from `os.Getenv("TEKHTON_TASK")` with no sanitization. Prompt-injection content in that env var flows unmodified to the LLM prompt. Document that this code path is test/smoke-test-only and should not be used with untrusted environment values, or add a guard rejecting the synthetic path in production builds.
+None
 
 ## Verdict
-FINDINGS_PRESENT
+CLEAN
