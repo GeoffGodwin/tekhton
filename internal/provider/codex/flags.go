@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
+	"github.com/geoffgodwin/tekhton/internal/provider/tools"
 )
 
 // buildExecArgs translates a provider.Request into a codex exec argv slice.
@@ -57,6 +58,37 @@ func buildExecArgs(req *provider.Request) ([]string, error) {
 		}
 		args = append(args, "-c", fmt.Sprintf("%s=%s", inlineConfigKey(k), v))
 	}
+
+	// Resolve tool set: explicit req.Tools takes precedence over codex.tool_set.
+	toolSet := req.Tools
+	if len(toolSet) == 0 {
+		if name := req.ProviderSpecific["codex.tool_set"]; name != "" {
+			switch name {
+			case "coder":
+				toolSet = tools.CoderTools
+			case "reviewer":
+				toolSet = tools.ReviewerTools
+			case "tester":
+				toolSet = tools.TesterTools
+			case "intake":
+				toolSet = tools.IntakeTools
+			}
+		}
+	}
+
+	extraToolArgs, sandboxOverride, err := translateTools(toolSet)
+	if err != nil {
+		return nil, err
+	}
+	if sandboxOverride != "" {
+		for i := range args {
+			if args[i] == "--sandbox" && i+1 < len(args) {
+				args[i+1] = sandboxOverride
+				break
+			}
+		}
+	}
+	args = append(args, extraToolArgs...)
 
 	// Trailing "-" tells codex to read the prompt from stdin.
 	args = append(args, "-")

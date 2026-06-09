@@ -1,40 +1,31 @@
-## Planned Tests
-- [x] `internal/provider/codex/auth_test.go` — resolveAuth returns env override for explicit codex.api_key
-- [x] `internal/provider/codex/auth_test.go` — resolveAuth returns subscription tier when OAuth file exists
-- [x] `internal/provider/codex/auth_test.go` — resolveAuth returns api tier (no override) when CODEX_API_KEY env set
-- [x] `internal/provider/codex/auth_test.go` — resolveAuth returns error when no auth source available
-- [x] `internal/provider/codex/auth_test.go` — resolveAuth explicit key takes precedence over OAuth file
-- [x] `internal/provider/codex/ratelimit_test.go` — RateLimitWindow.Remaining returns correct value
-- [x] `internal/provider/codex/ratelimit_test.go` — RateLimitWindow.Remaining clamps negatives to 0
-- [x] `internal/provider/codex/ratelimit_test.go` — ShouldRetryAfter returns (d>0, true) for exhausted window with future ResetAt
-- [x] `internal/provider/codex/ratelimit_test.go` — ShouldRetryAfter returns (0, false) when all windows have remaining capacity
-- [x] `internal/provider/codex/ratelimit_test.go` — ShouldRetryAfter returns (0, false) for nil/empty snapshot
-- [x] `internal/provider/codex/ratelimit_test.go` — UnmarshalRateLimits decodes windows from fixture JSON
-- [x] `internal/provider/codex/retry_test.go` — DefaultRetryPolicy QUOTA is retryable, AUTH and BAD_REQUEST are not
-- [x] `internal/provider/codex/retry_test.go` — backoffWithJitter grows exponentially and stays bounded by MaxDelay
-- [x] `internal/provider/codex/retry_test.go` — RunAgentWithRetry returns success on first successful attempt
-- [x] `internal/provider/codex/retry_test.go` — RunAgentWithRetry retries up to MaxAttempts on retryable subcategory
-- [x] `internal/provider/codex/retry_test.go` — RunAgentWithRetry does not retry non-retryable subcategories (AUTH)
-- [x] `internal/provider/codex/retry_test.go` — RunAgentWithRetry honors ctx.Done() mid-backoff and returns ctx.Err()
-- [x] `internal/provider/codex/streaming_test.go` — EventRunEnd dropped when channel buffer full; channel close terminates for-range
-- [x] `internal/provider/codex/streaming_test.go` — EventAssistantChunk Content field verified in MultipleEvents test
-- [x] `internal/provider/codex/event_mapper_test.go` — out-of-range EventKind(999) not surfaced (forward-compat branch)
-- [x] `internal/provider/codex/event_mapper_test.go` — TaskComplete with nil payload returns (_, false)
+## Test Audit Report
 
-## Test Run Results
-Passed: 82  Failed: 0
+### Audit Summary
+Tests audited: 2 files, 22 test functions
+Verdict: PASS
 
-## Bugs Found
-None
+### Findings
 
-## Files Modified
-- [x] `internal/provider/codex/auth_test.go`
-- [x] `internal/provider/codex/ratelimit_test.go`
-- [x] `internal/provider/codex/retry_test.go`
-- [x] `internal/provider/codex/streaming_test.go`
-- [x] `internal/provider/codex/event_mapper_test.go`
+#### COVERAGE: codexToolName unit test asserts only non-empty, not actual mapped values
+- File: internal/provider/codex/tools_test.go:216
+- Issue: `TestCodexToolName_KnownNames` verifies all six canonical names return `(nonEmpty, true)` but never checks the actual Codex permission key. A regression where "Bash" remapped from "shell" to "fs_read" would not be caught by this test. The fixture-based integration tests (coder/reviewer/tester) do exercise the mapping end-to-end, so this is not a coverage hole — but it leaves the `codexToolName` unit test weaker than warranted.
+- Severity: MEDIUM
+- Action: Extend `TestCodexToolName_KnownNames` with a table-driven check asserting exact mapped values: `{"Read","fs_read"}, {"Write","fs_write"}, {"Edit","fs_write"}, {"Bash","shell"}, {"Glob","fs_read"}, {"Grep","fs_read"}`.
 
-## Timing
-- Test executions: 7
-- Approximate total test execution time: 45s
-- Test files written: 5
+#### COVERAGE: codex.tool_set integration only tests the "intake" branch
+- File: internal/provider/codex/flags_test.go:260
+- Issue: `TestBuildExecArgs_ToolSetFromProviderSpecific` exercises only `codex.tool_set=intake`. The switch in `flags.go:65-76` has four branches (coder, reviewer, tester, intake). A regression where `"coder"` stopped resolving would not be caught by any flags_test.go test — only by translateTools fixture tests which don't go through `buildExecArgs`.
+- Severity: LOW
+- Action: Add `TestBuildExecArgs_ToolSetFromProviderSpecific_Coder` asserting `codex.tool_set=coder` produces `--sandbox workspace-write`.
+
+#### COVERAGE: isInlineConfigKey exact-prefix boundary not tested
+- File: internal/provider/codex/flags_test.go (absence of test)
+- Issue: `isInlineConfigKey` uses strict `len(k) > len(prefix)`, so `"codex.config."` (no suffix) returns false. No test covers this boundary.
+- Severity: LOW
+- Action: Add a table-driven unit test for `isInlineConfigKey` covering the exact-prefix edge case.
+
+#### COVERAGE: TestBuildExecArgs_WithTools does not verify the value of tools.allowed
+- File: internal/provider/codex/flags_test.go:215
+- Issue: Asserts that `-c tools.allowed=` prefix is present but not the actual permission list. This is acceptable because `TestTranslateTools_IntakeFixture` covers the value at the unit level; the flags test's scope is integration wiring, not value correctness.
+- Severity: LOW
+- Action: No action required.

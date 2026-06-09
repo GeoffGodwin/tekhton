@@ -1,0 +1,4 @@
+{
+  "extra_args": ["-c", "tools.allowed=[\"shell\"]"],
+  "sandbox_override": "workspace-write"
+}

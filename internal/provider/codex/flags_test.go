@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
+	"github.com/geoffgodwin/tekhton/internal/provider/tools"
 )
 
 // newReqWithOut builds a minimal Request with a fixed output_last_message so
@@ -205,5 +206,93 @@ func TestMakeOutputLastMessagePath_CreatesTempfile(t *testing.T) {
 	base := filepath.Base(path)
 	if !strings.HasPrefix(base, "tekhton-codex-last-") {
 		t.Errorf("tempfile name %q does not match expected prefix tekhton-codex-last-*", base)
+	}
+}
+
+// TestBuildExecArgs_WithTools verifies that when req.Tools is set, buildExecArgs
+// emits a -c tools.allowed=... entry. This is the primary integration test for
+// the m09 translateTools wiring in buildExecArgs.
+func TestBuildExecArgs_WithTools(t *testing.T) {
+	req := newReqWithOut(t, func(r *provider.Request) {
+		r.Tools = tools.IntakeTools
+	})
+	args, err := buildExecArgs(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify -c tools.allowed=... is present.
+	found := false
+	for i, a := range args {
+		if a == "-c" && i+1 < len(args) && strings.HasPrefix(args[i+1], "tools.allowed=") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected -c tools.allowed=... in argv %v", args)
+	}
+}
+
+// TestBuildExecArgs_SandboxOverriddenToReadOnly verifies that buildExecArgs
+// replaces the default --sandbox workspace-write with read-only when the
+// supplied tool set contains only read-only tools (IntakeTools).
+func TestBuildExecArgs_SandboxOverriddenToReadOnly(t *testing.T) {
+	req := newReqWithOut(t, func(r *provider.Request) {
+		r.Tools = tools.IntakeTools // no Bash, Write, or Edit → read-only sandbox
+	})
+	args, err := buildExecArgs(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sandboxIdx := slices.Index(args, "--sandbox")
+	if sandboxIdx == -1 || sandboxIdx+1 >= len(args) {
+		t.Fatalf("--sandbox flag not found in argv %v", args)
+	}
+	if args[sandboxIdx+1] != "read-only" {
+		t.Errorf("--sandbox = %q, want %q", args[sandboxIdx+1], "read-only")
+	}
+}
+
+// TestBuildExecArgs_ToolSetFromProviderSpecific verifies that
+// req.ProviderSpecific["codex.tool_set"]="intake" causes buildExecArgs to
+// apply IntakeTools and therefore produce a read-only sandbox override.
+func TestBuildExecArgs_ToolSetFromProviderSpecific(t *testing.T) {
+	req := newReqWithOut(t, func(r *provider.Request) {
+		r.ProviderSpecific["codex.tool_set"] = "intake"
+	})
+	args, err := buildExecArgs(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sandboxIdx := slices.Index(args, "--sandbox")
+	if sandboxIdx == -1 || sandboxIdx+1 >= len(args) {
+		t.Fatalf("--sandbox flag not found in argv %v", args)
+	}
+	if args[sandboxIdx+1] != "read-only" {
+		t.Errorf("--sandbox = %q, want %q (codex.tool_set=intake should resolve to read-only)", args[sandboxIdx+1], "read-only")
+	}
+}
+
+// TestBuildExecArgs_ExplicitToolsTakePrecedenceOverToolSet verifies that when
+// req.Tools is non-empty, it takes precedence over codex.tool_set. This
+// prevents per-stage config from accidentally overriding explicit tool sets
+// supplied by the caller.
+func TestBuildExecArgs_ExplicitToolsTakePrecedenceOverToolSet(t *testing.T) {
+	req := newReqWithOut(t, func(r *provider.Request) {
+		r.Tools = tools.IntakeTools                    // read-only set
+		r.ProviderSpecific["codex.tool_set"] = "coder" // would be workspace-write
+	})
+	args, err := buildExecArgs(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Explicit tools (IntakeTools = read-only) must win over codex.tool_set=coder.
+	sandboxIdx := slices.Index(args, "--sandbox")
+	if sandboxIdx == -1 || sandboxIdx+1 >= len(args) {
+		t.Fatalf("--sandbox flag not found in argv %v", args)
+	}
+	if args[sandboxIdx+1] != "read-only" {
+		t.Errorf("--sandbox = %q, want %q (explicit req.Tools must override codex.tool_set)", args[sandboxIdx+1], "read-only")
 	}
 }

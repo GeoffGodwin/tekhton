@@ -1,0 +1,4 @@
+{
+  "extra_args": ["-c", "tools.allowed=[\"fs_read\",\"fs_read\",\"fs_read\"]"],
+  "sandbox_override": "read-only"
+}
