@@ -65,7 +65,7 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 		return nil, fmt.Errorf("codex provider: build args: %w", err)
 	}
 	_, _, exitCode, runErr := runCodex(ctx, p.BinaryPath, args, req.Prompt, req.Timeout)
-	if runErr != nil && exitCode == 0 {
+	if runErr != nil {
 		// Process-level error (binary not found, permission denied, etc.).
 		return nil, fmt.Errorf("codex provider: invoke: %w", runErr)
 	}
