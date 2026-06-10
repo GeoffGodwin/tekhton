@@ -5,8 +5,31 @@ set -euo pipefail
 #
 # Extracted from init_config_sections.sh to keep that file under the 300-line
 # ceiling. Sourced by init_config_sections.sh — do not run directly.
-# Provides: _emit_section_workspace
+# Provides: _emit_section_workspace, _emit_provider_section
 # =============================================================================
+
+# _emit_provider_section — V5 m12 provider selection block.
+# Emits PROVIDER=codex,claude default and commented per-stage overrides.
+_emit_provider_section() {
+    cat << 'EOF'
+
+# === Provider Selection (V5 m12) ============================================
+# Cost-ranked: Codex (subscription/free) first, Claude (API) as fallback.
+# NOTE (m15 upgrade): default changed from implicit Claude-only to codex,claude.
+# To restore Claude-only behavior: PROVIDER=claude
+PROVIDER=codex,claude
+
+# Per-stage overrides (uncomment to enable):
+# PROVIDER_intake=
+# PROVIDER_coder=
+# PROVIDER_security=
+# PROVIDER_review=
+# PROVIDER_tester=
+# PROVIDER_architect=
+# PROVIDER_docs=
+# PROVIDER_cleanup=
+EOF
+}
 
 # _emit_section_workspace — Emits project structure config if monorepo detected.
 _emit_section_workspace() {

@@ -256,7 +256,6 @@ EOF
 
 # shellcheck source=init_config_workspace.sh disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/init_config_workspace.sh"
-
 # generate_sectioned_config — Produces the complete pipeline.conf with sections.
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,
 #        $5=analyze_conf, $6=build_cmd, $7=build_conf,
@@ -284,6 +283,8 @@ generate_sectioned_config() {
 
     _emit_section_models_turns "$coder_model" \
         "$coder_turns" "$jr_turns" "$reviewer_turns" "$tester_turns" "$scout_turns"
+
+    _emit_provider_section
 
     _emit_section_pipeline "$required_tools"
 
