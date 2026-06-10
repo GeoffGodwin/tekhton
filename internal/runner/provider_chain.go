@@ -46,6 +46,18 @@ func (c *Chain) SortByCostRank() {
 	})
 }
 
+// Tier returns the lowest-cost tier across all providers in the chain —
+// the cheapest tier the chain can attempt. Returns TierUnknown when empty.
+func (c *Chain) Tier() string {
+	best := provider.TierUnknown
+	for _, p := range c.Providers {
+		if provider.TierCostRank(p.Tier()) < provider.TierCostRank(best) {
+			best = p.Tier()
+		}
+	}
+	return best
+}
+
 // Name returns "chain(<p1>,<p2>,...)" — used for diagnostics only.
 func (c *Chain) Name() string {
 	names := ""

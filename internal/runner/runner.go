@@ -32,9 +32,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/preflight"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/provider"
-	"github.com/geoffgodwin/tekhton/internal/provider/claude"
 	"github.com/geoffgodwin/tekhton/internal/state"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
 
 // Sentinel errors callers match with errors.Is.
@@ -98,10 +96,9 @@ type Runner struct {
 	TUI        TUI
 	Acceptance AcceptanceChecker
 
-	// Provider is the agent backend all stage packages use. Defaults to the
-	// Claude provider backed by an in-process supervisor. m09 will make this
-	// per-stage configurable; for now all stages share a single provider.
-	Provider provider.Provider
+	// providerCache holds per-stage resolved providers so ResolveProvider is
+	// called at most once per stage per run. Populated lazily by providerForStage.
+	providerCache map[string]provider.Provider
 
 	// Env composes the bash subprocess env (m26 StageEnvV1 contract) from
 	// pipeline.conf + run-request flags + per-stage overrides. Nil falls
@@ -146,7 +143,6 @@ func New(p Pipeline) *Runner {
 		DefaultMaxPipelineAttempts:     5,
 		DefaultAutonomousTimeoutSecs:   7200,
 		DefaultMaxAutonomousAgentCalls: 200,
-		Provider:                       claude.New(supervisor.New(nil, nil)),
 	}
 }
 
@@ -166,6 +162,25 @@ func (r *Runner) effectiveBounds(req *proto.RunRequestV1) (maxAttempts, timeoutS
 		maxCalls = r.DefaultMaxAutonomousAgentCalls
 	}
 	return
+}
+
+// providerForStage returns the resolved provider for the given stage name,
+// caching the result on the runner so ResolveProvider is called at most once
+// per stage per run. Per-stage env overrides (PROVIDER_<STAGE>=) are read at
+// first call and cached for the run lifetime.
+func (r *Runner) providerForStage(stage string) (provider.Provider, error) {
+	if r.providerCache == nil {
+		r.providerCache = make(map[string]provider.Provider)
+	}
+	if p, ok := r.providerCache[stage]; ok {
+		return p, nil
+	}
+	p, err := ResolveProvider(stage)
+	if err != nil {
+		return nil, err
+	}
+	r.providerCache[stage] = p
+	return p, nil
 }
 
 // resultPath returns the configured RunResultFile or the default under the

@@ -39,21 +39,24 @@ import (
 // route run-flags through here.
 func newRunCmd() *cobra.Command {
 	var (
-		taskFlag         string
-		completeFlag     bool
-		resumeFlag       bool
-		humanFlag        bool
-		humanTagFlag     string
-		milestoneFlag    string
-		autoAdvanceFlag  bool
-		autoAdvanceLimit int
-		dryRunFlag       bool
-		noTUIFlag        bool
-		projectDirFlag   string
-		tekhtonHomeFlag  string
-		analyzeCmd       string
-		compileCmd       string
-		testCmd          string
+		taskFlag              string
+		completeFlag          bool
+		resumeFlag            bool
+		humanFlag             bool
+		humanTagFlag          string
+		milestoneFlag         string
+		autoAdvanceFlag       bool
+		autoAdvanceLimit      int
+		dryRunFlag            bool
+		noTUIFlag             bool
+		projectDirFlag        string
+		tekhtonHomeFlag       string
+		analyzeCmd            string
+		compileCmd            string
+		testCmd               string
+		providerOverride      string
+		providerChainOverride string
+		requireTier           string
 	)
 
 	c := &cobra.Command{
@@ -79,6 +82,17 @@ func newRunCmd() *cobra.Command {
 					fmt.Errorf("unexpected positional argument(s): %s", strings.Join(args, " ")),
 					args, autoAdvanceFlag)
 				return errExitCode{code: exitUsage, err: fmt.Errorf("unexpected positional arguments")}
+			}
+
+			// Provider flag overrides: set env before per-stage resolution in buildRunner.
+			if providerOverride != "" {
+				os.Setenv("PROVIDER", providerOverride)
+			}
+			if providerChainOverride != "" {
+				os.Setenv("PROVIDER", providerChainOverride)
+			}
+			if requireTier != "" {
+				os.Setenv("TEKHTON_REQUIRE_TIER", requireTier)
 			}
 
 			r, cleanup, err := buildRunner(req, analyzeCmd, compileCmd, testCmd)
@@ -170,6 +184,12 @@ func newRunCmd() *cobra.Command {
 	c.Flags().StringVar(&analyzeCmd, "analyze-cmd", "", "build-gate analyze command (default: skip)")
 	c.Flags().StringVar(&compileCmd, "compile-cmd", "", "build-gate compile command (default: skip)")
 	c.Flags().StringVar(&testCmd, "test-cmd", "", "completion-gate test command (default: skip)")
+	c.Flags().StringVar(&providerOverride, "provider", "",
+		"Override PROVIDER env for this run (single provider name, e.g. claude)")
+	c.Flags().StringVar(&providerChainOverride, "provider-chain", "",
+		"Override PROVIDER env with an explicit chain (comma-separated, e.g. codex,claude)")
+	c.Flags().StringVar(&requireTier, "require-tier", "",
+		"Fail rather than fall through to a costlier tier (subscription | api | local)")
 	return c
 }
 
@@ -306,18 +326,35 @@ func buildRunner(req *proto.RunRequestV1, analyzeCmd, compileCmd, testCmd string
 	r.ProjectDir = req.ProjectDir
 	r.TekhtonHome = req.TekhtonHome
 
-	// m02: inject the runner's provider into every Go-native stage package.
-	// All stage packages default to a nil provider; this call wires the real
-	// backend so RunAgent calls reach the Claude CLI.
-	if r.Provider != nil {
-		stageintake.SetProvider(r.Provider)
-		stagecleanup.SetProvider(r.Provider)
-		stagedocs.SetProvider(r.Provider)
-		stagesecurity.SetProvider(r.Provider)
-		stagearchitect.SetProvider(r.Provider)
-		stagereview.SetProvider(r.Provider)
-		stagetester.SetProvider(r.Provider)
-		stagecoder.SetProvider(r.Provider)
+	// Per-stage provider injection: resolve PROVIDER/PROVIDER_<STAGE>= env
+	// for each stage package so per-stage overrides take effect. Replaces
+	// the m02 single-provider injection.
+	for _, stageName := range []string{
+		"intake", "cleanup", "docs", "security", "architect", "review", "tester", "coder",
+	} {
+		p, err := runner.ResolveProvider(stageName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "provider: stage %q: %v\n", stageName, err)
+			continue
+		}
+		switch stageName {
+		case "intake":
+			stageintake.SetProvider(p)
+		case "cleanup":
+			stagecleanup.SetProvider(p)
+		case "docs":
+			stagedocs.SetProvider(p)
+		case "security":
+			stagesecurity.SetProvider(p)
+		case "architect":
+			stagearchitect.SetProvider(p)
+		case "review":
+			stagereview.SetProvider(p)
+		case "tester":
+			stagetester.SetProvider(p)
+		case "coder":
+			stagecoder.SetProvider(p)
+		}
 	}
 
 	// m26: load pipeline.conf once and build the EnvBuilder that feeds

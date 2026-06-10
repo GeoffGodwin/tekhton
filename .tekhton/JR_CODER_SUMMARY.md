@@ -1,30 +1,24 @@
-## Changes Made
+## What Was Fixed
 
-**File:** `internal/provider/codex/codex.go`
+- **`templates/pipeline.conf.example` missing PROVIDER block** — Added the
+  `PROVIDER=codex,claude` default and all commented per-stage overrides
+  (`PROVIDER_intake`, `PROVIDER_coder`, `PROVIDER_security`, `PROVIDER_review`,
+  `PROVIDER_tester`, `PROVIDER_architect`, `PROVIDER_docs`, `PROVIDER_cleanup`)
+  between the Models & Turns section and Section 3: Pipeline Behavior.
+  Includes migration callout noting the m15 default change from implicit
+  Claude-only to `codex,claude`. Acceptance criterion
+  `grep -q 'PROVIDER=' templates/pipeline.conf.example` now passes.
 
-Fixed tempfile leak in `RunAgent`: `buildExecArgs` (via `makeOutputLastMessagePath`) creates a
-`tekhton-codex-last-*.md` tempfile whenever `codex.output_last_message` is absent from
-`ProviderSpecific`, but the old code never cleaned it up and never told the caller where it was.
+- **`lib/init_config_sections.sh` missing `_emit_provider_section`** — Added
+  `_emit_provider_section` function to `lib/init_config_workspace.sh` (already
+  sourced by `init_config_sections.sh`, used as the overflow file to keep
+  `init_config_sections.sh` at the 300-line ceiling). Added call to
+  `_emit_provider_section` in `generate_sectioned_config` after
+  `_emit_section_models_turns`, so `tekhton --init` now emits the PROVIDER block
+  into freshly-rendered pipeline.conf files.
 
-**What changed:**
+## Files Modified
 
-1. Added `"os"` import.
-2. After `buildExecArgs` returns, scan `args` for the element following `--output-last-message`
-   to recover `outPath`.
-3. On the process-level error path (`runErr != nil`): call `os.Remove(outPath)` — the file
-   won't be read, so remove it immediately rather than leak it.
-4. On the success path: set `LastReportPath: outPath` in the returned `Result`. The caller now
-   owns the file's lifecycle and m08 consumers can locate the output via `Result.LastReportPath`.
-5. Updated the `RunAgent` doc comment to reflect that `LastReportPath` is now populated at m07.
-
-**Why the caller-owns approach over defer-remove:**
-The reviewer noted "the latter also unblocks m08 consumers" — m08 will read the file from
-`LastReportPath` to parse JSON events. A `defer os.Remove` would delete the file before any
-caller could read it. The caller-owns pattern is correct: the caller reads and then removes it.
-For the error path (no caller to own it), we remove immediately.
-
-## Items Not Touched
-
-All non-blocking notes from the reviewer report (exec_test.go `requireBin` duplicate, flags.go
-map iteration order, inline-config `=` guard, `--cd` path validation) were left untouched per
-task scope ("fix only items under Simple Blockers").
+- `templates/pipeline.conf.example`
+- `lib/init_config_workspace.sh`
+- `lib/init_config_sections.sh`

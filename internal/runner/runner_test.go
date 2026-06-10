@@ -248,12 +248,40 @@ func TestPersistFailureStateZerosCountersOnSafetyBound(t *testing.T) {
 	}
 }
 
-// TestNew_ProviderNonNil asserts the m02 acceptance criterion: New() must
-// return a Runner with a non-nil Provider so stages can call RunAgent.
-func TestNew_ProviderNonNil(t *testing.T) {
+// TestProviderForStage_ClaudeEnv asserts that providerForStage returns a
+// non-nil claude provider when PROVIDER=claude. Replaces the m02 single-
+// Provider assertion after m15 wires per-stage dispatch via ResolveProvider.
+func TestProviderForStage_ClaudeEnv(t *testing.T) {
+	t.Setenv("PROVIDER", "claude")
+	t.Setenv("PROVIDER_CODER", "")
 	r := New(&fakePipeline{})
-	if r.Provider == nil {
-		t.Fatal("runner.New().Provider is nil; must be non-nil (m02 AC)")
+	p, err := r.providerForStage("coder")
+	if err != nil {
+		t.Fatalf("providerForStage: %v", err)
+	}
+	if p == nil {
+		t.Fatal("providerForStage returned nil provider")
+	}
+	if p.Name() != "claude" {
+		t.Errorf("Name: want claude, got %s", p.Name())
+	}
+}
+
+// TestProviderForStage_CachesResult asserts that providerForStage returns the
+// same provider instance on repeated calls for the same stage.
+func TestProviderForStage_CachesResult(t *testing.T) {
+	t.Setenv("PROVIDER", "claude")
+	r := New(&fakePipeline{})
+	p1, err := r.providerForStage("coder")
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	p2, err := r.providerForStage("coder")
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if p1 != p2 {
+		t.Error("providerForStage: second call returned a different instance (cache miss)")
 	}
 }
 

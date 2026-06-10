@@ -2,7 +2,6 @@
 id: "15"
 status: "todo"
 -->
-<!-- PM-tweaked: 2026-06-10 -->
 
 # m15 (V5) — Wire Chain to Runner + CLI Flags + Operator Documentation
 
@@ -15,24 +14,6 @@ status: "todo"
 | **m15 fills** | (1) `internal/runner/provider_select.go` — `ResolveProvider(stage string) (provider.Provider, error)` reads env (`PROVIDER`, `PROVIDER_<STAGE>=`, optional `PROVIDER_CHAIN`) and constructs either a single provider or a `Chain` via the existing `NewChain` from m12. Plus `constructProvider(name string) (provider.Provider, error)` factory dispatching to `claude.New()` / `codex.New()`. (2) `internal/runner/runner.go` modification — per-stage provider dispatch path replaces the single hardcoded `Provider` field. Stage dispatch calls `ResolveProvider(stage)` per invocation. (3) `cmd/tekhton/run.go` modifications — three new flags: `--provider <name>` (single-shot, overrides `PROVIDER` env for this run), `--provider-chain <list>` (comma-separated chain override), `--require-tier <tier>` (fail rather than fall through to a costlier tier per the m13 design). (4) `templates/pipeline.conf.example` modification — adds the PROVIDER block with cost-framing comments per the m12 design (the comments themselves are already drafted in `.claude/milestones/m12-codex-provider-selection-dogfood.md`'s Goal 1 section — copy verbatim). (5) `lib/init_config_sections.sh` modification — adds a PROVIDER section emitter so `tekhton --init` writes the defaults into freshly-created pipeline.conf. (6) `docs/v5-polyglot.md` (~200 LOC, NEW) — operator-facing guide. Sections: Overview, pipeline.conf syntax, Per-stage overrides + fallback chains, Setting up Codex auth (CODEX_API_KEY, `codex login`, `~/.codex/auth.json`), Setting up Claude post-June-15, Troubleshooting (auth fail → which provider?), Cost considerations, Migration path. (7) `docs/v5-tier-model.md` (~100 LOC, NEW) — tier semantics doc. Sections: The four tier values, June 15 framing + Tekhton response, How `--require-tier subscription` works, How to read RUN_SUMMARY's tier column, The `TEKHTON_CLAUDE_PRE_JUNE_15` escape hatch. (8) Tests: `provider_select_test.go` for ResolveProvider + chain construction, runner test for the per-stage dispatch path. |
 | **Depends on** | m12, m13 (the type/interface work that m15 wires up) |
 | **Files changed** | `internal/runner/provider_select.go` (~150 LOC, CREATE), `internal/runner/provider_select_test.go` (~180 LOC, CREATE), `internal/runner/runner.go` (~50 LOC modify), `cmd/tekhton/run.go` (~50 LOC modify), `templates/pipeline.conf.example` (~30 LOC append), `lib/init_config_sections.sh` (~25 LOC modify), `docs/v5-polyglot.md` (~200 LOC, CREATE), `docs/v5-tier-model.md` (~100 LOC, CREATE), `VERSION` |
-
----
-
-## Migration Impact
-
-[PM: Added — rubric requires this section when user-facing config is introduced, and the default behavior change warrants explicit documentation.]
-
-**Existing operators (no PROVIDER set in pipeline.conf):** Before m15, the runner unconditionally used Claude. After m15, any run where `PROVIDER` is unset will default to `"codex,claude"` — Codex is tried first, Claude is the fallback. This is intentional (cost-ranked, cheapest-first) but is a **silent breaking change** for operators who rely on the implicit Claude-only default and have not configured `PROVIDER`.
-
-**Required action for operators who want Claude-only behavior:**
-Add `PROVIDER=claude` to their `pipeline.conf`. The coder MUST add a clear callout about this default change to `docs/v5-polyglot.md`'s "Migration path" section — not just a mention, but a bolded callout that the old implicit default is now `codex,claude`.
-
-**New config keys introduced:**
-- `PROVIDER` — global provider spec (single name or comma-separated chain)
-- `PROVIDER_<STAGE>=` — per-stage override (e.g. `PROVIDER_CODER=claude`)
-- `TEKHTON_REQUIRE_TIER` — fail-fast tier guard (set by `--require-tier` flag)
-
-No existing config keys are renamed or removed. Operators who don't set any of the above will see Codex attempted first on every stage dispatch starting with this release.
 
 ---
 
@@ -269,7 +250,7 @@ Operator-facing guide (~200 LOC). Section list:
 5. **Setting up Claude post-June-15** — `claude --print` API-metered; `TEKHTON_CLAUDE_PRE_JUNE_15=true` escape hatch.
 6. **Troubleshooting** — auth fail signals, tier confusion, `--require-tier` not behaving as expected.
 7. **Cost considerations** — subscription preferred, API last resort.
-8. **Migration path** — switching a single stage to Codex without disrupting the rest. [PM: This section MUST include a bolded callout that upgrading to m15 changes the implicit default from Claude-only to `codex,claude`. Operators who want Claude-only must add `PROVIDER=claude` to pipeline.conf explicitly.]
+8. **Migration path** — switching a single stage to Codex without disrupting the rest.
 
 ### Goal 7 — `docs/v5-tier-model.md`
 
@@ -313,7 +294,6 @@ Tier semantics doc (~100 LOC). Section list:
 - [ ] `lib/init_config_sections.sh` emits the PROVIDER block into a freshly-rendered pipeline.conf. Verified by `tekhton --init` smoke test against a temp dir.
 - [ ] `docs/v5-polyglot.md` exists with ≥7 `##` sections per the design. Verified.
 - [ ] `docs/v5-tier-model.md` exists with ≥5 `##` sections per the design. Verified.
-- [ ] `docs/v5-polyglot.md` "Migration path" section contains an explicit callout that the default provider changed from implicit Claude to `codex,claude` and documents how to restore Claude-only behavior. Verified by `grep -q 'PROVIDER=claude' docs/v5-polyglot.md`. [PM: Added — required by Migration Impact section.]
 - [ ] No regression in m07-m13 tests OR m01-m06 V5 reliability tests OR earlier.
 - [ ] `golangci-lint run` and `go vet` clean.
 - [ ] Full suite passes.
@@ -347,7 +327,6 @@ Tier semantics doc (~100 LOC). Section list:
   `docs/v5-polyglot.md` mentions cost in the "Cost considerations"
   section but should NOT explain budget caps or RUN_SUMMARY cost
   rows — those land in m14's own docs.
-- **Migration impact callout is required in docs.** The "Migration path" section of `docs/v5-polyglot.md` MUST explicitly warn that m15 changes the effective default from Claude-only (implicit pre-m15 behavior) to `codex,claude`. Operators who want Claude-only must set `PROVIDER=claude`. [PM: Added to mirror the Migration Impact section.]
 
 ## Seeds Forward
 
