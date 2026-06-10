@@ -59,25 +59,29 @@ else
     fail "Only ${PROVIDER_FIELDS} stage config file(s) carry a Provider field (want ≥8)"
 fi
 
-# --- Check 3: Runner.Provider field present and non-nil -----------------
-RUNNER_PROVIDER=""
-RUNNER_PROVIDER=$(grep -cE 'Provider provider\.Provider' \
-    "${TEKHTON_HOME}/internal/runner/runner.go" 2>/dev/null) || RUNNER_PROVIDER=0
+# --- Check 3: Runner provider dispatch exists ---------------------------
+# m15 replaced m02's single Runner.Provider field with per-stage dispatch
+# via providerForStage() + ResolveProvider(). Assert the new architecture:
+# the runner exposes a providerForStage method that resolves a provider
+# (verified by the Go unit tests TestProviderForStage_*).
+RUNNER_DISPATCH=""
+RUNNER_DISPATCH=$(grep -cE 'func \(r \*Runner\) providerForStage' \
+    "${TEKHTON_HOME}/internal/runner/runner.go" 2>/dev/null) || RUNNER_DISPATCH=0
 
-if [[ "${RUNNER_PROVIDER:-0}" -ge 1 ]]; then
-    pass "internal/runner/runner.go declares Provider provider.Provider"
+if [[ "${RUNNER_DISPATCH:-0}" -ge 1 ]]; then
+    pass "internal/runner/runner.go declares providerForStage dispatch"
 else
-    fail "internal/runner/runner.go missing Provider provider.Provider field"
+    fail "internal/runner/runner.go missing providerForStage dispatch method"
 fi
 
-# Run the Go unit test that asserts New().Provider != nil.
-if go test -run TestNew_ProviderNonNil \
+# Run the Go unit tests that assert per-stage resolution works.
+if go test -run 'TestProviderForStage_' \
        "${TEKHTON_HOME}/internal/runner/..." \
        -count=1 -timeout 30s \
        > /dev/null 2>&1; then
-    pass "runner.New().Provider != nil (Go unit test TestNew_ProviderNonNil)"
+    pass "providerForStage returns non-nil provider and caches (TestProviderForStage_*)"
 else
-    fail "runner.New().Provider == nil — New() does not wire the default provider"
+    fail "providerForStage Go unit tests failed"
 fi
 
 # --- Summary ---------------------------------------------------------------

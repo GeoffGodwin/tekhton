@@ -118,8 +118,15 @@ func runCodexStreaming(
 		}
 	}()
 
+	// Per os/exec docs: "Wait will close the pipe after seeing the command
+	// exit ... it is thus incorrect to call Wait before all reads from the
+	// pipe have completed." Closing the parent's read end discards anything
+	// still in the OS pipe buffer, which surfaced as a flaky 0-event read in
+	// TestRunCodexStreaming_MalformedJSON. Drain the scanner first, then Wait.
+	// Subprocess hangs are still bounded by exec.CommandContext (kills on
+	// ctx.Done) and cmd.WaitDelay set above.
+	<-scanDone
 	waitErr := cmd.Wait()
-	<-scanDone // drain must finish before we touch rawBuf/eventsBuf
 
 	// Emit EventRunEnd then close the channel — even on errors.
 	if eventCh != nil {
