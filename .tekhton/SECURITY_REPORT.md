@@ -1,10 +1,8 @@
 ## Summary
-m12 (Per-Stage Provider Selection + Fallback Chain + End-to-End Codex Dogfood) extends the Codex provider with tool-permission translation: `tools.go` converts `[]provider.ToolSchema` to Codex `-c tools.allowed=[...]` CLI args and a sandbox-mode override; `tool_map.go` provides the static Tekhton→Codex permission table; `flags.go` is modified to invoke the translation and resolve a `codex.tool_set` short-name. All CLI values injected into the subprocess argv are derived from the static lookup table or hardcoded constants — no user-controlled strings reach the Codex subprocess arguments via the new code paths. Tool schemas are validated with `provider.ValidateToolSchema` before translation, and `codex.tool_set` values flow through a closed switch with no passthrough of unrecognized input. Carry-forward findings from m09/m11 remain (no change to auth or cwd handling in this milestone).
+Changes consist of two Markdown report files only: a reasoning-text and confidence-score update in INTAKE_REPORT.md, and a timestamp update in PREFLIGHT_REPORT.md. Neither file contains executable code, secrets, user input handling, authentication logic, cryptographic operations, or network communication. No security-relevant surface was modified.
 
 ## Findings
-- [LOW] [category:A02] [internal/provider/codex/auth.go:33-34] fixable:no — Per-request API key from `req.ProviderSpecific["codex.api_key"]` is placed into the subprocess environment as `CODEX_API_KEY=<value>`. On Linux, `/proc/<pid>/environ` is briefly readable by same-UID processes during subprocess lifetime. This is the standard and only viable mechanism for injecting secrets into a CLI subprocess without modifying the Codex CLI contract; accept or document.
-- [LOW] [category:A01] [internal/provider/codex/flags.go:46] fixable:yes — `codex.cwd` from `req.ProviderSpecific` is passed directly to `--cd` without path validation. If a future caller populates this from user-controlled input, the codex subprocess could operate on arbitrary filesystem locations. Consider adding a note in the ProviderSpecific key's documentation that callers are responsible for sanitizing this value.
-- [LOW] [category:A04] [internal/provider/codex/tools.go:57] fixable:yes — Unknown tool names fall back to the `"shell"` Codex permission key (the most permissive grant). Any Tekhton tool added in a future milestone that is absent from `codexToolMap` will silently receive full shell execution access in Codex until the table is explicitly updated. Consider logging a warning or returning an error for unknown tool names rather than silently escalating to shell, to enforce least-privilege by default.
+None
 
 ## Verdict
-FINDINGS_PRESENT
+CLEAN
