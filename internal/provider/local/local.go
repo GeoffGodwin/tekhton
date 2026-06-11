@@ -89,10 +89,10 @@ func (p *Provider) RunAgent(ctx context.Context, req *provider.Request) (*provid
 	r := *req
 	r.Model = p.model
 	r.ProviderSpecific = cloneAndInject(req.ProviderSpecific, map[string]string{
-		"codex.config.model_provider":                            p.id,
-		"codex.config.model_providers." + p.id + ".name":         "qwen-local",
-		"codex.config.model_providers." + p.id + ".base_url":     p.baseURL,
-		"codex.config.model_providers." + p.id + ".wire_api":     p.wireAPI,
+		"codex.config.model_provider":                        p.id,
+		"codex.config.model_providers." + p.id + ".name":     "qwen-local",
+		"codex.config.model_providers." + p.id + ".base_url": p.baseURL,
+		"codex.config.model_providers." + p.id + ".wire_api": p.wireAPI,
 	})
 	return p.inner.RunAgent(ctx, &r)
 }
