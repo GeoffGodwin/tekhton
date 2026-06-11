@@ -5,10 +5,11 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined with a hard boundary: exact files to CREATE and MODIFY are enumerated, and touching `codex/`, `claude/`, or `provider.go` is explicitly forbidden
-- Acceptance criteria are specific and mechanically testable: exact return values (`Name()`, `Tier()`), config defaults, map-mutation safety, cost-rank ordering, and CI commands (`go test ./internal/provider/... ./internal/runner/...`)
-- Design section includes a concrete Go struct and delegation pseudocode — two developers would implement this the same way
-- Watch For section pre-empts the key risks: do not fork codex, `wire_api=chat` (not `responses`), `Tier()` is a constant with no auth probe, codex-on-PATH dependency
-- The four `QWEN_LOCAL_*` config keys all carry sensible defaults, making this purely additive — existing operators are unaffected
-- No UI components; UI testability N/A
-- Minor gap: no explicit "Migration impact" section for the new config keys, but all keys are opt-in with defaults and no existing bash consumer reads them — this does not block implementation
+- Scope is precisely defined: three discrete goals, each with explicit files to create/modify
+- Acceptance criteria are specific and testable — self-skip behavior, file side-effect assertions, Go test subcategories (`TIER_LIMIT_EXCEEDED`), shellcheck cleanliness, and doc content requirements are all concrete and binary
+- Design section provides pseudo-code and CLI snippets that eliminate implementation ambiguity
+- Watch For section pre-empts the three highest-risk failure modes (self-skip blocking CI, asserting on model output text, wire_api mismatch)
+- No new user-facing config keys are introduced, so no migration section is needed
+- No UI components; UI testability rubric is not applicable
+- The "keep default chain codex,claude" constraint is explicit, preventing scope creep
+- Self-skip pattern is anchored to a concrete reference (`tests/test_pin_version_validation.sh`), so the implementation contract is unambiguous

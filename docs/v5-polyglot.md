@@ -140,6 +140,48 @@ See [v5-tier-model.md](v5-tier-model.md) for the full tier model.
 
 ---
 
+## Local Provider (qwen-local)
+
+`qwen-local` routes to a local OpenAI-compatible server (Ollama by default)
+at zero API cost. The provider delegates to the same codex machinery as the
+`codex` provider, pointed at a local endpoint.
+
+**Setup — Ollama + Qwen2.5-Coder-32B:**
+
+```bash
+# 1. Install Ollama, pull a coding-capable model (32B is the floor for
+#    reliable agentic tool-calling; Q4_K_M fits a 24GB GPU).
+ollama pull qwen2.5-coder:32b
+# 2. Ollama serves an OpenAI-compatible endpoint at :11434/v1 automatically.
+# 3. Point Tekhton at it (defaults already match Ollama):
+#    QWEN_LOCAL_BASE_URL=http://localhost:11434/v1
+#    QWEN_LOCAL_MODEL=qwen2.5-coder:32b
+#    wire_api=chat   # always use the Chat Completions path, not Responses API
+# 4. Run local-first with paid fallback:
+PROVIDER=qwen-local,codex,claude tekhton run --milestone mNN
+# 5. Or fully offline / zero-billing:
+PROVIDER=qwen-local tekhton run --milestone mNN
+```
+
+In `pipeline.conf`, always set `wire_api=chat` alongside the local provider:
+
+```bash
+PROVIDER=qwen-local,codex,claude
+QWEN_LOCAL_BASE_URL=http://localhost:11434/v1
+QWEN_LOCAL_MODEL=qwen2.5-coder:32b
+QWEN_LOCAL_WIRE_API=chat
+```
+
+`qwen-local` has cost rank 0 — it sorts before `subscription` and `api`
+providers in a chain. Use `--require-tier local` to guarantee no paid
+provider can run:
+
+```bash
+tekhton run --milestone mNN --require-tier local
+```
+
+---
+
 ## Troubleshooting
 
 **Auth failure signals:**
@@ -147,6 +189,21 @@ See [v5-tier-model.md](v5-tier-model.md) for the full tier model.
 - Codex: `codex provider: binary not found on PATH` — install the Codex CLI.
 - Codex: `upstream error` with `401` — run `codex login` or set `CODEX_API_KEY`.
 - Claude: `upstream error` with `401` — set `ANTHROPIC_API_KEY`.
+
+**`qwen-local` run reports success but no files changed:**
+
+The model is producing text but not emitting tool calls. Check in order:
+
+1. Verify `wire_api=chat` (i.e. `QWEN_LOCAL_WIRE_API=chat`). The Responses API
+   path (`wire_api=responses`) is the known local breakage source — local
+   models rarely support it correctly.
+2. Use a model of at least 32B parameters at at least 4-bit quantization
+   (`Q4_K_M` or better). Smaller models and aggressive quantization
+   (Q2/Q3) frequently fail to emit structured tool calls reliably.
+3. Confirm the smoke test passes end-to-end: `bash tests/test_qwen_local_smoke.sh`.
+   The smoke test drives a file-edit + shell-command fixture and asserts both
+   side effects completed. Until the smoke test passes, do not use `qwen-local`
+   in a real run.
 
 **Tier confusion:**
 

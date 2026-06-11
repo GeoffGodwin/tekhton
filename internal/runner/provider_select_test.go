@@ -90,6 +90,25 @@ func TestResolveProvider_UnknownProvider(t *testing.T) {
 	}
 }
 
+// TestResolveProvider_SingleQwenLocal asserts that PROVIDER=qwen-local returns
+// a qwen-local provider. Skipped when codex is not on PATH because New() wraps
+// codex.New() which requires the binary.
+func TestResolveProvider_SingleQwenLocal(t *testing.T) {
+	if _, err := exec.LookPath("codex"); err != nil {
+		t.Skip("codex binary not on PATH — qwen-local delegates to codex")
+	}
+	t.Setenv("PROVIDER", "qwen-local")
+	t.Setenv("PROVIDER_CODER", "")
+
+	p, err := runner.ResolveProvider("coder")
+	if err != nil {
+		t.Fatalf("ResolveProvider: %v", err)
+	}
+	if p.Name() != "qwen-local" {
+		t.Errorf("Name: want qwen-local, got %q", p.Name())
+	}
+}
+
 // TestResolveProvider_SingleCodex asserts that PROVIDER=codex returns a codex
 // provider. Skipped when codex is not on PATH.
 func TestResolveProvider_SingleCodex(t *testing.T) {

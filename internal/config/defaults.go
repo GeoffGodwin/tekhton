@@ -613,6 +613,13 @@ var baseDefaults = []defaultRule{
 	// (not in config_defaults.sh). Mirror the operative default so the
 	// milestone-mode multiplier has a base to scale.
 	{"AGENT_ACTIVITY_TIMEOUT", lit("600")},
+
+	// qwen-local provider — m17. Local OpenAI-compatible endpoint config.
+	// wire_api MUST be "chat"; the Responses API path breaks local tool-calling.
+	{"QWEN_LOCAL_BASE_URL", lit("http://localhost:11434/v1")},
+	{"QWEN_LOCAL_MODEL", lit("qwen2.5-coder:32b")},
+	{"QWEN_LOCAL_PROVIDER_ID", lit("qwenlocal")},
+	{"QWEN_LOCAL_WIRE_API", lit("chat")},
 }
 
 // lateDefaults: keys whose default depends on values resolved in CI gate or

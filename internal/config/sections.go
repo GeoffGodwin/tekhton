@@ -300,6 +300,11 @@ var pipelineConfSections = []SectionRule{
 		Match:       hasPrefix("QUOTA_"),
 	},
 	{
+		Name:        "Local Provider (qwen-local)",
+		Description: "Local OpenAI-compatible endpoint for PROVIDER=qwen-local. wire_api MUST be \"chat\"; the Responses path breaks local tool-calling.",
+		Match:       hasPrefix("QWEN_LOCAL_"),
+	},
+	{
 		Name:        "Causal Log",
 		Description: "Append-only event log for cross-stage causal queries.",
 		Match:       hasPrefix("CAUSAL_"),

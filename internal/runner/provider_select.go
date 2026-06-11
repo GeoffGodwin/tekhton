@@ -8,6 +8,7 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/provider/claude"
 	"github.com/geoffgodwin/tekhton/internal/provider/codex"
+	"github.com/geoffgodwin/tekhton/internal/provider/local"
 	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
 
@@ -57,6 +58,8 @@ func constructProvider(name string) (provider.Provider, error) {
 		return claude.New(supervisor.New(nil, nil)), nil
 	case "codex":
 		return codex.New()
+	case "qwen-local":
+		return local.New()
 	default:
 		return nil, fmt.Errorf("unknown provider %q", name)
 	}

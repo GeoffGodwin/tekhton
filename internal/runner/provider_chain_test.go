@@ -214,6 +214,47 @@ func TestChain_Name(t *testing.T) {
 	}
 }
 
+// TestChain_RunAgent_LocalTierWins asserts that when a local-tier provider
+// succeeds in a multi-provider chain, TierUsed records the local tier.
+func TestChain_RunAgent_LocalTierWins(t *testing.T) {
+	local := &fixedProvider{name: "qwen-local", tier: provider.TierLocal, outcome: provider.OutcomeSuccess}
+	codex := &fixedProvider{name: "codex", tier: provider.TierSubscription, outcome: provider.OutcomeSuccess}
+	claude := &fixedProvider{name: "claude", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(local, codex, claude)
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if err != nil {
+		t.Fatalf("RunAgent: unexpected error: %v", err)
+	}
+	if res.TierUsed != provider.TierLocal {
+		t.Errorf("TierUsed: want %q (local won), got %q", provider.TierLocal, res.TierUsed)
+	}
+}
+
+// TestChain_RunAgent_RequiredTier_Local_RejectsAll asserts that
+// RequiredTier=TierLocal rejects subscription-tier and api-tier providers,
+// returning ErrTierLimitExceeded and ErrorSubcategory TIER_LIMIT_EXCEEDED.
+func TestChain_RunAgent_RequiredTier_Local_RejectsAll(t *testing.T) {
+	codex := &fixedProvider{name: "codex", tier: provider.TierSubscription, outcome: provider.OutcomeSuccess}
+	claude := &fixedProvider{name: "claude", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(codex, claude)
+	c.RequiredTier = provider.TierLocal // only local passes; both providers exceed it
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if err == nil {
+		t.Fatal("RunAgent: expected error for tier limit exceeded, got nil")
+	}
+	if !errors.Is(err, runner.ErrTierLimitExceeded) {
+		t.Errorf("error: want ErrTierLimitExceeded, got %v", err)
+	}
+	if res == nil {
+		t.Fatal("result: want non-nil result with ErrorSubcategory, got nil")
+	}
+	if res.ErrorSubcategory != "TIER_LIMIT_EXCEEDED" {
+		t.Errorf("ErrorSubcategory: want TIER_LIMIT_EXCEEDED, got %q", res.ErrorSubcategory)
+	}
+}
+
 // TestChain_RunAgent_EmptyProviders documents the (nil, nil) return when no
 // providers are registered. The for-loop body never executes, so both
 // lastResult and lastErr remain their zero values. Callers must nil-check

@@ -11,7 +11,7 @@ billing change, and how `--require-tier` and the escape hatch work.
 |------|----------|---------|
 | `subscription` | `TierSubscription` | Free within quota (Codex via `codex login`, pre-June-15 Claude subscription) |
 | `api` | `TierAPI` | Paid per-token (Anthropic API, OpenAI API key) |
-| `local` | `TierLocal` | Free, no quota (local llama.cpp / vLLM — V5 Phase 2) |
+| `local` | `TierLocal` | Free, no quota (local Ollama / llama.cpp / vLLM (shipped in m17)) |
 | `unknown` | `TierUnknown` | Provider cannot determine its tier at startup |
 
 Cost rank for chain ordering: `local (0) < subscription (1) < api (2) < unknown (3)`.
