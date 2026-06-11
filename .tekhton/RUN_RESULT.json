@@ -4,5 +4,5 @@
   "attempts": 1,
   "agent_calls": 8,
   "elapsed_secs": 2155,
-  "tests_run": false
+  "tests_run": true
 }
