@@ -4,15 +4,16 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 240
+- Runs since audit: 241
 =======
-- Runs since audit: 240
+- Runs since audit: 241
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 240
+- Runs since audit: 241
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-10 | "Implement Milestone m17: qwen-local Provider: codex-sibling scaffold + local endpoint routing"] `cmd/tekhton/run_test.go:120` â `TestProviderFlagEnvOverride` duplicates the three-if provider-override block from `run.go:RunE` rather than calling through the real implementation; env-var name drift would silently pass all sub-tests (pre-existing, carried from cycle 1)
 - [ ] [2026-06-09 | "Implement Milestone m14: Cost telemetry + RUN_SUMMARY cost banner + per-stage budget caps"] internal/provider/codex/tools.go:56-64 â when multiple unknown tools are present, `allowed` accumulates duplicate `"shell"` entries (e.g. `["shell","shell","read"]`). Codex likely treats `tools.allowed` as a set, so this is harmless, but a `seen` map dedup before `joinAllowed` would produce minimal, unambiguous output.
 - [ ] [2026-06-09 | "Implement Milestone m14: Cost telemetry + RUN_SUMMARY cost banner + per-stage budget caps"] internal/runner/provider_chain.go:17-19 â `ErrTierLimitExceeded` wraps a package-private sentinel (`errTierLimit`) that is never tested or matched directly. The double-error pattern adds indirection without enabling callers to distinguish between the two sentinels. Only `ErrTierLimitExceeded` is part of the public API; `errTierLimit` can be inlined as the message string once `errors.Is` matching is verified in tests.
 - [ ] [2026-06-09 | "Implement Milestone m16: Milestone acceptance verification scripts (format + tester integration + m14/m15 backfill)"] internal/provider/codex/tools.go:56-64 â when multiple unknown tools are present, `allowed` accumulates duplicate `"shell"` entries (e.g. `["shell","shell","read"]`). Codex likely treats `tools.allowed` as a set, so this is harmless, but a `seen` map dedup before `joinAllowed` would produce minimal, unambiguous output.
