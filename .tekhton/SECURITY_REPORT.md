@@ -1,11 +1,10 @@
 ## Summary
-
-This security review covers the working tree changes for milestone m15 (Wire Chain to Runner + CLI Flags + Operator Documentation). The milestone status is still "todo" — no implementation code has been written. The only modified files are the milestone specification document (`.claude/milestones/m15-wire-chain-cli-and-docs.md`), the intake report, and the preflight report. The diff consists entirely of PM-added planning annotations: a Migration Impact section, an additional acceptance criterion, and a Watch For entry. There are no code changes, no new Go files, no shell script modifications, and no credential or input-handling surfaces introduced. Nothing in the changed content presents a security concern.
+Security review for the `theseus/Phase2` branch, covering the implemented milestone arc m12–m16 (multi-provider chain, Codex provider, per-stage selection, tier enforcement, provider wiring to runner + CLI) and the m17/m18 milestone authoring commit (planning files only, no implementation code). The Go code uses `exec.CommandContext` with explicit argument slices throughout — no shell interpolation, no injection surface. Credential injection follows the standard `cmd.Env` pattern. Context cancellation propagates correctly. The one actionable gap is incomplete credential redaction coverage: `Redact()` scrubs Anthropic keys but not Codex API keys, creating a log-exposure window if `CODEX_API_KEY` appears in captured stderr. No critical or high-severity vulnerabilities were identified.
 
 ## Findings
-
-None
+- [MEDIUM] [category:A09] [internal/errors/redact.go] fixable:yes — `Redact()` covers `ANTHROPIC_API_KEY` and `sk-ant-*` patterns but not `CODEX_API_KEY`. The supervisor tees agent stderr through `Redact()` into the causal log. If a Codex invocation fails and the error output surfaces a `CODEX_API_KEY` value (e.g. in a diagnostic trace), it will pass through unredacted. Fix: add `regexp.MustCompile(`CODEX_API_KEY=[^ \r\n]*`)` alongside `redactAnthropicEnvRE` and apply the substitution to the output.
+- [LOW] [category:A02] [internal/provider/codex/auth.go:33-34] fixable:no — The per-request API key from `ProviderSpecific["codex.api_key"]` is placed in `cmd.Env` as `CODEX_API_KEY=<key>`. This is the correct Go pattern for injecting secrets into child processes without mutating the parent env, but the value is briefly visible in `/proc/<pid>/environ` for the subprocess lifetime. No code-layer mitigation is available; this risk belongs in operator documentation.
+- [LOW] [category:A05] [internal/proto/agent_v1.go:128-130] fixable:yes — `AgentRequestV1.Validate()` confirms `PromptFile` is non-empty but does not check that the path is within an expected working directory. The current call graph always produces `PromptFile` from the internal prompt-render subsystem, so practical exposure is near-zero. A `filepath.Clean` containment check would harden the validation boundary against future callers.
 
 ## Verdict
-
-CLEAN
+FINDINGS_PRESENT

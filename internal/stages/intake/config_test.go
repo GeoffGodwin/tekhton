@@ -24,13 +24,13 @@ func TestLoadConfig_MilestoneModeFromEnvOverrides(t *testing.T) {
 	_ = os.Unsetenv("MILESTONE_MODE")
 
 	req := &proto.StageRequestV1{
-		Proto:    proto.StageRequestProtoV1,
-		Stage:    "intake",
-		Task:     "Implement Milestone m37.1: Review Helpers and Parser",
+		Proto:     proto.StageRequestProtoV1,
+		Stage:     "intake",
+		Task:      "Implement Milestone m37.1: Review Helpers and Parser",
 		Milestone: "37.1",
 		EnvOverrides: map[string]string{
-			"MILESTONE_MODE":     "true",
-			"_CURRENT_MILESTONE": "37.1",
+			"MILESTONE_MODE":        "true",
+			"_CURRENT_MILESTONE":    "37.1",
 			"MILESTONE_DAG_ENABLED": "true",
 		},
 	}

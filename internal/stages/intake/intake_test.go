@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoffgodwin/tekhton/internal/provider"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // fakeProvider records every RunAgent() call and returns canned results.

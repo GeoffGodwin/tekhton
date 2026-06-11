@@ -246,7 +246,7 @@ func writeEnvSidecar(verdict, confidence string, emitPass bool) {
 }
 
 // shellQuote returns s wrapped in single quotes with embedded single quotes
-// escaped via the standard `'\''` dance. Safe for sourceable bash files.
+// escaped via the standard `'\”` dance. Safe for sourceable bash files.
 func shellQuote(s string) string {
 	if s == "" {
 		return "''"
@@ -307,4 +307,3 @@ func blockResult(req *proto.StageRequestV1, reason string, agentCalls int) *prot
 		HumanAction: true,
 	}
 }
-

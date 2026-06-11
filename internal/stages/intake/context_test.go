@@ -192,3 +192,34 @@ func TestCapBytes(t *testing.T) {
 		t.Error("long input should be truncated to limit")
 	}
 }
+
+// TestBuildNotesContext_IgnoresHumanNotesFileEnvVar is the regression guard for
+// the buildNotesContext fix: the function must use the already-resolved
+// notesPath from cfg.HumanNotesFile, NOT the HUMAN_NOTES_FILE env var that
+// notes.ExtractFromProject / LoadDocument read internally. With the old code
+// (ExtractFromProject), setting HUMAN_NOTES_FILE to /nonexistent would cause
+// the function to return "" even when cfg.HumanNotesFile points to a real file.
+func TestBuildNotesContext_IgnoresHumanNotesFileEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	notesPath := filepath.Join(dir, ".tekhton", "HUMAN_NOTES.md")
+	if err := os.MkdirAll(filepath.Dir(notesPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "# Human Notes\n\n- [ ] [BUG] Fix the build pipeline\n"
+	if err := os.WriteFile(notesPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+
+	// Point env var at a nonexistent path to prove it is NOT consulted.
+	t.Setenv("HUMAN_NOTES_FILE", "/nonexistent/path/HUMAN_NOTES.md")
+
+	cfg := config{
+		ProjectDir:     dir,
+		HumanNotesFile: ".tekhton/HUMAN_NOTES.md",
+		Task:           "fix the build pipeline",
+	}
+	got := buildNotesContext(context.Background(), cfg)
+	if !strings.Contains(got, "Fix the build pipeline") {
+		t.Errorf("buildNotesContext must use cfg.HumanNotesFile, not HUMAN_NOTES_FILE env var; got %q", got)
+	}
+}

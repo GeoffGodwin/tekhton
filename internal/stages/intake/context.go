@@ -134,8 +134,12 @@ func buildNotesContext(_ context.Context, cfg config) string {
 	if !fileExists(notesPath) {
 		return ""
 	}
-	out, err := notes.ExtractFromProject(cfg.ProjectDir, notes.ExtractOpts{})
-	if err != nil || out == "" {
+	d, loadErr := notes.Load(notesPath)
+	if loadErr != nil {
+		return ""
+	}
+	out := notes.Extract(d, notes.ExtractOpts{})
+	if out == "" {
 		return ""
 	}
 	matching := matchNotes(cfg.Task, splitLines(out))
