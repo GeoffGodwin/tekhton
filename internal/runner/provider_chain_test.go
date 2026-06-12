@@ -255,19 +255,24 @@ func TestChain_RunAgent_RequiredTier_Local_RejectsAll(t *testing.T) {
 	}
 }
 
-// TestChain_RunAgent_EmptyProviders documents the (nil, nil) return when no
-// providers are registered. The for-loop body never executes, so both
-// lastResult and lastErr remain their zero values. Callers must nil-check
-// the result before dereferencing. Reviewer gap: internal/runner/provider_chain.go
-// lacks an early guard for this case, making it a silent hazard.
+// TestChain_RunAgent_EmptyProviders asserts the m19 empty-chain guard:
+// a Chain with zero providers must return a non-nil result with
+// Outcome=OutcomeUpstreamError, ErrorSubcategory="EMPTY_CHAIN", and
+// a non-nil error — never (nil, nil), which silently panics callers.
 func TestChain_RunAgent_EmptyProviders(t *testing.T) {
 	c := runner.NewChain() // zero providers
 
 	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
-	if err != nil {
-		t.Errorf("RunAgent on empty chain: want nil error, got %v", err)
+	if err == nil {
+		t.Error("RunAgent on empty chain: want non-nil error, got nil")
 	}
-	if res != nil {
-		t.Errorf("RunAgent on empty chain: want nil result, got %+v", res)
+	if res == nil {
+		t.Fatal("RunAgent on empty chain: want non-nil result with EMPTY_CHAIN, got nil")
+	}
+	if res.Outcome != provider.OutcomeUpstreamError {
+		t.Errorf("Outcome: want %q, got %q", provider.OutcomeUpstreamError, res.Outcome)
+	}
+	if res.ErrorSubcategory != "EMPTY_CHAIN" {
+		t.Errorf("ErrorSubcategory: want %q, got %q", "EMPTY_CHAIN", res.ErrorSubcategory)
 	}
 }
