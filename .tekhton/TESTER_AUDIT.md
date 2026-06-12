@@ -1,55 +1,56 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 17 Go test functions + 7 bash scenarios
+Tests audited: 4 files, 17 test functions
 Verdict: CONCERNS
 
 ---
 
 ### Findings
 
-#### SCOPE: checkAndMoveMisplacedSummaries does not exist — compilation failure
-- File: internal/stages/coder/coder_summary_path_test.go:52, :101, :132, :176
-- Issue: All four test functions call `o.checkAndMoveMisplacedSummaries()`, but no such method exists on `*orchestrator` in the coder package. `grep -r checkAndMoveMisplacedSummaries internal/` finds the symbol only in the milestone design file (`.claude/milestones/m06-staging-allowlist-and-coder-summary-path.md`) and the test file itself — never in any `.go` implementation file. The package will not compile. The tester's own report notes "m06 Goal B hook unimplemented."
+#### INTEGRITY: Known-failing test shipped without implementation fix
+- File: tests/test_plan_batch_emit_tail.sh:196–213 (test G)
+- Issue: Test G asserts that `_plan_batch_emit_tail` produces no output for an inline empty array `"stdout_tail": []`. This is the correct expected behavior, but the awk in `lib/plan_batch.sh:165–178` does not handle it. The opening awk pattern `/^[[:space:]]*"stdout_tail"[[:space:]]*:[[:space:]]*\[/` matches the whole line `  "stdout_tail": []` and executes `in_tail=1; next`, consuming the `[` and `]` on the same line. The closing pattern requires `]` on its own line — it never fires. The next line (`}`) is then processed by the in-tail block and emitted as output. The tester correctly identifies this in TESTER_REPORT.md ("Bugs Found") but leaves `lib/plan_batch.sh` unmodified. The test suite is known-failing at submission time and will block CI.
 - Severity: HIGH
-- Action: The test is correctly written for the intended behavior (move-on-absent-canonical, delete-misplaced-on-canonical-present, no-op-on-clean). Add `checkAndMoveMisplacedSummaries()` to `internal/stages/coder/orchestrator.go` (or a sibling file) per the m06 milestone spec. Do not modify the tests — they define the acceptance criteria accurately.
+- Action: Fix the awk in `_plan_batch_emit_tail` to handle the inline-empty-array case before setting `in_tail`. For example:
 
-#### SCOPE: .gitignore absent from allowlist — A1/A2 assertions will fail at runtime
-- File: tests/test_finalize_allows_gitignore.sh:73, :81
-- Issue: Scenarios A1 and A2 assert that `.gitignore` appears in `_pipeline_bookkeeping_globs()` and that `_is_path_allowed ".gitignore"` returns 0. Inspection of `lib/finalize_commit_staging.sh:50-65` confirms `.gitignore` is NOT present in the `_pipeline_bookkeeping_globs` heredoc — the list ends with `Makefile` and contains no `.gitignore` entry. Running the test against the current implementation produces two failures. The tester's report notes "m06 Goal A unimplemented."
-- Severity: HIGH
-- Action: Add `.gitignore` as an explicit entry in `_pipeline_bookkeeping_globs()` in `lib/finalize_commit_staging.sh`. The tests themselves are correctly written — A3 (`.env` stays rejected) and A4 (declared file stays allowed) are still valid and will pass once A1/A2's implementation gap is filled.
+  ```awk
+  /^[[:space:]]*"stdout_tail"[[:space:]]*:[[:space:]]*\[\]/ { next }
+  /^[[:space:]]*"stdout_tail"[[:space:]]*:[[:space:]]*\[/   { in_tail=1; next }
+  ```
+
+  Do NOT remove or defer test G — it correctly documents the expected contract and should turn green once the implementation is fixed.
 
 ---
 
-### Passing Observations (no action required)
+#### COVERAGE: Individual caller sites not verified for correct label strings
+- File: tests/test_plan_batch_label_routing.sh (overall file)
+- Issue: The test file header states m22 "updates all callers (plan_interview, plan_generate, plan_followup_interview, replan, replan_brownfield, replan_midrun) to pass their stage-specific labels." Tests A–D only exercise `_call_planning_batch` itself — they verify the function threads `$5` to `_shim_write_request`, but no test verifies that each caller site actually passes the correct label. Inspection confirms the callers do pass labels (`"plan_interview"` at stages/plan_interview.sh:166, `"plan_generate"` at stages/plan_generate.sh:85, `"plan_interview"` at stages/plan_followup_interview.sh:183, `"replan"` at lib/replan_brownfield.sh:184, `"replan"` at lib/replan_midrun.sh:221), but a future regression where a caller omits or misspells the label would not be caught.
+- Severity: MEDIUM
+- Action: Add lightweight structural grep checks — one per caller file — asserting that the expected label string is present in the `_call_planning_batch` call. The test-E pattern already used in this file (source grep) is the right model. No new subshell execution needed.
 
-**internal/provider/claude/claude_test.go — PASS**
+---
 
-All 13 test functions are well-formed:
+#### SCOPE: Test E is a source-text grep, not a behavioral assertion
+- File: tests/test_plan_batch_label_routing.sh:148–156 (test E)
+- Issue: Test E greps for the literal string `${5:-planning}` in `lib/plan_batch.sh`. If the default mechanism is refactored (e.g. `local label; label=${5:-}; label=${label:-planning}`) while preserving identical behavior, test E fails falsely. The behavioral coverage is already provided by test D (no label → captured label == "planning"). Test E is redundant and couples tests to implementation syntax rather than contract.
+- Severity: LOW
+- Action: Remove test E or convert it to a comment explaining that test D covers the default. The behavioral guarantee from test D is sufficient.
 
-- *Assertion honesty*: Every assertion traces to real implementation logic. `TestProvider_Name` checks the literal `"claude"` string returned by `func (p *Provider) Name() string { return "claude" }`. Outcome integer comparisons in `TestTranslateOutcome_*` map directly to the `translateOutcome()` switch table and `IsNullRun()` precedence rule. No hard-coded magic numbers.
+---
 
-- *Edge case coverage*: nil request, nil supervisor, and write-prompt-file failure are all tested independently. `TestTranslateOutcome_UpstreamWithLowTurns` pins the IsNullRun-beats-ErrorCategory precedence when `turns_used ≤ DefaultNullRunThreshold` — an easy-to-miss off-by-one regression surface.
+### Passing Checks (no action required)
 
-- *Implementation exercise*: `TestWritePromptFile` and `TestWritePromptFile_CleanupRemovesFile` call the real `writePromptFile` function with no mocking. `TestProvider_StreamingEvents` drives `RunAgent` end-to-end, only stubbing the supervisor.
+**Assertion Honesty** — All assertions across all four files derive from real function calls through the real implementations (`_cli_supports_mcp_config`, `check_usage_threshold`, `_plan_batch_emit_tail`, `_call_planning_batch`). No hard-coded magic values or tautologies (assertTrue(True), assertEqual(x,x)) found anywhere.
 
-- *Weakening check*: `TestProvider_StreamingEvents` adds two new `Timestamp.IsZero()` assertions that were absent before — this is a strengthening, not a weakening.
+**Implementation Exercise** — All four test files source the real implementation file and call the real function under test. Stubs are targeted: logging functions, external binaries (`claude`, `tekhton`), and shim helpers (`_shim_resolve_binary`, `_shim_write_request`, `_shim_field`). The function under test itself is never mocked.
 
-- *Naming*: All names encode scenario and expected outcome (`TestTranslateOutcome_UpstreamWithLowTurns`, `TestProvider_EventChan_ClosedOnWritePromptFileError`). No generic names.
+**Test Weakening** — The tester strengthened existing tests across the board: added the B2 return-code check to `test_mcp_resolve_provider_guard.sh`; added a post-source log re-stub and test D (positive path: PROVIDER=claude + 99% usage → invoked + returns 1) to `test_common_usage_threshold_guard.sh`; added test G to `test_plan_batch_emit_tail.sh`. No existing assertions were loosened or removed.
 
-- *Isolation*: `t.TempDir()` and `t.Setenv()` are used throughout. No reads of live project state.
+**Test Naming** — All tests use scenario-and-outcome labels ("A: claude NOT invoked by check_usage_threshold when PROVIDER=codex", "D2: check_usage_threshold returns 1 (usage 99% exceeds threshold 50%)"). Consistent with project convention and pass the intent-readability check.
 
-**tests/test_finalize_allows_gitignore.sh — A3, A4, B structure are sound**
+**Test Isolation** — All four files create fixtures inside `$(mktemp -d)` with `trap "rm -rf ..." EXIT`. No test reads live pipeline logs, config state files, or run artifacts. The fake `claude` binary and fake `tekhton` binary are written into the temp dir and removed on exit. Isolation is clean across all cases.
 
-Scenarios A3 (`.env` rejected), A4 (declared `internal/foo.go` allowed), and the conditional Scenario B skeleton are correctly written with fixture isolation (temp git repo in `$(mktemp -d)`). B1/B2/B3 gracefully skip when `_do_git_commit` is unavailable. The test structure and isolation approach are correct; only the missing implementation causes A1/A2 to fail.
-
-**internal/stages/coder/coder_summary_path_test.go — test logic is sound**
-
-The test design is correct:
-- Each case creates its own `t.TempDir()` — no shared mutable state.
-- `MisplacedRootCanonicalPresent` (line 80) includes a `canonicalContent` fixture and asserts it byte-for-byte after the hook runs, catching an implementation that truncates the canonical before removing the misplaced file.
-- `CleanState` (line 123) checks both root and `.tekhton/` directories for unexpected file creation.
-- `CoderSummaryMisplaced` (line 159) covers `CODER_SUMMARY.md` in addition to `JR_CODER_SUMMARY.md`, matching the milestone spec.
-
-The tests need the implementation to compile — they do not need to be rewritten.
+**Skip Guards** — Both provider-guard tests include self-skip logic that exits 0 when the guard has not yet been implemented. The skip conditions were verified against the current implementation:
+- `test_mcp_resolve_provider_guard.sh:22-26`: pattern `PROVIDER.*claude` matches `lib/mcp_resolve.sh:158` (`local provider_spec="${PROVIDER:-codex,claude}"`). Guard detected → tests run. ✓
+- `test_common_usage_threshold_guard.sh:21-24`: awk range extraction of `check_usage_threshold()` body + grep for `PROVIDER` matches `lib/common.sh:173`. Guard detected → tests run. ✓
