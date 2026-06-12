@@ -6,8 +6,14 @@
 # forms). Every such call must be routed through `tekhton supervise` after m20;
 # any unlisted call is a CI gate failure.
 #
+# Usage:
+#   scripts/audit-raw-claude.sh                     # scan the default tree
+#   scripts/audit-raw-claude.sh path/to/file_or_dir # scan a single target
+#
 # Allowlist (temporary — remove each entry when the caller is ported):
 #   lib/quota_probe.sh — allowlisted until m21 (probe call predates supervise seam)
+#   lib/common.sh      — `claude usage` probe is provider-gated to PROVIDER=claude,
+#                        mirroring quota_probe.sh; retire when usage probe ports to Go.
 #
 # Output format — one finding per line:
 #   <file>:<line>:<matched-text>
@@ -26,6 +32,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 # once the caller is ported to tekhton supervise.
 _ALLOWLIST=(
     "lib/quota_probe.sh"
+    "lib/common.sh"
 )
 
 _is_allowlisted() {
@@ -40,9 +47,19 @@ _is_allowlisted() {
 }
 
 # --- Resolve scan targets -----------------------------------------------------
+# With no args, scan the default tree (lib/, stages/, tekhton.sh,
+# tekhton-legacy.sh). With one or more args, scan exactly those paths so the
+# unit tests can drive the audit against tmpdir fixtures.
 _resolve_targets() {
     cd -- "${REPO_ROOT}"
-    for t in lib/ stages/ tekhton.sh tekhton-legacy.sh; do
+    local -a inputs=()
+    if [[ "$#" -gt 0 ]]; then
+        inputs=( "$@" )
+    else
+        inputs=( lib/ stages/ tekhton.sh tekhton-legacy.sh )
+    fi
+    local t
+    for t in "${inputs[@]}"; do
         if [[ -f "${t}" ]]; then
             printf '%s\n' "${t}"
         elif [[ -d "${t}" ]]; then
@@ -71,7 +88,7 @@ main() {
     local -a targets=()
     while IFS= read -r line; do
         [[ -n "${line}" ]] && targets+=("${line}")
-    done < <(_resolve_targets)
+    done < <(_resolve_targets "$@")
 
     if [[ "${#targets[@]}" -eq 0 ]]; then
         exit 0
