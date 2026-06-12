@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 243
+- Runs since audit: 244
 =======
-- Runs since audit: 243
+- Runs since audit: 244
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 243
+- Runs since audit: 244
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-12 | "Implement Milestone m20: Planning batch + auxiliary bash paths off raw claude CLI"] `internal/tester/tdd/tdd.go:193,376` â `supervisor` package still imported for `supervisor.CategoryUpstream` constant and `supervisor.FromProto()` utility. These are legitimate non-constructor uses; not a violation of the B2 acceptance criterion. Consider migrating the constant/utility to `internal/proto` in a future cleanup arc to sever the remaining supervisor dependency in tdd.
+- [ ] [2026-06-12 | "Implement Milestone m20: Planning batch + auxiliary bash paths off raw claude CLI"] `cmd/tekhton/run_stage.go:156` â `primaryStage` parameter is declared and then immediately suppressed via `_ = primaryStage`. Intended for a future optimization that resolves only the primary stage first; a comment explaining the intent would help future readers.
 - [ ] [2026-06-12 | "Implement Milestone m19: Provider-aware supervise seam: retire remaining Claude direct-calls"] `m24 Gap row` â References "69 open items" in NON_BLOCKING_LOG.md; the actual count at time of authoring should be verified against the file before m24 runs, since the count drives the statement "the backlog grows past the point where the coder-prompt threshold mechanism can meaningfully surface it."
 - [ ] [2026-06-12 | "Implement Milestone m19: Provider-aware supervise seam: retire remaining Claude direct-calls"] `m19âm21 deps` â m21 depends_on m19 only (MANIFEST), but Goal 4 of m21 (`internal/preflight/claude_env.go` gating) is also the explicit prerequisite of m23's zero-invocation assertion. The dependency is captured at the m23 level; no manifest change needed, but the m23 Watch For could note that m21 Goal 4 specifically (not just m21 as a whole) must be shipped before running m23.
 - [ ] [2026-06-10 | "Implement Milestone m18: qwen-local end-to-end tool-loop smoke test + chain ordering + operator runtime docs"] `internal/runner/provider_chain_test.go:258-273` â the empty-providers behavior (no early guard in `provider_chain.go`) is documented in a test comment but not fixed in the implementation. When a future caller adds a nil-check at the call site, this comment will silently become wrong. Fix belongs in the implementation, not the test.
