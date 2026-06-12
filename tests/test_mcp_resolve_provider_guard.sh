@@ -66,7 +66,6 @@ source "${TEKHTON_HOME}/lib/mcp_resolve.sh"
 
 # --- A: with PROVIDER=codex, claude --help probe must be skipped -----------
 _CLI_MCP_CONFIG_SUPPORTED=""  # reset cache between calls
-PROVIDER_GUARD_LOG=""
 
 set +e
 (
