@@ -4,15 +4,17 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 242
+- Runs since audit: 243
 =======
-- Runs since audit: 242
+- Runs since audit: 243
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 242
+- Runs since audit: 243
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-12 | "Implement Milestone m19: Provider-aware supervise seam: retire remaining Claude direct-calls"] `m24 Gap row` â References "69 open items" in NON_BLOCKING_LOG.md; the actual count at time of authoring should be verified against the file before m24 runs, since the count drives the statement "the backlog grows past the point where the coder-prompt threshold mechanism can meaningfully surface it."
+- [ ] [2026-06-12 | "Implement Milestone m19: Provider-aware supervise seam: retire remaining Claude direct-calls"] `m19âm21 deps` â m21 depends_on m19 only (MANIFEST), but Goal 4 of m21 (`internal/preflight/claude_env.go` gating) is also the explicit prerequisite of m23's zero-invocation assertion. The dependency is captured at the m23 level; no manifest change needed, but the m23 Watch For could note that m21 Goal 4 specifically (not just m21 as a whole) must be shipped before running m23.
 - [ ] [2026-06-10 | "Implement Milestone m18: qwen-local end-to-end tool-loop smoke test + chain ordering + operator runtime docs"] `internal/runner/provider_chain_test.go:258-273` â the empty-providers behavior (no early guard in `provider_chain.go`) is documented in a test comment but not fixed in the implementation. When a future caller adds a nil-check at the call site, this comment will silently become wrong. Fix belongs in the implementation, not the test.
 - [ ] [2026-06-10 | "Implement Milestone m17: qwen-local Provider: codex-sibling scaffold + local endpoint routing"] `cmd/tekhton/run_test.go:120` â `TestProviderFlagEnvOverride` duplicates the three-if provider-override block from `run.go:RunE` rather than calling through the real implementation; env-var name drift would silently pass all sub-tests (pre-existing, carried from cycle 1)
 - [ ] [2026-06-09 | "Implement Milestone m14: Cost telemetry + RUN_SUMMARY cost banner + per-stage budget caps"] internal/provider/codex/tools.go:56-64 â when multiple unknown tools are present, `allowed` accumulates duplicate `"shell"` entries (e.g. `["shell","shell","read"]`). Codex likely treats `tools.allowed` as a set, so this is harmless, but a `seen` map dedup before `joinAllowed` would produce minimal, unambiguous output.
