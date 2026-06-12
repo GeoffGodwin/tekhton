@@ -2,15 +2,13 @@
 PASS
 
 ## Confidence
-92
+88
 
 ## Reasoning
-- Scope is precise: exact files, exact line numbers, and explicit out-of-scope declarations (draft-milestones, dry-run, Serena-over-Codex wiring)
-- Four numbered goals structure the work cleanly with no overlap
-- Acceptance criteria are highly testable — each is a runnable command or named test file, not an aspiration
-- The audit regex is spelled out in the milestone, eliminating the most common source of ambiguity in grep-based gates
-- Watch For section covers the realistic failure modes (streaming interview vs batch, 300-line ceiling, false-positive audit hits, per-stage override interaction)
-- Hard dependency on m19 is stated and the sequencing rationale is explained
-- No user-facing config changes introduced, so no migration impact section is needed
-- No UI components touched, so UI testability criterion is N/A
-- One minor implicit assumption: `lib/agent_shim.sh` helpers (`_shim_write_request`, response readers) are assumed to exist post-m19; the milestone says to reuse them but does not cite the functions' signatures. This is acceptable — the dependency chain (m19 → m20) makes this discoverable at implementation time, and the Watch For section already flags the 300-line ceiling as the guarding constraint that pushes toward reuse over duplication.
+- Scope is precisely bounded: four numbered goals, explicit file list with per-file change descriptions, and a clear dependency on m19 only
+- Acceptance criteria are specific and testable: each criterion names the condition (provider spec = codex, Tier() == "api", flag unset/set), the exact outcome expected (no exec, skip finding, PAID_FALLBACK_BLOCKED error subcat), and the test mechanism (fake exec recorder, PATH-shim, chain test with two fake providers)
+- Ambiguity is low — design section disambiguates corner cases (degraded probe still feeds TUI countdown, version-layer may still run, bash probe change is intentional minimal)
+- Watch For section explicitly flags the behavior-change risk for the m12 chain default flip and instructs test authors to set the flag rather than delete assertions
+- New config keys (QUOTA_PROBE_ALLOW_PAID, PROVIDER_ALLOW_PAID_FALLBACK) are documented in both Go defaults and template/docs — no "Migration impact" section header, but coverage is complete inline
+- No UI components; UI testability criterion N/A
+- Seeds Forward section correctly identifies m23 as the downstream assertion milestone, confirming this milestone's scope stops at making the guarantee true, not verifying it end-to-end

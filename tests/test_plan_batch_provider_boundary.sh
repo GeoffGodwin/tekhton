@@ -21,16 +21,6 @@ set -u
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEKHTON_BIN="${TEKHTON_HOME}/bin/tekhton"
 
-# m20 rewrites _call_planning_batch() to route through `tekhton supervise`.
-# Until that lands, lib/plan_batch.sh still has a raw `claude` invocation in
-# command position at line 88. Self-skip so the suite stays green; assertions
-# A/B/C/D exercise the post-m20 contract.
-if grep -qE '^[[:space:]]*claude[[:space:]]*\\$' \
-        "${TEKHTON_HOME}/lib/plan_batch.sh" 2>/dev/null; then
-    echo "SKIP: lib/plan_batch.sh still uses raw claude — m20 not implemented"
-    exit 0
-fi
-
 PASS_COUNT=0
 FAIL_COUNT=0
 
@@ -39,8 +29,7 @@ fail() { echo "FAIL: $1"; FAIL_COUNT=$(( FAIL_COUNT + 1 )); }
 note() { echo "NOTE: $1"; }
 
 # --- A: structural — no raw claude in command position in plan_batch.sh -----
-# This runs WITHOUT a skip guard — it must catch regressions even before
-# the live tests can run.
+# Runs unconditionally (no skip guard) so regressions are caught immediately.
 # Pattern from m20 AC: matches flag form, subcommand form, line-continuation.
 # Excludes: shell comments, CLAUDE_ variable names, .claude path strings.
 PLAN_BATCH="${TEKHTON_HOME}/lib/plan_batch.sh"
