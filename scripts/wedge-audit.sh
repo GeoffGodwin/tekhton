@@ -56,6 +56,15 @@ ALLOWED_FILES=(
     "lib/orchestrate_aux.sh"
     "lib/orchestrate_classify.sh"
     "lib/orchestrate_iteration.sh"
+    # m19 (Phase 4 batch 2) — the planning batch helper routes through the
+    # supervise seam to pick up provider-aware routing (PROVIDER_<LABEL>
+    # overrides for plan_interview / plan_generate / replan). It is the
+    # planning-stage analog of lib/agent.sh's run_agent — it builds an
+    # agent.request.v1 envelope via _shim_write_request and shells to
+    # `"$_bin" supervise --request-file`. Allowlisted alongside agent.sh
+    # so the planning stages stay on the same provider seam as the main
+    # pipeline; tekhton-legacy.sh's --plan path is the only caller chain.
+    "lib/plan_batch.sh"
 )
 
 # --- Patterns to detect ------------------------------------------------------
