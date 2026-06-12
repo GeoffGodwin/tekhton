@@ -82,6 +82,10 @@ drive_architect() {
     export SECURITY_AGENT_ENABLED=false
     export DOCS_AGENT_ENABLED=false
     export CLEANUP_ENABLED=false
+    # Pin to claude provider — TEKHTON_AGENT_BINARY only short-circuits the
+    # claude supervisor. The m19 default chain (codex,claude) would otherwise
+    # actually exec codex if it's on PATH, defeating the mock.
+    export PROVIDER=claude
     # Point the supervisor at /bin/false so every claude invocation
     # exits immediately with code 1 — the supervisor classifies this as
     # a start failure / fatal error, the architect stage logs the

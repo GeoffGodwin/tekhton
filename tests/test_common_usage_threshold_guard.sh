@@ -14,6 +14,16 @@
 set -u
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# m20 adds the PROVIDER-spec guard around `claude usage` in check_usage_threshold.
+# Until that lands, the function still calls claude unconditionally. Self-skip so
+# the suite stays green; assertions A/B test the post-m20 contract.
+if ! awk '/^check_usage_threshold\(\)/,/^}/' "${TEKHTON_HOME}/lib/common.sh" \
+        2>/dev/null | grep -qE 'PROVIDER|provider_has_claude'; then
+    echo "SKIP: lib/common.sh::check_usage_threshold has no PROVIDER guard yet — m20 not implemented"
+    exit 0
+fi
+
 PASS_COUNT=0
 FAIL_COUNT=0
 

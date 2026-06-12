@@ -115,11 +115,17 @@ JSON
 
     # Run the Go stage. Build-gate phases skip when ANALYZE_CMD /
     # BUILD_CHECK_CMD are empty — perfect for the rework cycle scenario.
+    # PROVIDER=claude pins the supervisor to the claude path so the
+    # TEKHTON_AGENT_BINARY mock takes effect. Post-m19 the default chain
+    # (codex,claude) would call codex first; under env -i + restricted PATH
+    # codex isn't found and ResolveProvider exits non-zero before the
+    # security stage even runs.
     env -i \
         PATH="/usr/bin:/bin:/usr/local/bin" \
         HOME="$HOME" \
         TEKHTON_HOME="$TEKHTON_HOME" \
         PROJECT_DIR="$project_dir" \
+        PROVIDER=claude \
         TEKHTON_AGENT_BINARY="$FAKE_AGENT" \
         FAKE_SECURITY_SCENARIO="$scenario" \
         FAKE_SECURITY_REPORT="$report_file" \
