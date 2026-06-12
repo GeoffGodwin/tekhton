@@ -70,11 +70,23 @@ func (c *Chain) Name() string {
 	return "chain(" + names + ")"
 }
 
+// ErrEmptyChain is returned by Chain.RunAgent when no providers are configured.
+var ErrEmptyChain = fmt.Errorf("runner: chain has no providers")
+
 // RunAgent iterates providers in order, falling through to the next when
 // the current returns OutcomeUpstreamError. On success it stamps
 // Result.TierUsed with the winning provider's Tier(). On RequiredTier
 // violation it returns an error immediately without calling the provider.
 func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.Result, error) {
+	if len(c.Providers) == 0 {
+		return &provider.Result{
+			Outcome:          provider.OutcomeUpstreamError,
+			ErrorCategory:    "ENVIRONMENT",
+			ErrorSubcategory: "EMPTY_CHAIN",
+			ErrorMessage:     "chain has no providers configured",
+		}, ErrEmptyChain
+	}
+
 	var lastResult *provider.Result
 	var lastErr error
 
