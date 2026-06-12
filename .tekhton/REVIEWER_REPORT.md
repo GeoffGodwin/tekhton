@@ -1,8 +1,6 @@
 ## Verdict
 APPROVED_WITH_NOTES
 
-All three simple blockers from cycle 1 are resolved. No regressions introduced by the rework.
-
 ## Complex Blockers (senior coder)
 - None
 
@@ -10,32 +8,14 @@ All three simple blockers from cycle 1 are resolved. No regressions introduced b
 - None
 
 ## Non-Blocking Notes
-- `scripts/audit-raw-claude.sh:91` — The comment-filtering `grep -v '^[[:space:]]*#'` is applied against `lineno:matched` formatted output (the first grep emits `lineno:content`), so the pattern never actually matches real comment lines. A comment like `# cmd | claude foo` would slip through if the pattern fires on the `|` in the comment. Fail-safe direction (false positives cause audit failures, not missed violations), but the filter is a no-op as written. Fix: change to `grep -vE '^[0-9]+:[[:space:]]*#'` to match the actual output format.
-- `internal/runner/supervise_bridge.go:57` — `os.ReadFile(req.PromptFile)` path-containment issue carried from cycle 1 (LOW/A01 security note). Still unaddressed but not introduced by this rework.
-- `cmd/tekhton/supervise.go` — `--no-retry` deprecation warning still absent (carried from cycle 1).
+- `lib/plan_batch.sh:88-94` — LOW security finding from the security agent was not applied: temp files `$_pf`, `$_rf`, `$_zf` are created without umask restriction, making them world-readable when `TEKHTON_SESSION_DIR` falls back to `/tmp`. Fix: `(umask 077; printf '%s' "$prompt" > "$_pf")`.
+- `lib/plan_batch.sh:165-178` — `_plan_batch_emit_tail` awk handles only 4 of 8 standard JSON escape sequences (`\n`, `\t`, `\"`, `\\`). Missing `\r`, `\/`, `\b`, `\f`, `\uXXXX`. Unlikely to matter for markdown planning output but would silently corrupt output containing non-ASCII characters encoded as `\uXXXX` by Go's JSON marshaller.
 
 ## Coverage Gaps
-- `tests/test_mcp_resolve_provider_guard.sh` and `tests/test_common_usage_threshold_guard.sh` were referenced in cycle 1 as self-skipping until the guards landed. Confirm these tests now unskip and pass with the guards in place; if they remain skipped, the CI gate is still open.
+- `_plan_batch_emit_tail` has no unit test. The awk JSON unescape logic is non-trivial and warrants a `tests/test_plan_batch.sh` fixture exercising at least the handled escapes and a multi-line `stdout_tail`.
+- No shim-boundary integration test for the new `label → PROVIDER_<LABEL>` routing path through `_call_planning_batch` (e.g., verifying `PROVIDER=codex` skips the `claude` MCP/usage probes and routes through the shim).
 
 ## Drift Observations
-- None
-
-## Blocker Verification (re-review evidence)
-
-**Blocker 1 — `lib/mcp_resolve.sh:158`** FIXED.
-Lines 158–163 add the provider-spec guard before the `claude --help` probe:
-resolves `${PROVIDER:-codex,claude}`, logs the required skip message when `claude`
-is absent, sets `_CLI_MCP_CONFIG_SUPPORTED=0`, and returns 1. Matches the blocker
-description exactly.
-
-**Blocker 2 — `lib/common.sh:175`** FIXED.
-Lines 173–176 add the provider-spec guard: resolves `${PROVIDER:-codex,claude}`,
-returns 0 silently when `claude` is not in the spec. No `claude usage` call is
-made in that branch. Matches the blocker description exactly.
-
-**Blocker 3 — `scripts/audit-raw-claude.sh` missing** FIXED.
-Script was created and made executable. Scans `lib/ stages/ tekhton.sh
-tekhton-legacy.sh`, allowlists `lib/quota_probe.sh`, greps for `claude` in
-command position using the documented pattern, exits 0 (clean) or 1 (findings
-present), and prints one `file:line:matched` line per finding. Matches m20
-design requirements.
+- `lib/replan_midrun.sh` sits at 299 lines — 1 line under the 300-line hard ceiling. The next addition forces a split.
+- `lib/common.sh` sits at 291 lines — approaching ceiling.
+- `lib/plan_batch.sh:2`, `stages/plan_generate.sh:17`, and several other sourced `lib/`/`stages/` files have `set -euo pipefail` explicitly, which the reviewer checklist flags as wrong for sourced files (they should inherit from the caller). Pre-existing across multiple files; not introduced by this change.
