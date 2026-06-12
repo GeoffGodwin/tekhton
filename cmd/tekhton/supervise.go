@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
+	"github.com/geoffgodwin/tekhton/internal/runner"
 	"github.com/spf13/cobra"
 )
 
@@ -64,23 +64,35 @@ func newSuperviseCmd() *cobra.Command {
 			if err := req.Validate(); err != nil {
 				return errExitCode{code: exitUsage, err: err}
 			}
-			sup := supervisor.New(nil, nil)
-			var res *proto.AgentResultV1
-			if noRetry {
-				res, err = sup.Run(context.Background(), req)
-			} else {
-				res, err = sup.Retry(context.Background(), req, supervisor.DefaultPolicy())
-			}
-			if err != nil {
-				if errors.Is(err, proto.ErrInvalidRequest) {
-					return errExitCode{code: exitUsage, err: err}
+			prov, provErr := runner.ProviderFromRequest(req)
+			if provErr != nil {
+				if errors.Is(provErr, proto.ErrInvalidRequest) {
+					return errExitCode{code: exitUsage, err: provErr}
 				}
-				// Retry returns the classified upstream error alongside the
-				// final result; surface the result to stdout (so the bash
-				// shim can read the failure shape) rather than turning the
-				// classification into a CLI-level error.
-				if res == nil {
-					return errExitCode{code: exitSoftware, err: err}
+				return errExitCode{code: exitSoftware, err: provErr}
+			}
+			provReq, bridgeErr := runner.BridgeToProviderRequest(req)
+			if bridgeErr != nil {
+				// Emit a fatal error envelope before returning so the bash
+				// shim can always parse a response from stdout. Matches the
+				// supervisor's behaviour of emitting a result even on launch
+				// failures (supervisor.run.go:runSubprocess).
+				emitFatalEnvelope(cmd, req, bridgeErr)
+				return errExitCode{code: exitSoftware, err: bridgeErr}
+			}
+			// --no-retry is accepted for backward compat; retry is now
+			// provider-internal and not controlled at the supervise layer.
+			_ = noRetry
+			provRes, runErr := prov.RunAgent(context.Background(), provReq)
+			res := runner.BridgeFromProviderResult(provRes, req)
+			if runErr != nil {
+				if errors.Is(runErr, proto.ErrInvalidRequest) {
+					return errExitCode{code: exitUsage, err: runErr}
+				}
+				// Surface result to stdout (bash shim reads the failure shape)
+				// even when the provider signals an error alongside the result.
+				if provRes == nil {
+					return errExitCode{code: exitSoftware, err: runErr}
 				}
 			}
 			res.EnsureProto()
@@ -101,6 +113,24 @@ func newSuperviseCmd() *cobra.Command {
 	c.Flags().StringVar(&requestFile, "request-file", "", "Path to agent.request.v1 JSON. Reads stdin when omitted.")
 	c.Flags().BoolVar(&noRetry, "no-retry", false, "Bypass the retry+quota-pause envelope and call Run directly. Used by the parity tests.")
 	return c
+}
+
+// emitFatalEnvelope writes a fatal_error AgentResultV1 envelope to cmd's
+// stdout so the bash shim can always parse a response even when an internal
+// error prevents the provider from running. Mirrors the supervisor's
+// behaviour of emitting a result on launch failures.
+func emitFatalEnvelope(cmd *cobra.Command, req *proto.AgentRequestV1, cause error) {
+	res := &proto.AgentResultV1{
+		Proto:        proto.AgentResultProtoV1,
+		Label:        req.Label,
+		RunID:        req.RunID,
+		ExitCode:     exitSoftware,
+		Outcome:      proto.OutcomeFatalError,
+		ErrorMessage: cause.Error(),
+	}
+	if data, err := res.MarshalIndented(); err == nil {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	}
 }
 
 // readSuperviseRequest consumes the request envelope from --request-file or

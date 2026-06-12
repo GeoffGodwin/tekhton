@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/geoffgodwin/tekhton/internal/provider/claude"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 	stagearchitect "github.com/geoffgodwin/tekhton/internal/stages/architect"
 	stagecleanup "github.com/geoffgodwin/tekhton/internal/stages/cleanup"
 	stagecoder "github.com/geoffgodwin/tekhton/internal/stages/coder"
@@ -18,7 +18,7 @@ import (
 	stagesecurity "github.com/geoffgodwin/tekhton/internal/stages/security"
 	stagetester "github.com/geoffgodwin/tekhton/internal/stages/tester"
 	"github.com/geoffgodwin/tekhton/internal/stagerunner"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
+	"github.com/geoffgodwin/tekhton/internal/runner"
 	"github.com/spf13/cobra"
 )
 
@@ -67,21 +67,14 @@ func newRunStageCmd() *cobra.Command {
 				proj = wd
 			}
 
-			// Wire the default provider into every Go-native stage package.
+			// Wire per-stage providers into every Go-native stage package.
 			// `tekhton run` does this through buildRunner; `tekhton run-stage`
 			// is the parity/test entry point and must do the same or stages
 			// that call provider.RunAgent crash with a nil-pointer panic.
-			// Tests rely on TEKHTON_AGENT_BINARY to redirect supervisor execs
-			// (e.g. to /bin/false or a fake agent script).
-			prov := claude.New(supervisor.New(nil, nil))
-			stageintake.SetProvider(prov)
-			stagecleanup.SetProvider(prov)
-			stagedocs.SetProvider(prov)
-			stagesecurity.SetProvider(prov)
-			stagearchitect.SetProvider(prov)
-			stagereview.SetProvider(prov)
-			stagetester.SetProvider(prov)
-			stagecoder.SetProvider(prov)
+			// PROVIDER_<STAGE>= env vars are honored per stage (m19).
+			if err := setStageProviders(stage); err != nil {
+				return errExitCode{code: exitUsage, err: err}
+			}
 
 			adapter := &stagerunner.BashAdapter{
 				TekhtonHome: home,
@@ -141,4 +134,46 @@ func loadStageRequest(path, stage string) (*proto.StageRequestV1, error) {
 		return nil, err
 	}
 	return req, nil
+}
+
+// setStageProviders resolves and injects the provider for each Go-native stage
+// package using per-stage PROVIDER_<STAGE>= env overrides (m19). The single
+// stage being run is resolved first; all others get the same resolution so
+// that stages which delegate to sub-stages (e.g. tester → tdd) see a
+// consistent provider.
+func setStageProviders(primaryStage string) error {
+	stageNames := []string{
+		"intake", "cleanup", "docs", "security",
+		"architect", "review", "tester", "coder",
+	}
+	for _, name := range stageNames {
+		prov, err := runner.ResolveProvider(name)
+		if err != nil {
+			return fmt.Errorf("resolve provider for stage %q: %w", name, err)
+		}
+		setOneStageProvider(name, prov)
+	}
+	_ = primaryStage
+	return nil
+}
+
+func setOneStageProvider(name string, prov provider.Provider) {
+	switch name {
+	case "intake":
+		stageintake.SetProvider(prov)
+	case "cleanup":
+		stagecleanup.SetProvider(prov)
+	case "docs":
+		stagedocs.SetProvider(prov)
+	case "security":
+		stagesecurity.SetProvider(prov)
+	case "architect":
+		stagearchitect.SetProvider(prov)
+	case "review":
+		stagereview.SetProvider(prov)
+	case "tester":
+		stagetester.SetProvider(prov)
+	case "coder":
+		stagecoder.SetProvider(prov)
+	}
 }

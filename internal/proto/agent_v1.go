@@ -55,6 +55,11 @@ type AgentRequestV1 struct {
 	// list or the file silently never gets written and the pipeline falls
 	// back to a synthesized "approved" stamp.
 	AllowedTools string `json:"allowed_tools,omitempty"`
+	// Provider overrides provider resolution for this specific request.
+	// When empty, the supervise seam falls back to PROVIDER_<LABEL> then
+	// PROVIDER env vars (m19 resolution order). An unknown name returns
+	// proto.ErrInvalidRequest so the CLI maps it to exitUsage.
+	Provider string `json:"provider,omitempty"`
 }
 
 // AgentResultV1 is the supervise output envelope. ExitCode mirrors the

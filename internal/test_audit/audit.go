@@ -11,7 +11,6 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/causal"
 	"github.com/geoffgodwin/tekhton/internal/prompt"
 	"github.com/geoffgodwin/tekhton/internal/proto"
-	"github.com/geoffgodwin/tekhton/internal/supervisor"
 )
 
 // Options carries the per-run configuration for the audit orchestrator.
@@ -70,8 +69,8 @@ type AuditResult struct {
 }
 
 // AgentRunner is the seam between the audit orchestrator and the
-// supervisor. Tests inject a fake; production uses the in-process
-// supervisor (Set via SetAgentRunner).
+// provider. Tests inject a fake; production uses a runner.ProtoAgentRunner
+// wrapping the resolved provider (set via SetAgentRunner).
 type AgentRunner interface {
 	Run(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
 }
@@ -84,7 +83,10 @@ type CausalEmitter interface {
 
 // Package-level seams.
 var (
-	agentRunner   AgentRunner   = supervisor.New(nil, nil)
+	// agentRunner is nil by default; callers MUST inject via SetAgentRunner
+	// before invoking Run. Production callers (stages/tester) inject a
+	// runner.ProtoAgentRunner wrapping the resolved provider (m19).
+	agentRunner   AgentRunner   = nil
 	causalEmitter CausalEmitter = noopCausalEmitter{}
 )
 
@@ -330,6 +332,9 @@ func invokeReworkAgent(ctx context.Context, req *Request, opts Options, cycle in
 // package-level agentRunner, and returns the agent-call increment.
 func invokeAgent(ctx context.Context, body, label, model string, turns int,
 	projectDir, tools string) (int, error) {
+	if agentRunner == nil {
+		return 0, fmt.Errorf("test_audit: agentRunner not configured — call test_audit.SetAgentRunner before Run")
+	}
 	promptFile, cleanup, err := writePromptTmpFile(body)
 	if err != nil {
 		return 0, fmt.Errorf("test_audit: write prompt: %w", err)

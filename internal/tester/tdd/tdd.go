@@ -120,7 +120,10 @@ type StateWriter interface {
 }
 
 var (
-	agentRunner    AgentRunner    = supervisor.New(nil, nil)
+	// agentRunner is nil by default; callers MUST inject via SetAgentRunner
+	// before invoking Run. Production callers (stages/tester) inject a
+	// runner.ProtoAgentRunner wrapping the resolved provider (m19).
+	agentRunner    AgentRunner    = nil
 	promptRenderer PromptRenderer = defaultPromptRenderer{}
 	stateWriter    StateWriter    = defaultStateWriter{}
 )
@@ -177,6 +180,9 @@ func Run(ctx context.Context, req *Request) (*Result, error) {
 		PromptFile:   promptFile,
 		WorkingDir:   req.ProjectDir,
 		AllowedTools: opts.AgentTools,
+	}
+	if agentRunner == nil {
+		return nil, fmt.Errorf("tdd: agentRunner not configured — call tdd.SetAgentRunner before Run")
 	}
 	agentRes, agentErr := agentRunner.Run(ctx, agentReq)
 	if agentErr != nil {

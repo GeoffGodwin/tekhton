@@ -1,8 +1,8 @@
 ## Summary
-The changes under review are two generated Markdown report files: `.tekhton/INTAKE_REPORT.md` (updated intake scoring rationale) and `.tekhton/PREFLIGHT_REPORT.md` (updated timestamp and claude CLI version string). Neither file contains executable code, credentials, user input handling, network communication, or any logic that could introduce a security vulnerability. The changes are purely informational documentation artifacts produced by the pipeline.
+The m19 changes introduce a provider-resolution layer (`internal/runner/provider_select.go`) that reads `PROVIDER` / `PROVIDER_<STAGE>` env vars to select among claude, codex, and qwen-local providers, a new `cmd/tekhton/supervise.go` that reads an agent.request.v1 JSON envelope from a file or stdin, a `cmd/tekhton/run_stage.go` for single-stage invocation, and `tests/test_supervise_provider_boundary.sh` as a shim-boundary test. All four files follow safe patterns: provider selection uses a strict whitelist switch, JSON deserialization is standard `encoding/json`, temp-file handling in the test uses `mktemp -d` with a trap, and no credentials or secrets are present. The only notable observation is that `run_stage.go` still hardwires `claude.New(supervisor.New(nil, nil))` rather than calling `runner.ResolveProvider`, meaning the `PROVIDER` override has no effect on the `run-stage` subcommand — a correctness gap that leaves a misleading implied guarantee but is not exploitable.
 
 ## Findings
-None
+- [LOW] [category:A05] [cmd/tekhton/run_stage.go:88] fixable:yes — `run_stage.go` hardwires `claude.New(supervisor.New(nil, nil))` for all stages instead of calling `runner.ResolveProvider(stage)`. The `PROVIDER`/`PROVIDER_<STAGE>` env vars documented as controlling provider selection have no effect when the `run-stage` subcommand is used. The test skip-guard (`grep -q "supervisor.New" supervise.go`) causes test C/D to silently skip, so this misconfiguration goes undetected. Fix: replace the eight `SetProvider(claude.New(...))` calls with a `runner.ResolveProvider` lookup per stage.
 
 ## Verdict
-CLEAN
+FINDINGS_PRESENT

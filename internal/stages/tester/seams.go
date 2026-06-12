@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
+	"github.com/geoffgodwin/tekhton/internal/runner"
 	innertester "github.com/geoffgodwin/tekhton/internal/tester"
 	"github.com/geoffgodwin/tekhton/internal/tester/tdd"
 	testaudit "github.com/geoffgodwin/tekhton/internal/test_audit"
@@ -67,11 +68,17 @@ var (
 	stateHaltWriter    StateHaltWriter    = noopStateHaltWriter{}
 )
 
-// SetProvider replaces the package-level provider. Returns the previous value
-// so callers can defer-restore.
+// SetProvider replaces the package-level provider and propagates it to the
+// tdd and test_audit sub-stages via their AgentRunner seams (m19). Returns
+// the previous value so callers can defer-restore.
 func SetProvider(p provider.Provider) provider.Provider {
 	prev := stageProvider
 	stageProvider = p
+	if p != nil {
+		ar := &runner.ProtoAgentRunner{P: p}
+		tdd.SetAgentRunner(ar)
+		testaudit.SetAgentRunner(ar)
+	}
 	return prev
 }
 
