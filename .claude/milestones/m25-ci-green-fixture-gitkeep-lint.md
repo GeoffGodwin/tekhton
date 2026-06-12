@@ -10,7 +10,7 @@ status: "todo"
 | Item | Detail |
 |------|--------|
 | **Arc motivation** | The `Go Build` GitHub workflow has zero successful runs in its last 50 — red since before V5 m09. A red CI gate is worthless as a gate: regressions land invisibly, and the m23 stable-promotion procedure can't use CI as a signal. Both failures are mechanical and fully diagnosed; this milestone makes the two failing jobs green and closes the process gap that let 31 lint findings accumulate. |
-| **Gap** | (1) `go test` job: `internal/diagnose/testdata/fixtures_v3/no-state/inputs/` contains only an empty `agent_logs/` subdirectory — git cannot track empty directories, so a fresh CI clone has no `inputs/` at all and both `TestFixturesV3_HasFifteenScenarios` (`engine_test.go:39`) and `TestParity_AllFixtures/no-state` (`rules/rules_test.go:161`) fail on the stat. It passes locally only because the dirs exist from fixture authoring (May 31). All 15 fixture scenarios share the empty-`agent_logs/` shape (the other 14 survive because `inputs/` has other tracked files); `tests/fixtures/qwen_local_smoke/.claude/logs/` is the same trap class. (2) `golangci-lint` job (v1.64.5, default linters, pinned in `.github/workflows/go-build.yml:121`): 31 findings — ~17 `unused`, 5 `errcheck`, 3 `ineffassign`, 6 `gosimple`/`staticcheck` (full list in Design). (3) Process gap: Tekhton's own `.claude/pipeline.conf:51` `ANALYZE_CMD` runs shellcheck only, and `Makefile` `lint` warn-and-continues, so Go lint never runs anywhere except CI — which nobody was watching. |
+| **Gap** | (1) `go test` job: `internal/diagnose/testdata/fixtures_v3/no-state/inputs/` contains only an empty `agent_logs/` subdirectory — git cannot track empty directories, so a fresh CI clone has no `inputs/` at all and both `TestFixturesV3_HasFifteenScenarios` (`engine_test.go:39`) and `TestParity_AllFixtures/no-state` (`rules/rules_test.go:161`) fail on the stat. It passes locally only because the dirs exist from fixture authoring (May 31). All 15 fixture scenarios share the empty-`agent_logs/` shape (the other 14 survive because `inputs/` has other tracked files); `tests/fixtures/qwen_local_smoke/.claude/logs/` is the same trap class. (2) `golangci-lint` job (v1.64.5, default linters, pinned in `.github/workflows/go-build.yml:121`): 31 findings — 18 `unused`, 5 `errcheck`, 3 `ineffassign`, 5 `gosimple`/`staticcheck` (full list in Design). (3) Process gap: Tekhton's own `.claude/pipeline.conf:51` `ANALYZE_CMD` runs shellcheck only, and `Makefile` `lint` warn-and-continues, so Go lint never runs anywhere except CI — which nobody was watching. |
 | **m25 fills** | (1) Commits a `.gitkeep` in all 15 `internal/diagnose/testdata/fixtures_v3/*/inputs/agent_logs/` directories and in `tests/fixtures/qwen_local_smoke/.claude/logs/`, so fresh clones reproduce the local tree (verified safe: the diagnose engine decides no-state from `.claude/PIPELINE_STATE.md` absence at `engine.go:123-125`, never from directory emptiness, and no non-test diagnose code reads `agent_logs`). (2) Fixes all 31 lint findings by deletion/correction — no `//nolint` suppressions. (3) Appends `&& make lint` to Tekhton's self-host `ANALYZE_CMD` in `.claude/pipeline.conf` so future milestone runs surface Go lint findings to the reviewer (CI stays the hard gate; `make lint` stays soft for machines without the binary). |
 | **Depends on** | — |
 | **Files changed** | `internal/diagnose/testdata/fixtures_v3/*/inputs/agent_logs/.gitkeep` (15 new), `tests/fixtures/qwen_local_smoke/.claude/logs/.gitkeep` (new), ~20 Go files with lint findings (list in Design), `.claude/pipeline.conf` |
@@ -124,12 +124,17 @@ runtime defaults stay project-agnostic (rule 1 untouched).
 
 ## Acceptance Criteria
 
-- [ ] `git ls-files internal/diagnose/testdata/fixtures_v3/no-state/inputs/` lists at least one file (the `.gitkeep`).
-- [ ] All 15 scenarios have a tracked `inputs/agent_logs/.gitkeep`: `git ls-files 'internal/diagnose/testdata/fixtures_v3/*/inputs/agent_logs/.gitkeep' | wc -l` prints 15.
-- [ ] Fresh-clone simulation passes: `git clone --no-hardlinks . /tmp/tekhton-clone-check && (cd /tmp/tekhton-clone-check && go test ./internal/diagnose/...)` exits 0.
+<!-- NOTE: acceptance runs BEFORE the finalize commit, so criteria here must
+     not depend on the files being committed (git ls-files / fresh-clone of
+     HEAD would fail on a correct working tree). Tracked-ness is asserted via
+     check-ignore now and by CI after the milestone commit lands. -->
+
+- [ ] All 16 `.gitkeep` files exist on disk: `find internal/diagnose/testdata/fixtures_v3/*/inputs/agent_logs tests/fixtures/qwen_local_smoke/.claude/logs -name .gitkeep | wc -l` prints 16.
+- [ ] None of the 16 paths is gitignored: `git check-ignore internal/diagnose/testdata/fixtures_v3/*/inputs/agent_logs/.gitkeep tests/fixtures/qwen_local_smoke/.claude/logs/.gitkeep` produces no output (exit 1) — i.e. the finalize commit will actually track them.
+- [ ] Post-commit (verified by the next CI run, or manually after finalize): a fresh clone passes `go test ./internal/diagnose/...` — e.g. `d=$(mktemp -d) && git clone --no-hardlinks . "$d" && (cd "$d" && go test ./internal/diagnose/...)`.
 - [ ] `TestParity_AllFixtures` passes with verdicts unchanged for all 15 scenarios (no `.gitkeep`-induced rule output shift).
 - [ ] `golangci-lint run --timeout=5m` (v1.64.5, repo default config) reports zero issues.
-- [ ] No `//nolint` comment is introduced anywhere in the diff (`git diff | grep -c nolint` is 0).
+- [ ] No `//nolint` comment is introduced anywhere in the change set: `git diff HEAD` output contains no `nolint` substring (use `! git diff HEAD | grep -q nolint` — plain `grep -c` exits 1 on zero matches and would trip `set -e`).
 - [ ] `go build ./...`, `go vet ./...`, and `go test ./...` all pass.
 - [ ] `.claude/pipeline.conf` `ANALYZE_CMD` contains `make lint`, and `make lint` on a machine without golangci-lint still exits 0 with the warning (existing Makefile behavior, asserted manually or by inspection).
 - [ ] No regression in `bash tests/run_tests.sh`.
@@ -142,6 +147,8 @@ runtime defaults stay project-agnostic (rule 1 untouched).
 - **The 31-item list is point-in-time** (run 27420207703). m19 lands before this milestone executes — re-run the linter and fix the union, don't blindly apply the list.
 - **Don't create `.golangci.yml` here.** CLAUDE.md rule 3 mentions an "advanced preset" that was never authored; adopting one would surface a much larger finding set and is its own milestone (see Seeds Forward).
 - **`.gitkeep` only in `inputs/` trees**, never in `expected/` dirs — expected-output enumeration could pick the file up as a baseline.
+- **The "behaviorally inert" claim rests on one filter:** `mapFixturePath` materializes `agent_logs/*` into `.claude/logs/`, and the non-test `CollectAgentLogTails` (`internal/diagnose/helpers.go:188-225`) DOES `os.ReadDir` that directory — `.gitkeep` is skipped only because of the `\.log$` basename filter at `helpers.go:114`. The parity AC catches a regression, but don't loosen that filter casually.
+- **Linter version skew:** CI pins golangci-lint v1.64.5; a different local version (`make lint`) may report a slightly different finding set. The CI-pinned version is the arbiter — install/match it for the zero-issues AC.
 
 ## Seeds Forward
 
