@@ -5,10 +5,11 @@
 - [x] `tests/test_common_usage_threshold_guard.sh` — check_usage_threshold skips claude usage invocation when PROVIDER excludes claude (Goal 2)
 
 ## Test Run Results
-Passed: 2  Failed: 5
+Passed: 2  Failed: 4
 
-(2 passing: test_mcp_resolve_provider_guard.sh assertion B, test_common_usage_threshold_guard.sh assertion C.
- 5 failing: test_plan_batch_provider_boundary.sh A; test_audit_raw_claude.sh existence; test_mcp_resolve_provider_guard.sh A; test_common_usage_threshold_guard.sh A and B — all due to m20 not yet implemented.)
+(2 passing: test_mcp_resolve_provider_guard.sh B, test_common_usage_threshold_guard.sh C.
+ 4 failing: test_plan_batch_provider_boundary.sh A; test_audit_raw_claude.sh existence check; test_mcp_resolve_provider_guard.sh A; test_common_usage_threshold_guard.sh A and B — all due to m20 not yet implemented.
+ Full suite: 495 shell passed, 4 m20 tests + 2 pre-existing parity tests failed; all Go tests passed.)
 
 ## Bugs Found
 - BUG: [lib/plan_batch.sh:88] raw `claude \` invocation in command position — _call_planning_batch does not route through tekhton supervise (Goal 1 absent)
@@ -23,6 +24,6 @@ Passed: 2  Failed: 5
 - [x] `tests/test_common_usage_threshold_guard.sh`
 
 ## Timing
-- Test executions: 5
-- Approximate total test execution time: 20s
+- Test executions: 7
+- Approximate total test execution time: 120s
 - Test files written: 4
