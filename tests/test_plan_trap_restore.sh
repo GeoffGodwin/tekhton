@@ -46,15 +46,25 @@ echo "=== Previous trap handlers are captured and restored ==="
 # Per-process bin dir keeps the mock isolated from concurrent test runs.
 MOCK_BIN_DIR="$(mktemp -d -t tekhton_test_bin_XXXXXX)"
 trap '[[ -n "${MOCK_BIN_DIR:-}" ]] && rm -rf "$MOCK_BIN_DIR"' EXIT
-cat > "$MOCK_BIN_DIR/claude" << 'EOF'
-#!/bin/bash
-# Mock claude: accept arguments and output placeholder text
-cat <<'ENDOUT'
-This is a test design document output from the planning agent.
-ENDOUT
-exit 0
-EOF
-chmod +x "$MOCK_BIN_DIR/claude"
+cat > "$MOCK_BIN_DIR/tekhton" << 'TEKHTON_EOF'
+#!/usr/bin/env bash
+# Mock tekhton supervise: emit a minimal agent.response.v1 envelope
+if [[ "${1:-}" == "supervise" ]] && [[ "${2:-}" == "--request-file" ]]; then
+    cat << 'RESPONSE_EOF'
+{
+  "exit_code": 0,
+  "outcome": "success",
+  "turns_used": 1,
+  "stdout_tail": [
+  ]
+}
+RESPONSE_EOF
+    exit 0
+fi
+exit 1
+TEKHTON_EOF
+chmod +x "$MOCK_BIN_DIR/tekhton"
+export TEKHTON_BIN="$MOCK_BIN_DIR/tekhton"
 
 # Add to PATH so the mock is found
 export PATH="$MOCK_BIN_DIR:$PATH"

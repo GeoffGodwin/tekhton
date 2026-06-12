@@ -29,6 +29,10 @@ export TEKHTON_VERSION="3.65.0"
 export PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
 export TEKHTON_TEST_MODE=1
 
+# Stub _json_escape so agent_shim.sh (sourced lazily by plan_batch.sh) works
+# without pulling in all of common.sh and its dependency chain.
+_json_escape() { printf '%s' "$1"; }
+
 # Source required libraries
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
@@ -68,6 +72,31 @@ export PATH="${TEST_TMP}:${PATH}"
 echo '#!/bin/bash' > "${TEST_TMP}/claude"
 echo 'mock_claude "$@"' >> "${TEST_TMP}/claude"
 chmod +x "${TEST_TMP}/claude"
+
+# Mock tekhton supervise: _call_planning_batch now routes through the supervise
+# seam (m20). Return a response envelope with design content in stdout_tail.
+cat > "${TEST_TMP}/tekhton" << 'TEKHTON_EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "supervise" ]] && [[ "${2:-}" == "--request-file" ]]; then
+    cat << 'RESPONSE_EOF'
+{
+  "exit_code": 0,
+  "outcome": "success",
+  "turns_used": 1,
+  "stdout_tail": [
+    "# Design Document",
+    "",
+    "## Overview",
+    "Test design document for testing purposes."
+  ]
+}
+RESPONSE_EOF
+    exit 0
+fi
+exit 1
+TEKHTON_EOF
+chmod +x "${TEST_TMP}/tekhton"
+export TEKHTON_BIN="${TEST_TMP}/tekhton"
 
 # Create a test template
 TEST_TEMPLATE="${TEST_TMP}/test_template.md"
