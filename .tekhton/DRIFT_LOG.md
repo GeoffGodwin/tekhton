@@ -4,15 +4,18 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 245
+- Runs since audit: 246
 =======
-- Runs since audit: 245
+- Runs since audit: 246
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 245
+- Runs since audit: 246
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-12 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] `lib/replan_midrun.sh` sits at 299 lines â 1 line under the 300-line hard ceiling. The next addition forces a split.
+- [ ] [2026-06-12 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] `lib/common.sh` sits at 291 lines â approaching ceiling.
+- [ ] [2026-06-12 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] `lib/plan_batch.sh:2`, `stages/plan_generate.sh:17`, and several other sourced `lib/`/`stages/` files have `set -euo pipefail` explicitly, which the reviewer checklist flags as wrong for sourced files (they should inherit from the caller). Pre-existing across multiple files; not introduced by this change.
 - [ ] [2026-06-12 | "Implement Milestone m20: Planning batch + auxiliary bash paths off raw claude CLI"] `internal/tester/tdd/tdd.go:193,376` â `supervisor` package still imported for `supervisor.CategoryUpstream` constant and `supervisor.FromProto()` utility. These are legitimate non-constructor uses; not a violation of the B2 acceptance criterion. Consider migrating the constant/utility to `internal/proto` in a future cleanup arc to sever the remaining supervisor dependency in tdd.
 - [ ] [2026-06-12 | "Implement Milestone m20: Planning batch + auxiliary bash paths off raw claude CLI"] `cmd/tekhton/run_stage.go:156` â `primaryStage` parameter is declared and then immediately suppressed via `_ = primaryStage`. Intended for a future optimization that resolves only the primary stage first; a comment explaining the intent would help future readers.
 - [ ] [2026-06-12 | "Implement Milestone m19: Provider-aware supervise seam: retire remaining Claude direct-calls"] `m24 Gap row` â References "69 open items" in NON_BLOCKING_LOG.md; the actual count at time of authoring should be verified against the file before m24 runs, since the count drives the statement "the backlog grows past the point where the coder-prompt threshold mechanism can meaningfully surface it."
