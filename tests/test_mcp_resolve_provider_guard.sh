@@ -88,10 +88,12 @@ rm -f "${CLAUDE_INVOKED_FILE}"
 
 # --- B: with PROVIDER=claude, probe IS allowed ------------------------------
 # When claude is in the provider spec, the guard should permit the probe.
-# The fake claude outputs nothing useful, so the function returns 1 (not found).
-# We just assert that claude WAS invoked (the probe ran).
+# The fake claude outputs nothing useful (no --mcp-config line), so the
+# function returns 1 (MCP support not detected). The critical assertion is
+# that claude WAS invoked — verifying the guard did not over-block.
 _CLI_MCP_CONFIG_SUPPORTED=""
 
+PROBE_RC=0
 set +e
 (
     export FAKE_CLAUDE_INVOKED_FILE="${CLAUDE_INVOKED_FILE}"
@@ -100,17 +102,27 @@ set +e
     _CLI_MCP_CONFIG_SUPPORTED=""
     _cli_supports_mcp_config
 )
+PROBE_RC=$?
 set -e
 
 if [[ -f "${CLAUDE_INVOKED_FILE}" ]]; then
     pass "B: claude IS invoked by _cli_supports_mcp_config when PROVIDER=claude"
 else
-    # If the fake claude isn't on PATH or the function bails for another reason,
-    # the probe may still not fire. Only fail if B can be demonstrated cleanly.
-    # This is a best-effort assertion — B not failing does not imply B passed.
-    pass "B: _cli_supports_mcp_config ran (probe may have used cached result or PATH miss)"
+    fail "B: claude NOT invoked despite PROVIDER=claude — guard may be over-broad"
 fi
 rm -f "${CLAUDE_INVOKED_FILE}"
+
+# --- B2: return code when PROVIDER=claude (probe ran, fake outputs nothing) --
+# The fake claude does not output "--mcp-config", so the grep returns no match
+# and the function returns 1. Verify the return code comes from the probe result,
+# not from the provider guard forcing rc=1.
+if [[ "$PROBE_RC" -ne 0 ]]; then
+    pass "B2: _cli_supports_mcp_config returns non-zero (probe ran; fake claude has no --mcp-config)"
+else
+    # rc=0 would mean the fake claude output matched "--mcp-config", which is
+    # unexpected given our fake outputs "Usage: claude [options]" only.
+    fail "B2: unexpected rc=0 — fake claude output should not match --mcp-config"
+fi
 
 # --- summary -----------------------------------------------------------------
 if [[ "$FAIL_COUNT" -eq 0 ]]; then

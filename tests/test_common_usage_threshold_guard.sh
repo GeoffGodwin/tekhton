@@ -61,6 +61,15 @@ export _TUI_ACTIVE TEKHTON_HOME
 # shellcheck source=../lib/common.sh
 source "${TEKHTON_HOME}/lib/common.sh"
 
+# Re-stub logging after sourcing common.sh. common.sh redefines log/warn/error
+# via output.sh; the stubs above are lost. Re-apply so test output stays clean
+# and _out_emit side effects (TUI writes, file writes) don't bleed into tests.
+log()         { :; }
+warn()        { :; }
+error()       { :; }
+success()     { :; }
+header()      { :; }
+
 # --- A: PROVIDER=codex, threshold 50% — claude must NOT be invoked ---------
 # After m20: check_usage_threshold returns 0 (silently skips — claude not in spec).
 # Before m20: claude usage is called → fake claude records invocation, outputs 99%
@@ -110,6 +119,36 @@ else
     fail "C: claude WAS invoked when USAGE_THRESHOLD_PCT=0 (disabled path should return early)"
 fi
 rm -f "${CLAUDE_INVOKED_FILE}"
+
+# --- D: PROVIDER=claude, threshold=50 — claude IS invoked; 99% exceeds 50% --
+# This is the positive (enabled) path: PROVIDER contains "claude", threshold
+# is non-zero, and the fake claude reports 99% usage. Expected behavior:
+#   (1) fake claude IS invoked (not guarded out)
+#   (2) function returns 1 (usage 99% > threshold 50%)
+D_RC=0
+set +e
+(
+    export FAKE_CLAUDE_INVOKED_FILE="${CLAUDE_INVOKED_FILE}"
+    export PROVIDER=claude
+    export USAGE_THRESHOLD_PCT=50
+    export PATH="${WORK_DIR}:${PATH}"
+    check_usage_threshold
+)
+D_RC=$?
+set -e
+
+if [[ -f "${CLAUDE_INVOKED_FILE}" ]]; then
+    pass "D: claude IS invoked by check_usage_threshold when PROVIDER=claude and threshold>0"
+else
+    fail "D: claude NOT invoked — positive-path check_usage_threshold skipped the probe (guard over-broad)"
+fi
+rm -f "${CLAUDE_INVOKED_FILE}"
+
+if [[ "$D_RC" -eq 1 ]]; then
+    pass "D2: check_usage_threshold returns 1 (usage 99% exceeds threshold 50%)"
+else
+    fail "D2: check_usage_threshold returned ${D_RC} instead of 1 (usage 99% should exceed threshold 50%)"
+fi
 
 # --- summary -----------------------------------------------------------------
 if [[ "$FAIL_COUNT" -eq 0 ]]; then

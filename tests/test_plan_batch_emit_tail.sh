@@ -189,6 +189,29 @@ else
     fail "F: single entry" "got: $(printf '%q' "$output_f")"
 fi
 
+# --- G: empty stdout_tail array — no output, returns 0 ----------------------
+# An empty array [] takes a different awk code path from null: in_tail is set
+# to 1 on the "[" match then immediately cleared on "]", producing no output.
+# This is distinct from the null case (B) and must be covered separately.
+RESPONSE_G="${WORK_DIR}/response_g.json"
+cat > "$RESPONSE_G" << 'JSON'
+{
+  "exit_code": 0,
+  "stdout_tail": []
+}
+JSON
+
+set +e
+output_g=$(_plan_batch_emit_tail "$RESPONSE_G")
+rc_g=$?
+set -e
+
+if [[ -z "$output_g" ]] && [[ "$rc_g" -eq 0 ]]; then
+    pass "G: empty stdout_tail array produces no output and returns 0"
+else
+    fail "G: empty stdout_tail array" "output=$(printf '%q' "$output_g") rc=${rc_g}"
+fi
+
 # --- summary -----------------------------------------------------------------
 echo ""
 if [[ "$FAIL" -eq 0 ]]; then
