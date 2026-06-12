@@ -1,29 +1,17 @@
 ## Planned Tests
-- [x] `tests/test_plan_batch_provider_boundary.sh` — shim-boundary: PROVIDER=codex routes through tekhton supervise; lib/plan_batch.sh has no raw claude call (Goals 1, 4)
-- [x] `tests/test_audit_raw_claude.sh` — audit gate catches all 3 raw-claude forms; exits 0 on clean tree; quota_probe.sh allowlisted (Goal 3)
-- [x] `tests/test_mcp_resolve_provider_guard.sh` — _cli_supports_mcp_config skips probe + logs when claude not in provider spec (Goal 2)
-- [x] `tests/test_common_usage_threshold_guard.sh` — check_usage_threshold skips claude usage invocation when PROVIDER excludes claude (Goal 2)
+- [x] `tests/test_mcp_resolve_provider_guard.sh` — Confirm guard unskips and passes (PROVIDER=codex skips probe; PROVIDER=claude allows it)
+- [x] `tests/test_common_usage_threshold_guard.sh` — Confirm guard unskips and passes (PROVIDER=codex skips `claude usage`; disabled path still works)
+- [ ] `tests/test_plan_batch_emit_tail.sh` — Unit tests for `_plan_batch_emit_tail`: extracts stdout_tail lines from response JSON, handles empty/missing inputs and escape sequences
+- [ ] `tests/test_clear_commit_skip_sentinels.sh` — Unit tests for `_clear_commit_skip_sentinels`: removes sentinel files, returns 0 when absent, works with abs/rel TEKHTON_DIR
 
 ## Test Run Results
-Passed: 2  Failed: 4
-
-(2 passing: test_mcp_resolve_provider_guard.sh B, test_common_usage_threshold_guard.sh C.
- 4 failing: test_plan_batch_provider_boundary.sh A; test_audit_raw_claude.sh existence check; test_mcp_resolve_provider_guard.sh A; test_common_usage_threshold_guard.sh A and B — all due to m20 not yet implemented.
- Full suite: 495 shell passed, 4 m20 tests + 2 pre-existing parity tests failed; all Go tests passed.)
+Passed: 0  Failed: 0
 
 ## Bugs Found
-- BUG: [lib/plan_batch.sh:88] raw `claude \` invocation in command position — _call_planning_batch does not route through tekhton supervise (Goal 1 absent)
-- BUG: [scripts/audit-raw-claude.sh] file does not exist — audit gate for raw claude invocations not created (Goal 3 absent)
-- BUG: [lib/mcp_resolve.sh:158] _cli_supports_mcp_config() calls `claude --help` unconditionally; PROVIDER spec guard absent (Goal 2 absent)
-- BUG: [lib/common.sh:175] check_usage_threshold() calls `claude usage` unconditionally; PROVIDER spec guard absent (Goal 2 absent)
+None
 
 ## Files Modified
-- [x] `tests/test_plan_batch_provider_boundary.sh`
-- [x] `tests/test_audit_raw_claude.sh`
 - [x] `tests/test_mcp_resolve_provider_guard.sh`
 - [x] `tests/test_common_usage_threshold_guard.sh`
-
-## Timing
-- Test executions: 7
-- Approximate total test execution time: 120s
-- Test files written: 4
+- [ ] `tests/test_plan_batch_emit_tail.sh`
+- [ ] `tests/test_clear_commit_skip_sentinels.sh`

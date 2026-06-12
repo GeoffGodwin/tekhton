@@ -1,12 +1,11 @@
 ## What Was Fixed
 
-- **docs/v5-polyglot.md — added `## Local Provider (qwen-local)` section** (AC item 6): five-step Ollama + `qwen2.5-coder:32b` setup recipe verbatim from m18 Design §Goal 3; `wire_api=chat` called out in both the inline comment and the `pipeline.conf` snippet; troubleshooting entry for "run reports success but no files changed" directing operators to verify `wire_api=chat`, use a ≥32B model at ≥4-bit, and confirm the smoke test passes.
-- **docs/v5-tier-model.md:14 — updated `local` tier row** (AC item 7): changed "local llama.cpp / vLLM — V5 Phase 2" to "local Ollama / llama.cpp / vLLM (shipped in m17)".
-- **internal/runner/provider_chain_test.go — added `TestChain_RunAgent_LocalTierWins`**: drives `RunAgent` on a `qwen-local,codex,claude` chain where the local-tier stub returns `OutcomeSuccess`; asserts `res.TierUsed == provider.TierLocal`.
-- **internal/runner/provider_chain_test.go — added `TestChain_RunAgent_RequiredTier_Local_RejectsAll`**: sets `c.RequiredTier = provider.TierLocal` with a subscription-tier (codex) and api-tier (claude) provider; asserts both are rejected with `errors.Is(err, runner.ErrTierLimitExceeded)` and `res.ErrorSubcategory == "TIER_LIMIT_EXCEEDED"`.
+- `lib/mcp_resolve.sh:158` — Added provider-spec guard to `_cli_supports_mcp_config()`: resolves `${PROVIDER:-codex,claude}`; when `claude` is absent from the spec, logs `MCP/Serena: claude not in provider chain — skipping claude MCP wiring`, sets `_CLI_MCP_CONFIG_SUPPORTED=0`, and returns 1. Skips the `claude --help` probe entirely.
+- `lib/common.sh:175` — Added provider-spec guard to `check_usage_threshold()`: resolves `${PROVIDER:-codex,claude}`; when `claude` is absent, returns 0 silently (allow) without calling `claude usage`. The feature is claude-quota-specific.
+- `scripts/audit-raw-claude.sh` — Created per the m20 design. Greps `lib/`, `stages/`, `tekhton.sh`, and `tekhton-legacy.sh` for the `claude` binary in command position (direct call, pipe, `&&`/`||`, `exec`, and line-continuation forms). Allowlists `lib/quota_probe.sh` until m21. Exits non-zero with the hit list when any unlisted raw `claude` call is found. Made executable.
 
 ## Files Modified
 
-- `docs/v5-polyglot.md`
-- `docs/v5-tier-model.md`
-- `internal/runner/provider_chain_test.go`
+- `lib/mcp_resolve.sh`
+- `lib/common.sh`
+- `scripts/audit-raw-claude.sh` (created)
