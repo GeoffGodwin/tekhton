@@ -218,7 +218,7 @@ Output the result as a markdown document showing what should change."
 
     local replan_output
     local exit_code
-    replan_output=$(_call_planning_batch "$replan_model" "$replan_turns" "$replan_prompt" "$log_file")
+    replan_output=$(_call_planning_batch "$replan_model" "$replan_turns" "$replan_prompt" "$log_file" "replan")
     exit_code=$?
 
     if [[ $exit_code -ne 0 ]] || [[ -z "$replan_output" ]]; then

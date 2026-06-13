@@ -170,6 +170,11 @@ check_usage_threshold() {
         return 0
     fi
 
+    local provider_spec="${PROVIDER:-codex,claude}"
+    if [[ "${provider_spec}" != *"claude"* ]]; then
+        return 0
+    fi
+
     # Parse claude /usage output for the current cost percentage
     local usage_output
     usage_output=$(claude usage 2>/dev/null || true)

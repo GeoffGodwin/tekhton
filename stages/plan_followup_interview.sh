@@ -179,7 +179,8 @@ run_plan_followup_interview() {
         "$PLAN_INTERVIEW_MODEL" \
         "${PLAN_INTERVIEW_MAX_TURNS:-5}" \
         "$followup_prompt" \
-        "$log_file") || batch_exit=$?
+        "$log_file" \
+        "plan_interview") || batch_exit=$?
 
     # Trim preamble lines before the first top-level heading.
     if [[ -n "$updated_content" ]]; then

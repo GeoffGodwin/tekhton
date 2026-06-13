@@ -81,7 +81,8 @@ run_plan_generate() {
         "$PLAN_GENERATION_MODEL" \
         "$PLAN_GENERATION_MAX_TURNS" \
         "$prompt" \
-        "$log_file") || batch_exit=$?
+        "$log_file" \
+        "plan_generate") || batch_exit=$?
 
     # Guard against tool-write overwrite: if Claude used the Write tool to create
     # CLAUDE.md (substantive content on disk) and returned only a summary as text

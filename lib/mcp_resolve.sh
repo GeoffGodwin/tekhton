@@ -155,6 +155,13 @@ _cli_supports_mcp_config() {
         return 1
     fi
 
+    local provider_spec="${PROVIDER:-codex,claude}"
+    if [[ "${provider_spec}" != *"claude"* ]]; then
+        log_verbose "MCP/Serena: claude not in provider chain — skipping claude MCP wiring"
+        _CLI_MCP_CONFIG_SUPPORTED="0"
+        return 1
+    fi
+
     if claude --help 2>/dev/null | grep -q "\-\-mcp-config"; then
         _CLI_MCP_CONFIG_SUPPORTED="1"
         return 0

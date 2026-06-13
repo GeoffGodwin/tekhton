@@ -180,7 +180,8 @@ run_replan() {
         "${REPLAN_MODEL:-opus}" \
         "${REPLAN_MAX_TURNS:-50}" \
         "$replan_prompt" \
-        "$log_file") || batch_exit=$?
+        "$log_file" \
+        "replan") || batch_exit=$?
 
     {
         echo "=== Session End ==="

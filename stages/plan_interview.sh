@@ -162,7 +162,8 @@ run_plan_interview() {
         "$PLAN_INTERVIEW_MODEL" \
         "${PLAN_INTERVIEW_MAX_TURNS:-5}" \
         "$synthesis_prompt" \
-        "$log_file") || batch_exit=$?
+        "$log_file" \
+        "plan_interview") || batch_exit=$?
 
     # Guard against tool-write overwrite: if Claude used the Write tool to create
     # ${DESIGN_FILE} (substantive content on disk) and returned only a summary as text
