@@ -93,11 +93,15 @@ func TestWriteInitialEmitsValidJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &parsed); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
-	if parsed["run_mode"] != "task" {
-		t.Fatalf("run_mode missing/wrong: %v", parsed["run_mode"])
+	payload, ok := parsed["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload object missing: %v", parsed["payload"])
+	}
+	if payload["run_mode"] != "task" {
+		t.Fatalf("payload.run_mode missing/wrong: %v", payload["run_mode"])
 	}
 	if !strings.Contains(string(b), "tekhton.tui.status.v1") {
-		t.Fatalf("schema marker missing")
+		t.Fatalf("proto marker missing")
 	}
 }
 
@@ -110,11 +114,15 @@ func TestWriteFinalSetsCompleteFlag(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	var parsed map[string]any
 	_ = json.Unmarshal(b, &parsed)
-	if parsed["complete"] != true {
-		t.Fatalf("complete flag not set")
+	payload, ok := parsed["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload object missing: %v", parsed["payload"])
 	}
-	if parsed["verdict"] != "success" {
-		t.Fatalf("verdict not set: %v", parsed["verdict"])
+	if payload["complete"] != true {
+		t.Fatalf("complete flag not set: %v", payload["complete"])
+	}
+	if payload["verdict"] != "success" {
+		t.Fatalf("verdict not set: %v", payload["verdict"])
 	}
 }
 
