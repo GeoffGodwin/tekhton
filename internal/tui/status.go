@@ -5,26 +5,20 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// initialStatus is the minimal JSON envelope written by the Go side at
-// startup so the Python sidecar has something to render before any bash mid-
-// run writer has fired. The shape matches what lib/tui_helpers.sh's
-// _tui_json_build_status emits — additive only, never rename, never re-type.
-type initialStatus struct {
-	Schema          string   `json:"schema"`
-	UpdatedAt       string   `json:"updated_at"`
-	PipelineStartTS int64    `json:"pipeline_start_ts"`
-	RunMode         string   `json:"run_mode"`
-	CLIFlags        string   `json:"cli_flags,omitempty"`
-	StageOrder      []string `json:"stage_order,omitempty"`
-	StagesComplete  []any    `json:"stages_complete"`
-	RecentEvents    []string `json:"recent_events"`
-	AgentStatus     string   `json:"agent_status"`
-	AgentTurnsUsed  int      `json:"agent_turns_used"`
-	AgentTurnsMax   int      `json:"agent_turns_max"`
-	Complete        bool     `json:"complete"`
-	Verdict         string   `json:"verdict,omitempty"`
+// initialStatusEnvelope is the m23 envelope shape (proto/run_id/payload) that
+// the Python sidecar's _read_status() promotes to the top level. Field names
+// inside the payload must match TUIStatusV1Payload exactly so the renderer's
+// .get("current_agent_status") / .get("recent_events") lookups succeed.
+type initialStatusEnvelope struct {
+	Proto           string                   `json:"proto"`
+	RunID           string                   `json:"run_id"`
+	UpdatedAt       string                   `json:"updated_at"`
+	PipelineStartTS int64                    `json:"pipeline_start_ts"`
+	Payload         proto.TUIStatusV1Payload `json:"payload"`
 }
 
 // WriteInitial seeds tui_status.json with a starting envelope so the sidecar
@@ -37,17 +31,26 @@ func WriteInitial(statusFile string, runMode string, stageOrder []string) error 
 	if dir := filepath.Dir(statusFile); dir != "" {
 		_ = os.MkdirAll(dir, 0o755)
 	}
-	st := initialStatus{
-		Schema:          "tekhton.tui.status.v1",
+	if stageOrder == nil {
+		stageOrder = []string{}
+	}
+	env := initialStatusEnvelope{
+		Proto:           proto.TUIStatusV1,
 		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
 		PipelineStartTS: time.Now().Unix(),
-		RunMode:         runMode,
-		StageOrder:      stageOrder,
-		StagesComplete:  []any{},
-		RecentEvents:    []string{},
-		AgentStatus:     "idle",
+		Payload: proto.TUIStatusV1Payload{
+			Version:            1,
+			Attempt:            1,
+			MaxAttempts:        1,
+			RunMode:            runMode,
+			StageOrder:         stageOrder,
+			StagesComplete:     []proto.TUIStageEntry{},
+			RecentEvents:       []proto.TUIEventEntry{},
+			ActionItems:        []proto.TUIActionItem{},
+			CurrentAgentStatus: "idle",
+		},
 	}
-	return atomicWriteJSON(statusFile, st)
+	return atomicWriteJSON(statusFile, env)
 }
 
 // WriteFinal flips the complete flag so the sidecar transitions to its
@@ -56,16 +59,24 @@ func WriteFinal(statusFile, verdict string) error {
 	if statusFile == "" {
 		return nil
 	}
-	st := initialStatus{
-		Schema:         "tekhton.tui.status.v1",
-		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
-		StagesComplete: []any{},
-		RecentEvents:   []string{},
-		AgentStatus:    "complete",
-		Complete:       true,
-		Verdict:        verdict,
+	verdictPtr := verdict
+	env := initialStatusEnvelope{
+		Proto:     proto.TUIStatusV1,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Payload: proto.TUIStatusV1Payload{
+			Version:            1,
+			Attempt:            1,
+			MaxAttempts:        1,
+			StagesComplete:     []proto.TUIStageEntry{},
+			RecentEvents:       []proto.TUIEventEntry{},
+			ActionItems:        []proto.TUIActionItem{},
+			StageOrder:         []string{},
+			CurrentAgentStatus: "complete",
+			Complete:           true,
+			Verdict:            &verdictPtr,
+		},
 	}
-	return atomicWriteJSON(statusFile, st)
+	return atomicWriteJSON(statusFile, env)
 }
 
 // atomicWriteJSON marshals v and writes it via tmpfile + os.Rename so a
