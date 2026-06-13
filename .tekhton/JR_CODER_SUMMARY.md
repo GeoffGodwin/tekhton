@@ -1,11 +1,16 @@
 ## What Was Fixed
 
-- `lib/mcp_resolve.sh:158` — Added provider-spec guard to `_cli_supports_mcp_config()`: resolves `${PROVIDER:-codex,claude}`; when `claude` is absent from the spec, logs `MCP/Serena: claude not in provider chain — skipping claude MCP wiring`, sets `_CLI_MCP_CONFIG_SUPPORTED=0`, and returns 1. Skips the `claude --help` probe entirely.
-- `lib/common.sh:175` — Added provider-spec guard to `check_usage_threshold()`: resolves `${PROVIDER:-codex,claude}`; when `claude` is absent, returns 0 silently (allow) without calling `claude usage`. The feature is claude-quota-specific.
-- `scripts/audit-raw-claude.sh` — Created per the m20 design. Greps `lib/`, `stages/`, `tekhton.sh`, and `tekhton-legacy.sh` for the `claude` binary in command position (direct call, pipe, `&&`/`||`, `exec`, and line-continuation forms). Allowlists `lib/quota_probe.sh` until m21. Exits non-zero with the hit list when any unlisted raw `claude` call is found. Made executable.
+- `internal/errors/redact_test.go` — Added three table-driven test functions covering the required acceptance-criterion categories:
+  - `TestRedact_EnvAssignment`: four cases — `CODEX_API_KEY=...`, `OPENAI_API_KEY=...`, `ANTHROPIC_API_KEY=...`, and a mid-string embedded variant. Each asserts the secret value is absent and the correct `[REDACTED]` form appears.
+  - `TestRedact_APIKeyAssignment`: four cases of `api[_-]key=value` (both `_` and `-` separators, with/without spaces, embedded mid-line). Note: JSON colon-separator form (`"api_key":"value"`) is not handled by the current patterns — test coverage reflects the actual `=`-assignment contract.
+  - `TestRedact_Negative`: four inputs that must produce no `[REDACTED]` marker — plain "apikey" word without `=`, a lowercase env var without `_API_KEY` suffix, a raw `req_` request ID, and a plain build-failure line.
+  All new tests pass: `go test ./internal/errors/... ok`.
+
+- `docs/v5-polyglot.md:255` — Removed `(this release)` from the migration heading.
+  Before: `**Important:** Upgrading to m15 (this release) changes the implicit default.`
+  After:  `**Important:** Upgrading to m15 changes the implicit default.`
 
 ## Files Modified
 
-- `lib/mcp_resolve.sh`
-- `lib/common.sh`
-- `scripts/audit-raw-claude.sh` (created)
+- `internal/errors/redact_test.go`
+- `docs/v5-polyglot.md`

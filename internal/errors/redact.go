@@ -24,6 +24,9 @@ func Redact(input string) string {
 	out = redactSKAntRE.ReplaceAllString(out, "[REDACTED_API_KEY]")
 	// ANTHROPIC_API_KEY=value (no spaces in value)
 	out = redactAnthropicEnvRE.ReplaceAllString(out, "ANTHROPIC_API_KEY=[REDACTED]")
+	// FOO_API_KEY=value — any uppercase env var whose name ends in _API_KEY
+	// (catches CODEX_API_KEY, OPENAI_API_KEY, etc.)
+	out = redactEnvAPIKeyRE.ReplaceAllString(out, "${1}=[REDACTED]")
 	// api_key=value or api-key=value (no spaces in value)
 	out = redactAPIKeyAssignRE.ReplaceAllString(out, "api_key=[REDACTED]")
 	// Bearer tokens
@@ -40,6 +43,7 @@ var (
 	redactAuthHeaderRE    = regexp.MustCompile(`(?i)Authorization[[:space:]]*:[[:space:]]*[^\r\n]*`)
 	redactSKAntRE         = regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]*`)
 	redactAnthropicEnvRE  = regexp.MustCompile(`ANTHROPIC_API_KEY=[^ \r\n]*`)
+	redactEnvAPIKeyRE     = regexp.MustCompile(`([A-Z][A-Z0-9_]*_API_KEY)=[^ \r\n]*`)
 	// Case-sensitive on purpose — the V3 sed pipeline used a case-sensitive
 	// pattern, so ANTHROPIC_API_KEY=... is left alone here (the env-var rule
 	// above redacts it first; this rule must not lowercase the literal text

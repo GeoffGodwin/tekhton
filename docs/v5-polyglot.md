@@ -252,7 +252,7 @@ the Claude API cost), set `PROVIDER=claude` to pin to the API provider.
 
 ## Migration Path
 
-**Important:** Upgrading to m15 (this release) changes the implicit default.
+**Important:** Upgrading to m15 changes the implicit default.
 
 **Before m15:** The runner unconditionally used the Claude API. No `PROVIDER`
 key was needed.
