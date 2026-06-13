@@ -458,6 +458,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `MILESTONE_WINDOW_PCT` | % of context budget allocated to milestones (default: 30) |
 | `MILESTONE_WINDOW_MAX_CHARS` | Hard cap on milestone window chars (default: 20000) |
 | `MILESTONE_AUTO_MIGRATE` | Auto-extract inline milestones on first run (default: true) |
+| `MILESTONE_REQUIRE_SUBSTANTIVE_WORK` | m27. Block marking a milestone done when it produced no substantive (non-artifact) file changes — guards against no-op agents that self-report COMPLETE while the test suite stays green. Set false to revert to pre-m27 behavior. (default: true) |
 | `REPO_MAP_ENABLED` | Enable tree-sitter repo map generation (default: false) |
 | `REPO_MAP_TOKEN_BUDGET` | Max tokens for repo map output (default: 2048) |
 | `REPO_MAP_CACHE_DIR` | Index cache directory (default: .claude/index) |

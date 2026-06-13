@@ -11,7 +11,29 @@ set -euo pipefail
 #
 # Provides:
 #   check_milestone_acceptance — run automatable acceptance criteria
+#   _milestone_substantive_file_count — count non-artifact changed files
 # =============================================================================
+
+# _milestone_substantive_file_count
+# m27 — Echoes the number of changed/new files in the working tree that are NOT
+# pure pipeline artifacts (state, logs, manifest, milestone files, version,
+# changelog, session dir). Nothing commits mid-milestone, so at acceptance time
+# the working-tree diff vs HEAD plus untracked files IS the milestone's complete
+# output. A count of 0 means the agent produced no real work — the signal that
+# distinguishes a genuine completion from a no-op self-reported COMPLETE.
+_milestone_substantive_file_count() {
+    local _session_base
+    _session_base=$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")
+    # Artifact prefixes the pipeline itself writes — these never count as work.
+    local _excl='^\.tekhton/|^\.claude/logs/|^\.claude/milestones/|^\.claude/project_version\.cfg$|^VERSION$|^CHANGELOG\.md$'
+    if [[ "$_session_base" != "__nosession__" ]]; then
+        _excl="${_excl}|^${_session_base}/"
+    fi
+    {
+        git diff --name-only HEAD 2>/dev/null || true
+        git ls-files --others --exclude-standard 2>/dev/null || true
+    } | grep -vE "$_excl" | grep -c '.' || true
+}
 
 # check_milestone_acceptance MILESTONE_NUM [CLAUDE_MD_PATH]
 # Runs automatable acceptance criteria for a milestone.
@@ -185,6 +207,30 @@ check_milestone_acceptance() {
         if [[ "$docs_block" -gt 0 ]]; then
             warn "DOCS_STRICT_MODE: reviewer flagged missing doc updates (${docs_block} finding(s))"
             all_pass=false
+        fi
+    fi
+
+    # --- Automatable check 5: Substantive-work backstop (m27) ---
+    # Pre-m27 acceptance passed on TEST_CMD + ANALYZE_CMD alone, so a no-op
+    # agent that self-reported "Status: COMPLETE" left the suite green and was
+    # falsely marked done (the m21/m22/m24 false completions). A milestone must
+    # produce real (non-artifact) file changes to complete. Set
+    # MILESTONE_REQUIRE_SUBSTANTIVE_WORK=false to revert to pre-m27 behavior.
+    if [[ "${MILESTONE_MODE:-false}" = true ]] \
+       && [[ "${MILESTONE_REQUIRE_SUBSTANTIVE_WORK:-true}" = true ]]; then
+        local _subst_count
+        _subst_count=$(_milestone_substantive_file_count)
+        _subst_count="${_subst_count:-0}"
+        if [[ "$_subst_count" -lt 1 ]]; then
+            warn "Acceptance FAILED — milestone ${milestone_num} produced no substantive file changes (only pipeline artifacts)."
+            warn "A no-op cannot complete a milestone. Set MILESTONE_REQUIRE_SUBSTANTIVE_WORK=false to override."
+            if command -v emit_event &>/dev/null; then
+                emit_event "acceptance_failed_no_substantive_work" "acceptance" \
+                    "milestone=${milestone_num}, substantive_files=0" "" "" "" >/dev/null 2>&1 || true
+            fi
+            all_pass=false
+        else
+            success "Substantive work present (${_subst_count} non-artifact file(s) changed)"
         fi
     fi
 

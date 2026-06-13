@@ -272,6 +272,10 @@ SEED_CONTRACTS_ENABLED=false
 # MILESTONE_DIR=".claude/milestones"
 # MILESTONE_MANIFEST="MANIFEST.cfg"
 # MILESTONE_AUTO_MIGRATE=true
+# m27: a milestone cannot be marked done unless it produced at least one
+# substantive (non-artifact) file change. Guards against no-op agents that
+# self-report COMPLETE while leaving the test suite green. Set false to revert.
+# MILESTONE_REQUIRE_SUBSTANTIVE_WORK=true
 # MILESTONE_WINDOW_PCT=30
 # MILESTONE_WINDOW_MAX_CHARS=20000
 # MILESTONE_SPLIT_ENABLED=true
