@@ -45,6 +45,23 @@ if ! curl -fsS --max-time 3 "${base_root}/" >/dev/null 2>&1 \
     exit 0
 fi
 
+# --- skip guard: codex accepts our wire_api config -----------------------
+# The qwen-local provider injects `wire_api = "chat"` into codex's
+# model_providers passthrough (see internal/provider/local/local.go). Newer
+# codex CLI versions removed support for that value and abort on config
+# load — see https://github.com/openai/codex/discussions/7782. When that
+# happens every supervised agent call returns a 0-turn null run, which is
+# not what this smoke test is trying to assert. Probe codex with an empty
+# prompt and skip if it complains about wire_api.
+codex_probe=$(printf '' | codex exec --skip-git-repo-check \
+    -c 'model_providers.qwenlocal.wire_api="chat"' 2>&1 | head -20)
+if printf '%s\n' "$codex_probe" | grep -qiF 'wire_api' \
+        && printf '%s\n' "$codex_probe" | grep -qiF 'is no longer supported'; then
+    echo "SKIP: installed codex CLI rejects \`wire_api = \"chat\"\` — qwen-local provider"
+    echo "      needs codex<0.139 or an updated wire_api default before this can run."
+    exit 0
+fi
+
 # --- fixture setup -------------------------------------------------------
 FIXTURE_DIR="${TEKHTON_HOME}/tests/fixtures/qwen_local_smoke"
 WORK_DIR=""
