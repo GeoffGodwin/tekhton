@@ -122,8 +122,11 @@ _sidecar_spawn() {
 
 # _tui_restore_terminal — undo the terminal state changes the Python sidecar
 # applies (alternate screen, cursor hide, ICRNL toggle). Called from the
-# cleanup trap on interactive exits.
+# cleanup trap on interactive exits. No-op when the sidecar was never
+# activated — non-run subcommands (dag, help, config) must not exit the
+# alternate screen or clear the terminal.
 _tui_restore_terminal() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     tput rmcup 2>/dev/null || true
     tput cnorm 2>/dev/null || true
     stty icrnl 2>/dev/null || true

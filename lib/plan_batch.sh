@@ -170,10 +170,15 @@ _plan_batch_emit_tail() {
             line=$0
             sub(/^[[:space:]]*"/, "", line)
             sub(/"[[:space:]]*,?[[:space:]]*$/, "", line)
+            # Stash escaped backslashes as a placeholder so later \n / \t / \"
+            # rules cannot mis-match a sequence whose backslash was already a
+            # literal escape (e.g. JSON "\\n" must decode to literal "\n",
+            # not a newline).
+            gsub(/\\\\/, "\001", line)
             gsub(/\\n/, "\n", line)
             gsub(/\\t/, "\t", line)
             gsub(/\\"/, "\"", line)
-            gsub(/\\\\/, "\\", line)
+            gsub(/\001/, "\\", line)
             print line
         }
     ' "$f"

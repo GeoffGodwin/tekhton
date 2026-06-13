@@ -10,20 +10,8 @@ set -euo pipefail
 # Depends on: common.sh (log, warn)
 # =============================================================================
 
-# _emit_section_header — Prints a section header with separator.
-_emit_section_header() {
-    local num="$1"
-    local title="$2"
-    local desc="$3"
-    cat << EOF
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Section ${num}: ${title}
-# ${desc}
-# ═══════════════════════════════════════════════════════════════════════════════
-
-EOF
-}
+# shellcheck source=init_config_sections_helpers.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/init_config_sections_helpers.sh"
 
 # _emit_section_essential — Section 1: Essential config (first ~20 lines).
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,
@@ -84,35 +72,6 @@ EOF
         echo '# Leave as-is unless you already keep a design doc elsewhere.'
         echo 'DESIGN_FILE=".tekhton/DESIGN.md"'
     fi
-}
-
-# _emit_verified_line — Emits a config key with source annotation and VERIFY marker.
-# Args: $1=key, $2=value, $3=confidence, $4=source (optional)
-_emit_verified_line() {
-    local key="$1" val="$2" conf="$3" source="${4:-}"
-
-    # Emit source annotation if available
-    if [[ -n "$source" ]]; then
-        echo "# Detected from: ${source} (confidence: ${conf})"
-    fi
-
-    case "$conf" in
-        high)
-            echo "${key}=\"${val}\""
-            ;;
-        medium)
-            [[ -z "$source" ]] && echo "# VERIFY: detected with medium confidence"
-            echo "${key}=\"${val}\""
-            ;;
-        low)
-            echo "# SUGGESTION: detected with low confidence — uncomment if correct"
-            echo "# ${key}=\"${val}\""
-            echo "${key}=\"true\""
-            ;;
-        *)
-            echo "${key}=\"${val}\""
-            ;;
-    esac
 }
 
 # _emit_section_models_turns — Section 2: Models & Turns.
