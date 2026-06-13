@@ -429,12 +429,3 @@ func TestFileExistsHandlesDirAndMissing(t *testing.T) {
 		t.Errorf("real file should be true")
 	}
 }
-
-// ensureGitAvailable skips if git isn't on the path — every Rescan
-// branch that hits git falls back to "not a git repo" without it.
-func ensureGitAvailable(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-}

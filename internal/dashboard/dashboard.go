@@ -4,7 +4,6 @@
 package dashboard
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -146,24 +145,4 @@ func copyStaticFiles(absDash, templatesDir string) error {
 		_ = out.Close()
 	}
 	return nil
-}
-
-// jsonEscape mirrors lib/causality.sh:_json_escape — backslash, double-
-// quote, \n, \r, \t escaped; nothing else. Same semantics as
-// proto.writeQuoted but stand-alone so the package doesn't dual-source
-// the escape table.
-func jsonEscape(s string) string {
-	// Use stdlib json.Marshal of the wrapping string — its escape table is
-	// a superset of bash's, but for the printable ASCII the bash writer
-	// produces in practice they match. The parity gate exercises every
-	// real-world value.
-	b, err := json.Marshal(s)
-	if err != nil {
-		return s
-	}
-	// Strip outer quotes.
-	if len(b) >= 2 {
-		return string(b[1 : len(b)-1])
-	}
-	return s
 }

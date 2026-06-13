@@ -39,7 +39,6 @@ type runtimeSpec struct {
 	command    []string
 	parseSpec  func(s string) string // turns expected file contents into vN
 	parseCli   func(s string) string // turns CLI output into vN
-	exactMatch bool                  // when false, *contains* match (rust style)
 }
 
 var runtimeSpecs = []runtimeSpec{

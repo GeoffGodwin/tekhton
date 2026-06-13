@@ -145,7 +145,7 @@ func TestResolveByFileChanges_NoModifications(t *testing.T) {
 	// → resolveByFileChanges returns zero mutations.
 	dir := t.TempDir()
 	prevWD, _ := os.Getwd()
-	defer os.Chdir(prevWD)
+	defer func() { _ = os.Chdir(prevWD) }()
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}

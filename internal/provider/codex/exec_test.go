@@ -88,7 +88,7 @@ func TestRunCodex_TimeoutApplied(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Pass a per-call timeout shorter than the sleep.
-	runCodex(ctx, "/bin/sleep", []string{"30"}, "", 200*time.Millisecond, nil)
+	_, _, _, _ = runCodex(ctx, "/bin/sleep", []string{"30"}, "", 200*time.Millisecond, nil)
 	elapsed := time.Since(start)
 	if elapsed > 10*time.Second {
 		t.Errorf("runCodex didn't respect timeout: elapsed %v", elapsed)

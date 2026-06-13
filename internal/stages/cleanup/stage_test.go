@@ -297,7 +297,7 @@ func TestRevertCleanupOnlyFiles_PreservesPriorChanges(t *testing.T) {
 	// chdir into the temp project so the inner git diff inside
 	// revertCleanupOnlyFiles sees the right tree.
 	prevWD, _ := os.Getwd()
-	defer os.Chdir(prevWD)
+	defer func() { _ = os.Chdir(prevWD) }()
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}

@@ -487,7 +487,7 @@ func parsePomDeps(dir, prefix string, g *DependencyGraph) {
 	}
 
 	var mdc int
-	group, artifact := "", ""
+	group := ""
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimLeft(scanner.Text(), " \t")
@@ -495,15 +495,12 @@ func parsePomDeps(dir, prefix string, g *DependencyGraph) {
 			group = m[1]
 			continue
 		}
-		if m := rxPomArtifact.FindStringSubmatch(line); m != nil {
-			artifact = m[1]
-			if group != "" {
-				mdc++
-				g.KeyDependencies = append(g.KeyDependencies, Dependency{
-					Name: group + ":" + artifact, Version: "", Manifest: "pom.xml",
-				})
-				group, artifact = "", ""
-			}
+		if m := rxPomArtifact.FindStringSubmatch(line); m != nil && group != "" {
+			mdc++
+			g.KeyDependencies = append(g.KeyDependencies, Dependency{
+				Name: group + ":" + m[1], Version: "", Manifest: "pom.xml",
+			})
+			group = ""
 		}
 	}
 	g.Manifests = append(g.Manifests, Manifest{

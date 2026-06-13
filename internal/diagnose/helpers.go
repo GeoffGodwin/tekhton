@@ -66,7 +66,7 @@ func (h *Helpers) CollapseCauseChain(raw string) string {
 		if part == "<-" {
 			continue
 		}
-		etype := part
+		var etype string
 		if idx := strings.LastIndex(part, "."); idx >= 0 {
 			etype = part[idx+1:]
 		} else {

@@ -2,7 +2,6 @@ package errors
 
 import (
 	"regexp"
-	"strings"
 )
 
 // AgentClassifyOptions carries the inputs lib/errors.sh::classify_error
@@ -253,14 +252,4 @@ var knownAgentSubcategories = map[string][]string{
 	"ENVIRONMENT": {"disk_full", "network", "missing_dep", "permissions", "oom", "env_unknown", "env_setup", "service_dep", "toolchain", "resource", "test_infra"},
 	"AGENT_SCOPE": {"null_run", "max_turns", "activity_timeout", "null_activity_timeout", "no_summary", "scope_unknown"},
 	"PIPELINE":    {"state_corrupt", "config_error", "missing_file", "template_error", "internal"},
-}
-
-// trimAll strips whitespace and surrounding quotes — small helpers exposed for
-// the diagnose CLI shim.
-func trimAll(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && (s[0] == '"' && s[len(s)-1] == '"' || s[0] == '\'' && s[len(s)-1] == '\'') {
-		s = s[1 : len(s)-1]
-	}
-	return s
 }

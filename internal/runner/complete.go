@@ -16,7 +16,6 @@ import (
 type loopState struct {
 	attempt        int
 	agentCalls     int
-	totalTurns     int
 	noProgressHits int
 	startedAt      time.Time
 }

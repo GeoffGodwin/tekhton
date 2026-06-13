@@ -35,7 +35,7 @@ func TestSpecialist_Passthrough(t *testing.T) {
 // TestSpecialist_Exhausted — specialist returns blockers but no cycles remain.
 // Returns verdict=fail / specialist_blockers.
 func TestSpecialist_Exhausted(t *testing.T) {
-	dir, req := setupProject(t)
+	_, req := setupProject(t)
 	cfg := loadConfig(req)
 	report := &reviewparse.Report{Verdict: reviewparse.VerdictApproved}
 	budget := &reviewparse.CycleBudget{Current: 3, Max: 3}
@@ -57,11 +57,8 @@ func TestSpecialist_Exhausted(t *testing.T) {
 	if !strings.Contains(res.Error, "specialist_report_file=") {
 		t.Errorf("Error metadata missing specialist_report_file:\n%s", res.Error)
 	}
-	// Nothing was appended to REVIEWER_REPORT.md in this path.
-	if fileExists(dir + "/.tekhton/REVIEWER_REPORT.md") {
-		// Either way is fine — the test just asserts we don't crash.
-	}
 }
+
 
 // TestAppendToFile_BytePreservation asserts the specialist section append
 // behaves as the bash `{ echo ""; echo "## Specialist Blockers"; echo $X; }

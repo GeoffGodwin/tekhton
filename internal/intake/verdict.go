@@ -341,9 +341,7 @@ func (v *VerdictHandler) writeIntakeClarifyReport(questions string) (string, err
 		if line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, "- ") {
-			line = strings.TrimPrefix(line, "- ")
-		}
+		line = strings.TrimPrefix(line, "- ")
 		if line == "" {
 			continue
 		}

@@ -115,10 +115,7 @@ func runFixAgent(ctx context.Context, cfg *Config, deps *Deps, initialOutput str
 			warnf(deps, "[coder/prerun] Fix agent invocation error: %v", err)
 		}
 
-		verifyOutput, verifyExit, didDedup := verifyAfterAttempt(ctx, cfg, deps)
-		if didDedup {
-			currentOutput = verifyOutput
-		}
+		verifyOutput, verifyExit, _ := verifyAfterAttempt(ctx, cfg, deps)
 		appendLog(deps, cfg.LogFile, verifyOutput)
 
 		if verifyExit == 0 {

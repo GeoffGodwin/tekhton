@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -243,5 +242,5 @@ func loadLastSeen(path string) map[string]string {
 // without poking at private fields.
 func formatHistoryEntry(ts, file string) string {
 	b, _ := json.Marshal(historyEntry{Timestamp: ts, File: file})
-	return fmt.Sprintf("%s", b)
+	return string(b)
 }

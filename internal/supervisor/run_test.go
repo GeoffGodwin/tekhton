@@ -581,15 +581,6 @@ func TestRun_ActivityOverride_NoWritesStillTimesOut(t *testing.T) {
 // that use the watcher are gated on nil. The non-fake branches build a
 // real watcher rooted at a temp dir and trigger writes.
 
-// timerStub captures Reset calls to assert the timer was rearmed.
-type timerStub struct {
-	resets atomic.Int32
-}
-
-func (s *timerStub) Reset(time.Duration) bool {
-	s.resets.Add(1)
-	return true
-}
 
 func TestHandleActivityTimeout_NoWatcherFiresTimeout(t *testing.T) {
 	sup := New(nil, nil)

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/geoffgodwin/tekhton/internal/diagnose"
 )
@@ -75,52 +74,6 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-// pathFromEnvOr is envOr scoped to filesystem paths — used so rules can read
-// `${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}`-style fallbacks without
-// per-call boilerplate.
-func pathFromEnvOr(key, fallback string) string {
-	return envOr(key, fallback)
-}
-
-// containsLineMatching returns true when any newline-delimited line of `text`
-// contains every needle in `needles`. Used by rules that previously called
-// `grep -q 'a' | grep -q 'b'` style pipelines (e.g. _rule_review_loop counting
-// reviewer verdict lines).
-func containsLineMatching(text string, needles ...string) bool {
-	for _, line := range strings.Split(text, "\n") {
-		ok := true
-		for _, n := range needles {
-			if !strings.Contains(line, n) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			return true
-		}
-	}
-	return false
-}
-
-// countLinesMatching returns the count of newline-delimited lines that match
-// every needle. Bash equivalent: `grep -c 'a' | grep -c 'b'`.
-func countLinesMatching(text string, needles ...string) int {
-	count := 0
-	for _, line := range strings.Split(text, "\n") {
-		ok := true
-		for _, n := range needles {
-			if !strings.Contains(line, n) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			count++
-		}
-	}
-	return count
 }
 
 // quoteTask wraps the task in literal double quotes, mirroring the bash

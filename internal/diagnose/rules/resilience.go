@@ -10,7 +10,6 @@ package rules
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/geoffgodwin/tekhton/internal/diagnose"
@@ -302,14 +301,4 @@ func sectionLineMatches(line, key string) bool {
 	rest := line[idx+len(needle):]
 	rest = strings.TrimLeft(rest, " \t")
 	return strings.HasPrefix(rest, ":")
-}
-
-// projectFilePath is exposed as a helper for callers that want to know the
-// resolved absolute path (rather than just whether the file exists). Used by
-// the preflight rule below.
-func projectFilePath(c *diagnose.Context, rel string) string {
-	if filepath.IsAbs(rel) {
-		return rel
-	}
-	return filepath.Join(projectOrDot(c.ProjectDir), rel)
 }

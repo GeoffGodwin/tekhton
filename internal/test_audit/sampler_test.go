@@ -84,8 +84,8 @@ func TestSampleUnauditedTestFiles_OldestSortedFirst(t *testing.T) {
 	f, _ := os.Create(histPath)
 	for _, r := range rows {
 		raw, _ := json.Marshal(r)
-		f.Write(raw)
-		f.WriteString("\n")
+		_, _ = f.Write(raw)
+		_, _ = f.WriteString("\n")
 	}
 	f.Close()
 

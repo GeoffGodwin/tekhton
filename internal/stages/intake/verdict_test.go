@@ -13,17 +13,6 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/state"
 )
 
-// fakeClarifyHandle records the invocation; production execs `tekhton clarify`.
-type fakeClarifyHandle struct {
-	calls []string
-	err   error
-}
-
-func (f *fakeClarifyHandle) Handle(_ context.Context, reportPath, projectDir string) error {
-	f.calls = append(f.calls, reportPath+"|"+projectDir)
-	return f.err
-}
-
 // TestDispatchOne_NeedsClarityCompleteModeBlocks covers the CompleteMode +
 // NEEDS_CLARITY → halt → blockResult path end-to-end.
 func TestDispatchOne_NeedsClarityCompleteModeBlocks(t *testing.T) {

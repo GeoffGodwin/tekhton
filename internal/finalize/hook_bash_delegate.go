@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 )
 
 // runBashHookFn execs `bash -c "source SCRIPT; FN"` so a Go-native
@@ -68,12 +67,8 @@ func bashDelegateEnv(in *Input) []string {
 	if in.MilestoneDisposition != "" {
 		env = append(env, "_CACHED_DISPOSITION="+in.MilestoneDisposition)
 	}
-	for _, kv := range in.EnvKV {
-		env = append(env, kv)
-	}
-	for _, kv := range in.Env {
-		env = append(env, kv)
-	}
+	env = append(env, in.EnvKV...)
+	env = append(env, in.Env...)
 	return env
 }
 
@@ -83,13 +78,4 @@ func bashDelegateEnv(in *Input) []string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// resolveTekhtonLib joins the tekhton home with a lib path. Returns
-// the empty string when home is unset.
-func resolveTekhtonLib(home, name string) string {
-	if home == "" {
-		return ""
-	}
-	return filepath.Join(home, "lib", name)
 }
