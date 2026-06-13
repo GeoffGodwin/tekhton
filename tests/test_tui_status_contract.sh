@@ -226,23 +226,25 @@ _run_test_E() {
         return 0
     fi
 
+    local tmpout
+    tmpout=$(mktemp)
+    local exit_code=0
+    (cd "${TEKHTON_HOME}" && go test ./internal/tui/... -run TestWriteInitialFieldName -count=1 -v) \
+        > "$tmpout" 2>&1 || exit_code=$?
     local result
-    result=$(cd "${TEKHTON_HOME}" && \
-        go test ./internal/tui/... -run TestWriteInitialFieldName -count=1 -v 2>&1 \
-    ) || true
+    result=$(cat "$tmpout")
+    rm -f "$tmpout"
 
-    if echo "$result" | grep -q "^--- PASS"; then
-        pass "E: TestWriteInitialFieldName passed"
-    elif echo "$result" | grep -q "no test files"; then
+    if echo "$result" | grep -q "no test files\|no tests to run"; then
         skip "E: status_contract_test.go not yet written (run after tester adds it)"
-    elif echo "$result" | grep -q "^--- FAIL"; then
-        fail "E: TestWriteInitialFieldName failed — WriteInitial uses wrong field names"
+    elif [[ $exit_code -eq 0 ]]; then
+        pass "E: TestWriteInitialFieldName passed"
     else
-        skip "E: go test did not run TestWriteInitialFieldName (test may not exist yet)"
+        fail "E: TestWriteInitialFieldName failed — WriteInitial uses wrong field names"
     fi
 }
 
-# ─── Test F: WriteFinal emits complete=true and verdict ──────────────────────
+# ─── Test F: WriteFinal emits complete=true and correct field names ───────────
 # Parallel to E — guards WriteFinal() against future schema drift.
 
 _run_test_F() {
@@ -251,17 +253,21 @@ _run_test_F() {
         return 0
     fi
 
+    local tmpout
+    tmpout=$(mktemp)
+    local exit_code=0
+    (cd "${TEKHTON_HOME}" && go test ./internal/tui/... -run TestWriteFinalFieldName -count=1 -v) \
+        > "$tmpout" 2>&1 || exit_code=$?
     local result
-    result=$(cd "${TEKHTON_HOME}" && \
-        go test ./internal/tui/... -run TestWriteFinalFieldName -count=1 -v 2>&1 \
-    ) || true
+    result=$(cat "$tmpout")
+    rm -f "$tmpout"
 
-    if echo "$result" | grep -q "^--- PASS"; then
-        pass "F: TestWriteFinalFieldName passed"
-    elif echo "$result" | grep -q "^--- FAIL"; then
-        fail "F: TestWriteFinalFieldName failed"
-    else
+    if echo "$result" | grep -q "no test files\|no tests to run"; then
         skip "F: TestWriteFinalFieldName not yet written"
+    elif [[ $exit_code -eq 0 ]]; then
+        pass "F: TestWriteFinalFieldName passed"
+    else
+        fail "F: TestWriteFinalFieldName failed — WriteFinal uses wrong field names"
     fi
 }
 
