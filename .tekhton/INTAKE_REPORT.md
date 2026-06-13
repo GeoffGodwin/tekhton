@@ -2,12 +2,14 @@
 PASS
 
 ## Confidence
-95
+87
 
 ## Reasoning
-- Scope is precisely defined: 16 `.gitkeep` files to create, explicit point-in-time list of 31 lint findings to fix, one pipeline.conf line to update; out-of-scope items are explicitly called out (other empty testdata dirs, coverage/fuzz failures, `.golangci.yml` authoring)
-- Acceptance criteria are fully testable with exact shell commands provided — no vague aspirations; the `find | wc -l` count, `git check-ignore` exit-code check, fresh-clone smoke test, zero-issue lint run, and `! grep -q nolint` are all mechanically verifiable
-- Watch For section proactively resolves the main ambiguities a developer would face: deletion safety for the four `engine_test.go` helpers, intent check for the two unused struct fields, lint version skew (CI arbiter is v1.64.5), and the behavioral inertness of `.gitkeep` under the `\.log$` filter
-- The point-in-time nature of the 31-item lint list is called out explicitly with the instruction to re-run and fix the union after rebasing on m19+ — no guessing required
-- No UI components, no user-facing format changes, no migration section needed; the pipeline.conf change is Tekhton's own self-host config and is explicitly scoped as such
-- Two competent developers would implement this identically: create the files, apply the lint fixes, update one config line
+- Scope is tightly bounded to two TTY-only regressions from the V4 port; in-scope/out-of-scope is explicit ("do not let Goal 2's sidecar rewrite hold Goal 1 hostage")
+- Root cause hypotheses are specific and falsifiable (unconditional teardown trap vs `_TUI_ACTIVE` predicate; Go-writer vs Python-reader schema drift with exact field names called out)
+- Files to modify/create are enumerated; change type (Modify vs Create) is stated for each
+- Acceptance criteria are concrete and machine-checkable: named control sequences (`\e[?1049h/l`, `\e[2J`), minimum subcommand count (≥ 3), no-exception assertion on the contract test, named existing test suites that must not regress
+- The one manual criterion (live smoke) is correctly scoped as manual with a documented rationale ("live rendering isn't unit-testable"), which is acceptable
+- Watch For section covers the two highest-risk implementation mistakes (TTY-only repro invisibility, symmetric teardown, nesting-before-fields audit order, canonical-direction discipline) — these are actionable guards, not vague concerns
+- No new user-facing config keys or file formats introduced; no Migration impact section needed
+- `lib/sidecar_lifecycle.sh` is listed as Modify but does not appear in the CLAUDE.md V3 file tree (TUI files are `lib/tui.sh`, `lib/tui_helpers.sh`, etc.). A developer should verify the actual filename before editing; the milestone content supplies enough context (symmetric teardown, `_TUI_ACTIVE` predicate) to locate the correct file regardless of name. Not a blocker.
