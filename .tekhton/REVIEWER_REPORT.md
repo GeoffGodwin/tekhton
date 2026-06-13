@@ -8,14 +8,16 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/plan_batch.sh:88-94` — LOW security finding from the security agent was not applied: temp files `$_pf`, `$_rf`, `$_zf` are created without umask restriction, making them world-readable when `TEKHTON_SESSION_DIR` falls back to `/tmp`. Fix: `(umask 077; printf '%s' "$prompt" > "$_pf")`.
-- `lib/plan_batch.sh:165-178` — `_plan_batch_emit_tail` awk handles only 4 of 8 standard JSON escape sequences (`\n`, `\t`, `\"`, `\\`). Missing `\r`, `\/`, `\b`, `\f`, `\uXXXX`. Unlikely to matter for markdown planning output but would silently corrupt output containing non-ASCII characters encoded as `\uXXXX` by Go's JSON marshaller.
+- `lib/plan_batch.sh:165-178` (`_plan_batch_emit_tail`) — awk unescape order is wrong for sequences like `\\n`. `gsub(/\\\\/, "\\", line)` must run BEFORE `gsub(/\\n/, ...)` etc.; otherwise a JSON element containing `\\n` (literal backslash + n) decodes as `\<newline>` instead of `\n`. Also missing `\r`, `\b`, `\f`, `\uXXXX`. Low practical impact for markdown prose but silently corrupts code blocks containing literal `\n` or Unicode escapes from Go's JSON marshaller.
+- `lib/plan_batch.sh:399` — `: "$max_turns"` no-op is now redundant; `max_turns` is used in the `_shim_write_request` call on line 445. Harmless — can be removed for clarity.
+- LOW security finding from the security agent (temp files `$_pf`/`$_rf`/`$_zf` are world-readable in `/tmp` fallback) was not auto-applied. Fix: `(umask 077; printf '%s' "$prompt" > "$_pf")` and restrict `$_sd` with `chmod 700`.
 
 ## Coverage Gaps
-- `_plan_batch_emit_tail` has no unit test. The awk JSON unescape logic is non-trivial and warrants a `tests/test_plan_batch.sh` fixture exercising at least the handled escapes and a multi-line `stdout_tail`.
-- No shim-boundary integration test for the new `label → PROVIDER_<LABEL>` routing path through `_call_planning_batch` (e.g., verifying `PROVIDER=codex` skips the `claude` MCP/usage probes and routes through the shim).
+- `_plan_batch_emit_tail` has no unit test. The awk unescape logic is non-trivial; a `tests/test_plan_batch.sh` fixture exercising at least `\n`, `\t`, `\"`, `\\`, and the `\\n` ordering case would prevent silent regressions.
+- No shim-boundary integration test for `label → PROVIDER_<LABEL>` routing through `_call_planning_batch` (e.g., verifying `PROVIDER=codex` skips the `claude` MCP/usage probes).
 
 ## Drift Observations
 - `lib/replan_midrun.sh` sits at 299 lines — 1 line under the 300-line hard ceiling. The next addition forces a split.
 - `lib/common.sh` sits at 291 lines — approaching ceiling.
-- `lib/plan_batch.sh:2`, `stages/plan_generate.sh:17`, and several other sourced `lib/`/`stages/` files have `set -euo pipefail` explicitly, which the reviewer checklist flags as wrong for sourced files (they should inherit from the caller). Pre-existing across multiple files; not introduced by this change.
+- `PROVIDER:-codex,claude` default string appears independently in both `lib/common.sh:check_usage_threshold` and `lib/mcp_resolve.sh:_cli_supports_mcp_config`. If the canonical default changes there are two sites to update; a shared `_provider_includes_claude()` helper would unify them.
+- Several sourced `lib/`/`stages/` files (including `plan_batch.sh:2`) carry `set -euo pipefail` explicitly, which the reviewer checklist flags as wrong for sourced files. Pre-existing pattern, not introduced by m20.
