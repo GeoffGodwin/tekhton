@@ -118,8 +118,6 @@ _call_planning_batch() {
 
 # Pre-create a proper CLAUDE.md on disk (what the agent wrote via Write tool).
 _make_substantive_claude_md "${WORK_DIR}/CLAUDE.md"
-disk_first=$(head -1 "${WORK_DIR}/CLAUDE.md")
-disk_lines=$(wc -l < "${WORK_DIR}/CLAUDE.md")
 
 set +e
 run_plan_generate >/dev/null 2>&1

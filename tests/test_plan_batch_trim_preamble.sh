@@ -123,7 +123,6 @@ input_f='#!/usr/bin/env bash
 ## Section'
 
 output_f=$(printf '%s\n' "$input_f" | _trim_document_preamble)
-first_f=$(printf '%s\n' "$output_f" | head -1)
 # The fast path checks [[ "$first_line" == "#"* ]] which matches `#!/usr/bin/env bash`
 # so the function returns the content unchanged (fast path triggers on any #-prefix).
 # This means the first line stays `#!/usr/bin/env bash`.
