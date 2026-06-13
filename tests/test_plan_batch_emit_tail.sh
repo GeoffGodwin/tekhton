@@ -212,6 +212,39 @@ else
     fail "G: empty stdout_tail array" "output=$(printf '%q' "$output_g") rc=${rc_g}"
 fi
 
+# --- H: \\n ordering — literal backslash-n in JSON must not become a newline -
+# The JSON string "foo\\nbar" represents the 8-char sequence: f,o,o,\,n,b,a,r
+# (a literal backslash followed by 'n', not a newline).
+# The awk in _plan_batch_emit_tail processes JSON escapes sequentially:
+#   gsub(/\\n/, "\n", line)   -- FIRST  (current code)
+#   gsub(/\\\\/, "\\", line)  -- FOURTH (current code)
+# This order is wrong: for "foo\\nbar" (file chars: f,o,o,\,\,n,b,a,r) the
+# first gsub matches the second backslash + n and replaces with newline,
+# producing "foo\<newline>bar" instead of "foo\nbar".
+# Correct order would process \\ BEFORE \n so the double-backslash is reduced
+# to a single backslash that is never mis-matched by the \n rule.
+# NOTE: the reviewer flagged this as a non-blocking ordering bug; this test
+# makes it visible. It is expected to fail on the current implementation.
+RESPONSE_H="${WORK_DIR}/response_h.json"
+cat > "$RESPONSE_H" << 'JSON'
+{
+  "exit_code": 0,
+  "stdout_tail": [
+    "foo\\nbar"
+  ]
+}
+JSON
+
+output_h=$(_plan_batch_emit_tail "$RESPONSE_H")
+# Expected: literal backslash + n between "foo" and "bar" (8 chars)
+# i.e. $'foo\\nbar' in bash quoting
+if [[ "$output_h" == $'foo\\nbar' ]]; then
+    pass "H: JSON \\\\n decoded as literal backslash-n (unescape order correct)"
+else
+    fail "H: JSON \\\\n ordering" \
+        "got: $(printf '%q' "$output_h") — expected literal backslash-n, not a newline"
+fi
+
 # --- summary -----------------------------------------------------------------
 echo ""
 if [[ "$FAIL" -eq 0 ]]; then
