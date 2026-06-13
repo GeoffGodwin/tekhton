@@ -4,15 +4,16 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 247
+- Runs since audit: 248
 =======
-- Runs since audit: 247
+- Runs since audit: 248
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 247
+- Runs since audit: 248
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-13 | "Implement Milestone m24: Carried-forward non-blocking burn-down: redaction, docs rot, ceiling pressure"] [lib/plan_batch.sh:204] Fast-path heading check `[[ "$first_line" == "#"* ]]` matches any `#`-prefixed line (including shell-style comments `#!` or `#word`), not just markdown headings `# `. In practice templates won't start with a bare `#word`, but the check is subtly broader than its comment implies.
 - [ ] [2026-06-12 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] `lib/replan_midrun.sh` sits at 299 lines â 1 line under the 300-line hard ceiling. The next addition forces a split.
 - [ ] [2026-06-12 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] `lib/common.sh` sits at 291 lines â approaching ceiling.
 - [ ] [2026-06-12 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] `lib/plan_batch.sh:2`, `stages/plan_generate.sh:17`, and several other sourced `lib/`/`stages/` files have `set -euo pipefail` explicitly, which the reviewer checklist flags as wrong for sourced files (they should inherit from the caller). Pre-existing across multiple files; not introduced by this change.
