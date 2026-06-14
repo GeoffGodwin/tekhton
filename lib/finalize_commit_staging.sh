@@ -1,22 +1,34 @@
 #!/usr/bin/env bash
 # =============================================================================
-# finalize_commit_staging.sh — Allowlist staging helpers for _do_git_commit
+# finalize_commit_staging.sh — Staging filter helpers for _do_git_commit
 #
 # Sourced by lib/finalize_commit.sh — do not run directly.
 #
-# Provides the three helpers _do_git_commit uses to stage only pipeline-
-# declared files instead of blanket `git add -A`. Split out of
-# finalize_commit.sh (2026-05-29) to keep that file under the 300-line ceiling.
+# S1 (2026-06-14): switched from an ALLOWLIST to a DENYLIST. The old model
+# staged only files matching `_coder_declared_files ∪ _pipeline_bookkeeping_globs`
+# and silently dropped everything else. Because the bookkeeping globs listed
+# internal/, cmd/, tests/, docs/ but NOT lib/, stages/, prompts/, platforms/,
+# any change to the bash pipeline tree the coder didn't explicitly declare was
+# stranded in the working tree (observed: lib/quota_probe.sh dropped across two
+# "successful" milestone commits). It also made the commit file-set diverge
+# from the m27 acceptance file-set — a milestone could be accepted on a change
+# that was then never committed.
 #
-# Expects globals: CODER_SUMMARY_FILE (read).
+# The denylist commits every dirty path EXCEPT pure transients (logs, the
+# session dir, generated venvs). This makes the commit file-set == the
+# substantive working-tree set m27 measures, by construction. The targeted
+# protection that motivated the old allowlist (a stage agent corrupting
+# MANIFEST.cfg) is preserved by _check_manifest_write_guard in finalize_commit.sh.
+#
+# Expects globals: CODER_SUMMARY_FILE (read), TEKHTON_SESSION_DIR (read).
 # =============================================================================
 set -euo pipefail
 
 # _coder_declared_files
 # Echoes the files the coder claimed to write, one per line. Parses backticked
 # paths from "## Files Modified" (or "## Files Created") of CODER_SUMMARY.md.
-# Empty output means the coder didn't declare any files (skeleton placeholder,
-# missing section, or genuinely no work).
+# Retained for commit-message construction and diagnostics; no longer the
+# staging gate. Empty output means the coder didn't declare any files.
 _coder_declared_files() {
     local f="${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
     [ -f "$f" ] || return 0
@@ -32,55 +44,37 @@ _coder_declared_files() {
         || return 0
 }
 
-# _pipeline_bookkeeping_globs
-# Echoes the path prefixes the pipeline itself may legitimately modify
-# (state files, version cache, milestone manifest, CHANGELOG, plus the Go
-# implementation tree). Used together with _coder_declared_files to define
-# the auto-commit allowlist.
+# _commit_transient_globs
+# Echoes the path prefixes the pipeline writes that must NEVER be auto-committed
+# — pure run transients with no source value. Everything NOT matching one of
+# these is committable. Kept deliberately small: adding a path here strands it,
+# which is the failure mode S1 exists to prevent.
 #
-# `internal/`, `cmd/`, and `tests/` were added 2026-06-03 after the m34.2/
-# m35.x auto-advance run stranded ~30 implementation files in the working
-# tree because the agents' CODER_SUMMARY only listed tests + scripts + docs
-# and skipped the actual Go packages. The allowlist filter then refused to
-# stage them. Adding the Go tree as a bookkeeping prefix matches the
-# dogfooding reality: every successful run that writes a `RUN_RESULT.json`
-# saying "complete" probably also produced legit code under `internal/` or
-# `cmd/`, and the alternative (manual commit recovery after every run) is
-# worse than the occasional false positive of catching an unrelated edit.
-_pipeline_bookkeeping_globs() {
+# Note: .tekhton/ (run reports/state) and .claude/milestones/ (manifest +
+# milestone files) are intentionally NOT here — the pipeline versions those.
+# The session dir IS emitted as its repo-relative path prefix (it usually lives
+# under .tekhton/, which is otherwise committable) so its scratch files are not
+# swept into the commit. An absolute session dir simply never matches a
+# repo-relative git path, which is harmless.
+_commit_transient_globs() {
     cat <<'EOF'
-.tekhton/
-.claude/project_version.cfg
-.claude/milestones/MANIFEST.cfg
-.claude/milestones/m
-VERSION
-CHANGELOG.md
-.gitignore
-internal/
-cmd/
-tests/
-testdata/
-scripts/
-docs/
-Makefile
+.claude/logs/
+.claude/indexer-venv/
+.claude/serena/
 EOF
+    local sd="${TEKHTON_SESSION_DIR:-}"
+    sd="${sd#./}"
+    [ -n "$sd" ] && printf '%s/\n' "${sd%/}"
 }
 
-# _is_path_allowed PATH
-# Returns 0 if PATH matches a coder-declared file OR a bookkeeping prefix.
-# Path matching is prefix-based for trailing-slash entries and prefix-anchored
-# for non-extension entries (so ".claude/milestones/m" matches any
-# milestone-named file there).
-_is_path_allowed() {
+# _is_path_committable PATH
+# Returns 0 (commit it) UNLESS PATH matches a transient prefix, in which case
+# returns 1 (skip). All entries are directory prefixes.
+_is_path_committable() {
     local path="$1" entry
     while IFS= read -r entry; do
         [ -z "$entry" ] && continue
-        if [ "$path" = "$entry" ]; then return 0; fi
-        case "$entry" in
-            */) [[ "$path" == "$entry"* ]] && return 0 ;;
-            *)  [[ "$path" == "$entry"* ]] && return 0 ;;
-        esac
-    done < <( _coder_declared_files; _pipeline_bookkeeping_globs )
-    return 1
+        [[ "$path" == "$entry"* ]] && return 1
+    done < <( _commit_transient_globs )
+    return 0
 }
-

@@ -28,10 +28,12 @@ source "${TEKHTON_HOME:-}/lib/finalize_commit_sentinel.sh"
 source "${TEKHTON_HOME:-}/lib/finalize_commit_helpers.sh"
 
 # _do_git_commit MSG
-# Stages pipeline-declared files only (coder-declared ∪ bookkeeping
-# allowlist), runs gitignore safety check, commits. Anything outside that
-# union is left in the working tree with a warning — the old `git add -A`
-# swept up unrelated edits and made commit messages misleading.
+# Stages every dirty path except pure run transients (S1 denylist —
+# _is_path_committable), runs gitignore safety check, commits. This keeps the
+# committed file-set equal to the substantive working-tree set m27 accepts on,
+# so no source change can be stranded (the pre-S1 allowlist dropped lib/,
+# stages/, prompts/ work the coder didn't explicitly declare). The targeted
+# MANIFEST.cfg protection is preserved by _check_manifest_write_guard below.
 # M40: Drains pending inbox before commit.
 _do_git_commit() {
     local msg="$1"
@@ -62,7 +64,7 @@ _do_git_commit() {
 
     local expected=()
     for path in "${dirty_files[@]}"; do
-        if _is_path_allowed "$path"; then
+        if _is_path_committable "$path"; then
             expected+=( "$path" )
         else
             unexpected+=( "$path" )
@@ -70,16 +72,13 @@ _do_git_commit() {
     done
 
     if [ ${#unexpected[@]} -gt 0 ]; then
-        warn "[commit] Skipping ${#unexpected[@]} file(s) not declared by the coder or pipeline bookkeeping:"
-        local u
-        for u in "${unexpected[@]}"; do
-            warn "  - $u"
-        done
-        warn "[commit] Review with \`git status\` and commit manually if intended."
+        # Transients (logs, session dir, venvs) — expected to be skipped, not a
+        # problem. Verbose-only so the normal log isn't noisy.
+        log_verbose "[commit] Skipped ${#unexpected[@]} transient path(s) (logs/session/venv)."
     fi
 
     if [ ${#expected[@]} -eq 0 ]; then
-        warn "[commit] No pipeline-declared files in working tree — nothing to auto-commit."
+        warn "[commit] Only transient paths in working tree — nothing to auto-commit."
         return 0
     fi
 
