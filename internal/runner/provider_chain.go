@@ -152,7 +152,16 @@ func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.
 			}, nil
 		}
 
-		res, err := p.RunAgent(ctx, req)
+		// m22 — apply the attempted provider's capability profile (turn
+		// scaling, prompt clamp, format reinforcement) to a per-attempt copy.
+		// Per-provider so a chain fallthrough to qwen-local adapts even though
+		// the codex attempt did not.
+		attemptReq, clampNote := provider.ProfileFor(p.Name()).Apply(req)
+		if clampNote != "" {
+			fmt.Fprintln(os.Stderr, "[provider-profile] "+clampNote)
+		}
+
+		res, err := p.RunAgent(ctx, attemptReq)
 		lastResult = res
 		lastErr = err
 		prevProvider = p

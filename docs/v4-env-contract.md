@@ -459,7 +459,7 @@ absolute path at emit time).
 
 ### StageEnvV1 runtime fields (not in the pipeline.conf defaults block)
 
-These 11 fields are computed per-run by `internal/runner/env.go::EnvBuilder.Compose`
+These fields are computed per-run by `internal/runner/env.go::EnvBuilder.Compose`
 and `AsKV` and are never read from pipeline.conf. Listed here for
 completeness — they are part of the same contract bash files must guard
 against:
@@ -477,6 +477,7 @@ against:
 | `TIMESTAMP` | `LogContext.Timestamp` (per-attempt) |
 | `LOG_FILE` | `LogContext.LogFile` (per-attempt) |
 | `TEKHTON_SESSION_DIR` | `LogContext.SessionDir` (per-attempt) |
+| `TEKHTON_PROVIDER_CONTEXT_PCT` | m22. `AsKV` exports the first-choice provider's `Profile.ContextBudgetPct` (`provider.ProfileFor`) — **only when non-zero** (e.g. `qwen-local` → `25`). Consumed by `lib/context.sh:check_context_budget` as `${TEKHTON_PROVIDER_CONTEXT_PCT:-${CONTEXT_BUDGET_PCT:-50}}` to shrink prompt assembly pre-render for small local models. Absent for claude/codex (zero profile). |
 
 ## Notes on doc maintenance
 

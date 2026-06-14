@@ -67,6 +67,12 @@ PROVIDER=codex,claude
 # PROVIDER_architect=
 # PROVIDER_docs=
 # PROVIDER_cleanup=
+#
+# Per-provider capability profiles (m22): small local models (qwen-local) get
+# conservative turn/context/prompt adaptation automatically. Override the
+# built-in defaults per provider in `.claude/provider_profiles/<name>.conf`
+# (flat KEY=value: MAX_TURNS_FACTOR, CONTEXT_BUDGET_PCT, MAX_PROMPT_CHARS,
+# FORMAT_REINFORCEMENT). See docs/v5-polyglot.md "Calibrating qwen-local".
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 3: Pipeline Behavior

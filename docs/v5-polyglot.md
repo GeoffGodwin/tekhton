@@ -182,6 +182,55 @@ provider can run:
 tekhton run --milestone mNN --require-tier local
 ```
 
+### Calibrating qwen-local (m22 capability profile)
+
+Every turn budget, context window, and prompt in the pipeline was calibrated
+against Claude. A 32B-class local model at Q4 has a smaller usable context,
+weaker long-horizon planning, and less reliable structured output, so Tekhton
+applies a per-provider **capability profile** to requests routed to
+`qwen-local` (turn scaling, prompt clamp, format reinforcement, and a
+pre-render context-budget shrink). The built-in defaults are **hypotheses, not
+measurements** — record what actually works on your hardware in the override
+file.
+
+**Hardware reference point (the values were chosen for):** RTX 4090 (24 GB),
+Qwen2.5-Coder-32B `Q4_K_M`, ~30k tokens usable context at acceptable
+throughput.
+
+**The knobs (built-in qwen-local defaults):**
+
+| Knob | Default | Effect |
+|------|---------|--------|
+| `MAX_TURNS_FACTOR` | `1.5` | Scales a stage's MaxTurns (local models need more iterations per task). |
+| `CONTEXT_BUDGET_PCT` | `25` | Exported as `TEKHTON_PROVIDER_CONTEXT_PCT`; shrinks prompt assembly *before* render (vs. truncating after). |
+| `MAX_PROMPT_CHARS` | `24000 × CHARS_PER_TOKEN` | Hard request-level clamp; a clamp is logged with original→clamped sizes. |
+| `FORMAT_REINFORCEMENT` | "respond only with valid tool calls / JSON" block | Prepended to the request prompt; empty for models that don't need it. |
+
+**Writing an override file** — `.claude/provider_profiles/qwen-local.conf`
+(gitignored project state; flat `KEY=value`, unknown keys warn-and-skip):
+
+```bash
+MAX_TURNS_FACTOR=2.0
+CONTEXT_BUDGET_PCT=20
+MAX_PROMPT_CHARS=80000
+FORMAT_REINFORCEMENT=Respond with a single tool call. No prose.
+```
+
+**Symptom → knob:**
+
+| Symptom | Adjust |
+|---------|--------|
+| Malformed tool calls / JSON wrapped in prose | strengthen `FORMAT_REINFORCEMENT` |
+| Mid-task amnesia, forgets earlier steps | lower `CONTEXT_BUDGET_PCT` |
+| Chronic MaxTurns exhaustion before completing | raise `MAX_TURNS_FACTOR` |
+| Prompt-clamp log lines on large stages | raise `MAX_PROMPT_CHARS` only if the model still coheres |
+
+**Scope note:** the profile applies per *attempted* provider. In a
+`codex,qwen-local` chain the context budget is exported from the *first*
+provider (codex → no shrink), so a fallthrough to qwen-local runs against a
+codex-sized prompt that only the request-level `MAX_PROMPT_CHARS` clamp
+protects. Accepted in m22 — Tekhton does not re-render mid-chain.
+
 ---
 
 ## Troubleshooting

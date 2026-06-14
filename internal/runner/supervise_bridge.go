@@ -147,6 +147,14 @@ func (r *ProtoAgentRunner) Run(ctx context.Context, req *proto.AgentRequestV1) (
 	if err != nil {
 		return nil, err
 	}
+	// m22 — apply the resolved provider's capability profile. For a single
+	// provider this is the only application point; for a Chain, Name() is
+	// "chain(...)" (zero profile, no-op here) and the chain applies each
+	// provider's profile inside its per-attempt loop.
+	provReq, clampNote := provider.ProfileFor(r.P.Name()).Apply(provReq)
+	if clampNote != "" {
+		fmt.Fprintln(os.Stderr, "[provider-profile] "+clampNote)
+	}
 	provRes, runErr := r.P.RunAgent(ctx, provReq)
 	res := BridgeFromProviderResult(provRes, req)
 	return res, runErr

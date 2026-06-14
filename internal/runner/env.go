@@ -9,6 +9,7 @@ import (
 
 	"github.com/geoffgodwin/tekhton/internal/config"
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/provider"
 )
 
 // EnvBuilder composes the stage / finalize subprocess env from three layers,
@@ -198,7 +199,34 @@ func (b *EnvBuilder) AsKV(env *proto.StageEnvV1) []string {
 			out = append(out, k+"="+env.ConfigKeys[k])
 		}
 	}
+
+	// m22 — provider-aware context budget. When the first-choice provider's
+	// capability profile sets ContextBudgetPct, export it so the bash context
+	// layer (lib/context.sh:check_context_budget) shrinks prompt assembly
+	// before render rather than truncating after. Emitted only when set; the
+	// bash read falls back to CONTEXT_BUDGET_PCT otherwise.
+	if pct := firstProviderContextPct(env.ConfigKeys["PROVIDER"]); pct > 0 {
+		out = append(out, "TEKHTON_PROVIDER_CONTEXT_PCT="+strconv.Itoa(pct))
+	}
 	return out
+}
+
+// firstProviderContextPct returns the ContextBudgetPct of the profile for the
+// first provider named in a (possibly comma-separated) PROVIDER spec. Empty
+// spec defaults to the cost-ranked "codex,claude" default. 0 means no override.
+func firstProviderContextPct(spec string) int {
+	if strings.TrimSpace(spec) == "" {
+		spec = "codex,claude"
+	}
+	first := spec
+	if i := strings.IndexByte(spec, ','); i >= 0 {
+		first = spec[:i]
+	}
+	first = strings.TrimSpace(first)
+	if first == "" {
+		return 0
+	}
+	return provider.ProfileFor(first).ContextBudgetPct
 }
 
 // boolStr renders a bool the way bash scripts expect to read it ("true" /

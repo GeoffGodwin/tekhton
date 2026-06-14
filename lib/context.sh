@@ -97,7 +97,7 @@ log_context_report() {
 
     local window
     window=$(_get_model_window "$model")
-    local budget_pct="${CONTEXT_BUDGET_PCT:-50}"
+    local budget_pct="${TEKHTON_PROVIDER_CONTEXT_PCT:-${CONTEXT_BUDGET_PCT:-50}}"
     local budget_tokens=$(( window * budget_pct / 100 ))
 
     local pct_used=0
@@ -147,7 +147,7 @@ check_context_budget() {
 
     local window
     window=$(_get_model_window "$model")
-    local budget_pct="${CONTEXT_BUDGET_PCT:-50}"
+    local budget_pct="${TEKHTON_PROVIDER_CONTEXT_PCT:-${CONTEXT_BUDGET_PCT:-50}}"
     local budget_tokens=$(( window * budget_pct / 100 ))
 
     if [[ "$total_tokens" -gt "$budget_tokens" ]]; then
