@@ -276,6 +276,11 @@ SEED_CONTRACTS_ENABLED=false
 # substantive (non-artifact) file change. Guards against no-op agents that
 # self-report COMPLETE while leaving the test suite green. Set false to revert.
 # MILESTONE_REQUIRE_SUBSTANTIVE_WORK=true
+# m27/S2: a milestone fails acceptance if a file it declares as Create/Add in
+# its "## Files Modified" table was never created (caught m22 self-completing
+# without building its core deliverable). Declared Modify files not in the
+# changeset are a non-blocking drift note. Set false to revert.
+# MILESTONE_DELIVERABLE_GATE_ENABLED=true
 # MILESTONE_WINDOW_PCT=30
 # MILESTONE_WINDOW_MAX_CHARS=20000
 # MILESTONE_SPLIT_ENABLED=true

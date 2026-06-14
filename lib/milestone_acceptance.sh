@@ -21,6 +21,12 @@ set -euo pipefail
 # the working-tree diff vs HEAD plus untracked files IS the milestone's complete
 # output. A count of 0 means the agent produced no real work — the signal that
 # distinguishes a genuine completion from a no-op self-reported COMPLETE.
+# S2 deliverable-gate helpers (_milestone_declared_files / _milestone_changed_set).
+if ! declare -f _milestone_declared_files >/dev/null 2>&1; then
+    # shellcheck source=milestone_acceptance_deliverable.sh disable=SC1091
+    source "${TEKHTON_HOME}/lib/milestone_acceptance_deliverable.sh"
+fi
+
 _milestone_substantive_file_count() {
     local _session_base
     _session_base=$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")
@@ -231,6 +237,49 @@ check_milestone_acceptance() {
             all_pass=false
         else
             success "Substantive work present (${_subst_count} non-artifact file(s) changed)"
+        fi
+    fi
+
+    # --- Automatable check 6: Declared-deliverable gate (S2) ---
+    # m27 proves SOME file changed; this proves the milestone's DECLARED
+    # deliverables exist. A "Create"/"Add" file that is absent is a hard block
+    # (this is exactly how m22 self-completed without building profile.go). A
+    # declared "Modify" target that wasn't touched is a non-blocking drift note
+    # (the change may legitimately have landed elsewhere). Set
+    # MILESTONE_DELIVERABLE_GATE_ENABLED=false to revert.
+    if [[ "${MILESTONE_MODE:-false}" = true ]] \
+       && [[ "${MILESTONE_DELIVERABLE_GATE_ENABLED:-true}" = true ]]; then
+        local _decl _changed _missing=() _drift=() _dpath _dtype
+        _decl=$(_milestone_declared_files "$milestone_num")
+        if [[ -z "$_decl" ]]; then
+            log "Deliverable gate: no parseable '## Files Modified' table — skipping."
+        else
+            _changed=$(_milestone_changed_set)
+            while IFS=$'\t' read -r _dpath _dtype; do
+                [[ -z "$_dpath" ]] && continue
+                case "$_dtype" in
+                    Delete|delete) continue ;;
+                    Create|create|Add|add)
+                        [[ -e "$_dpath" ]] || _missing+=( "$_dpath" ) ;;
+                    *)
+                        grep -qxF "$_dpath" <<< "$_changed" || _drift+=( "$_dpath" ) ;;
+                esac
+            done <<< "$_decl"
+
+            if [[ ${#_drift[@]} -gt 0 ]]; then
+                warn "Deliverable gate: ${#_drift[@]} declared 'Modify' file(s) not in the changeset (drift, non-blocking): ${_drift[*]}"
+            fi
+            if [[ ${#_missing[@]} -gt 0 ]]; then
+                warn "Acceptance FAILED — milestone ${milestone_num} declares file(s) it never created: ${_missing[*]}"
+                warn "Build the declared deliverables or correct the milestone's Files Modified table. Set MILESTONE_DELIVERABLE_GATE_ENABLED=false to override."
+                if command -v emit_event &>/dev/null; then
+                    emit_event "acceptance_failed_missing_deliverable" "acceptance" \
+                        "milestone=${milestone_num}, missing=${_missing[*]}" "" "" "" >/dev/null 2>&1 || true
+                fi
+                all_pass=false
+            else
+                success "Declared deliverables present"
+            fi
         fi
     fi
 
