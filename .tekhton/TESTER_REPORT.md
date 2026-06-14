@@ -1,107 +1,67 @@
 ## Planned Tests
-- [x] `internal/supervisor/quota_probe_test.go` — m21 probe gating: chain-membership gate and paid-tier degradation
-- [x] `internal/runner/provider_chain_test.go` — m21 paid-fallback gate: block/allow tests + update existing fallthrough tests
-- [x] `internal/preflight/claude_env_test.go` — m21 skip-when-claude-not-in-spec for version check
-- [x] `tests/test_quota_probe_gating.sh` — bash probe gating under PATH-shim claude
-- [x] `tests/test_quota_probe_whitespace.sh` — _quota_probe_spec_includes_claude whitespace-padded entries + _quota_fmt_duration 3600s boundary
+- [x] `internal/preflight/provider_cutover_test.go` — rule matrix: claude-in-spec × tier × override keys (PROVIDER_ALLOW_PAID_FALLBACK, TEKHTON_CLAUDE_PRE_JUNE_15)
+- [x] `tests/test_no_claude_e2e_structure.sh` — structural: e2e self-skip, fixture integrity (pipeline.conf, MANIFEST.cfg, milestone, scripts/audit-raw-claude.sh)
 
 ## Test Run Results
-Passed: 32  Failed: 0
+Passed: 34  Failed: 5
 
-### internal/supervisor/quota_probe_test.go (new file)
-- PASS: TestProbe_ChainMembershipGate_RunnerCalledWhenClaudePresent
-- PASS: TestProbe_ChainMembershipGate_ClaudeInMultiProviderSpec
-- PASS: TestProbe_ChainMembershipGate_DefaultSpecIncludesClaude
-- PASS: TestProbe_PaidTier_VersionProbeAllowedWithoutAllowPaid
-- PASS: TestProbe_PaidTier_AllProbesRunWithAllowPaid/ProbeVersion
-- PASS: TestProbe_PaidTier_AllProbesRunWithAllowPaid/ProbeZeroTurn
-- PASS: TestProbe_PaidTier_AllProbesRunWithAllowPaid/ProbeFallback
-- PASS: TestProbe_PaidTier_SubscriptionTierAllProbesRun/ProbeVersion
-- PASS: TestProbe_PaidTier_SubscriptionTierAllProbesRun/ProbeZeroTurn
-- PASS: TestProbe_PaidTier_SubscriptionTierAllProbesRun/ProbeFallback
-- FAIL: TestProbe_ChainMembershipGate_RunnerNotCalledWhenClaudeAbsent — gate not implemented
-- FAIL: TestProbe_ChainMembershipGate_LocalProviderNotCalled — gate not implemented
-- FAIL: TestProbe_PaidTier_ZeroTurnSkippedWithoutAllowPaid — gate not implemented
-- FAIL: TestProbe_PaidTier_FallbackSkippedWithoutAllowPaid — gate not implemented
-- FAIL: TestProbe_PaidTier_DegradedModeLogsWarning — gate not implemented; log missing "degraded"/"QUOTA_PROBE_ALLOW_PAID" entry
+### internal/preflight/provider_cutover_test.go (new file)
 
-### internal/runner/provider_chain_test.go (modified)
-- PASS: TestChain_RunAgent_FallsThrough (updated: PROVIDER_ALLOW_PAID_FALLBACK=true to preserve pre-m21 intent)
-- PASS: TestChain_RunAgent_AllExhausted (updated: same)
-- PASS: TestChain_RunAgent_PaidFallbackAllowed_ExplicitFlag
-- PASS: TestChain_RunAgent_PaidFallbackGate_SameTierNotBlocked
-- PASS: TestChain_RunAgent_PaidFallbackGate_ApiToApiNotBlocked
-- FAIL: TestChain_RunAgent_PaidFallbackBlocked_DefaultBehavior — gate not implemented; claude called without PROVIDER_ALLOW_PAID_FALLBACK
-- FAIL: TestChain_RunAgent_PaidFallbackBlocked_ErrorNamesEnvKey — gate not implemented; ErrorMessage is empty
+#### cutoverWarnApplies predicate (helper, all PASS)
+- PASS: TestCutoverWarnApplies_NoClaudeInSpec_False
+- PASS: TestCutoverWarnApplies_LocalProviderOnly_False
+- PASS: TestCutoverWarnApplies_ClaudeInSpec_ApiTier_True
+- PASS: TestCutoverWarnApplies_ClaudeInChain_ApiTier_True
+- PASS: TestCutoverWarnApplies_SubscriptionTier_False
+- PASS: TestCutoverWarnApplies_LocalTier_False
+- PASS: TestCutoverWarnApplies_NoTierSet_False
+- PASS: TestCutoverWarnApplies_AllowPaidFallback_False
+- PASS: TestCutoverWarnApplies_PreJune15Override_False
+- PASS: TestCutoverWarnApplies_TierApiCaseInsensitive
 
-### internal/preflight/claude_env_test.go (modified)
-- PASS: TestClaudeEnv_RunsVersionCheckWhenClaudeInProviderSpec
-- FAIL: TestClaudeEnv_SkipsVersionCheckWhenClaudeNotInProviderSpec — gate not implemented; returns StatusPass instead of StatusSkip
-- FAIL: TestClaudeEnv_SkipsVersionCheckWhenLocalProviderOnly — gate not implemented; returns StatusPass instead of StatusSkip
+#### ProviderCutoverCheck.Run() integration (stub not implemented)
+- FAIL: TestProviderCutover_ClaudeApiTier_EmitsWarn — stub Run() returns empty; expected WARN
+- FAIL: TestProviderCutover_ClaudeInChain_ApiTier_EmitsWarn — stub Run() returns empty; expected WARN
+- PASS: TestProviderCutover_NoClaudeInSpec_Silent
+- PASS: TestProviderCutover_AllowPaidFallback_Silent
+- PASS: TestProviderCutover_PreJune15Override_Silent
+- PASS: TestProviderCutover_SubscriptionTier_Silent
+- FAIL: TestProviderCutover_WarnMentionsEnvKeys — stub Run() returns empty; expected WARN detail
 
-### tests/test_quota_probe_gating.sh (new file)
-- PASS: shim infrastructure self-check (direct call)
-- PASS: shim infrastructure self-check (via PATH)
-- PASS: baseline check: claude IS called when PROVIDER=claude
-- PASS: paid-tier gate: version probe IS called at api tier (free probe stays active)
-- PASS: QUOTA_PROBE_ALLOW_PAID=true: zero-turn probe IS called at api tier
-- PASS: QUOTA_PROBE_ALLOW_PAID=true: fallback probe IS called at api tier
-- PASS: subscription tier: zero-turn probe IS called (gate only fires at api tier)
-- FAIL: chain-membership gate: claude not called when PROVIDER=codex — gate not implemented
-- FAIL: chain-membership gate: no probe when PROVIDER=codex,qwen-local — gate not implemented
-- FAIL: paid-tier gate: zero-turn probe not called when tier=api and QUOTA_PROBE_ALLOW_PAID unset — gate not implemented
-- FAIL: paid-tier gate: fallback probe not called when tier=api and QUOTA_PROBE_ALLOW_PAID unset — gate not implemented
+### tests/test_no_claude_e2e_structure.sh (new file)
+- PASS: e2e script exists at tests/test_no_claude_e2e.sh
+- PASS: e2e script has valid bash syntax
+- PASS: e2e self-skips with exit 0 when TEKHTON_E2E=0
+- PASS: e2e prints SKIP message when TEKHTON_E2E=0
+- PASS: e2e self-skips with exit 0 when TEKHTON_E2E is unset
+- PASS: fixture directory exists: tests/fixtures/cutover_project/
+- PASS: fixture file exists: .claude/pipeline.conf
+- PASS: fixture file exists: .claude/agents/coder.md
+- PASS: fixture file exists: .claude/agents/reviewer.md
+- PASS: fixture file exists: .claude/agents/tester.md
+- PASS: fixture file exists: .claude/milestones/MANIFEST.cfg
+- PASS: fixture file exists: .claude/milestones/m01-hello.md
+- PASS: pipeline.conf disables intake agent (not needed for fake-codex run)
+- PASS: pipeline.conf uses TEST_CMD=true (deterministic gate)
+- PASS: pipeline.conf disables security agent
+- PASS: MANIFEST.cfg has m01 entry
+- PASS: MANIFEST.cfg m01 initial status is 'todo'
+- PASS: m01-hello.md references hello.txt (the coder deliverable)
+- PASS: m01-hello.md has Acceptance Criteria section
+- PASS: scripts/audit-raw-claude.sh exists (referenced by e2e assertion)
+- FAIL: docs/cutover-runbook.md missing (m23 Goal 3 not implemented)
+- FAIL: docs/v5-polyglot.md missing cross-link to cutover-runbook.md
 
 ## Bugs Found
-
-**BUG-m21-1**: `internal/supervisor/quota_probe.go` — `probe()` ignores PROVIDER spec; calls runner unconditionally even when claude is absent from the provider chain (e.g. PROVIDER=codex or PROVIDER=qwen-local). Acceptance criterion 1 of m21 requires the function return early without invoking the runner in this case.
-
-**BUG-m21-2**: `internal/supervisor/quota_probe.go` — `probe()` ignores TEKHTON_CLAUDE_TIER and QUOTA_PROBE_ALLOW_PAID; zero-turn and fallback probe kinds run unconditionally at api tier. Acceptance criterion 2 of m21 requires ProbeZeroTurn and ProbeFallback to be skipped when tier==api and QUOTA_PROBE_ALLOW_PAID is not "true". Only ProbeVersion (zero-cost) may run in degraded mode.
-
-**BUG-m21-3**: `internal/supervisor/quota_probe.go` — degraded-mode skip produces no log event. Acceptance criterion 2 requires "Log one line explaining the degraded probe mode." The causal log contains only the normal quota_probe event for the skipped attempt; nothing containing "degraded" or "QUOTA_PROBE_ALLOW_PAID" is emitted.
-
-**BUG-m21-4**: `internal/runner/provider_chain.go` — `RunAgent()` ignores PROVIDER_ALLOW_PAID_FALLBACK; always falls through to higher-cost providers on OutcomeUpstreamError without checking the flag. Acceptance criterion 3 of m21 requires that chain fallthrough from a lower-tier to a TierAPI provider be blocked unless PROVIDER_ALLOW_PAID_FALLBACK=true.
-
-**BUG-m21-5**: `internal/preflight/claude_env.go:92` — `checkClaudeVersion()` ignores PROVIDER spec; runs `claude --version` whenever the binary is discoverable on PATH, even when claude is absent from all stage specs (e.g. PROVIDER=codex, PROVIDER=qwen-local). Acceptance criterion 8 of m21 requires a StatusSkip finding instead of a version check in this case.
-
-**BUG-m21-6**: `internal/config/defaults.go` — QUOTA_PROBE_ALLOW_PAID and PROVIDER_ALLOW_PAID_FALLBACK default entries are missing. Both new m21 config keys must be registered with default values (false) in the defaults table so they are exported in the bash env contract.
+- BUG: [internal/preflight/provider_cutover.go:34] Run() is a no-op stub; never emits WARN when claude is in spec at api tier — m23 Goal 2 not implemented
+- BUG: [docs/cutover-runbook.md] File does not exist — m23 Goal 3 (cutover checklist + stable-promotion procedure) not implemented
+- BUG: [docs/v5-polyglot.md] Missing cross-link to cutover-runbook.md — m23 acceptance criterion 8 not met
 
 ## Files Modified
-- [x] `internal/supervisor/quota_probe_test.go` — new file, 252 lines
-- [x] `internal/runner/provider_chain_test.go` — added 5 new tests, updated 2 existing tests
-- [x] `internal/preflight/claude_env_test.go` — added 3 new tests
-- [x] `tests/test_quota_probe_gating.sh` — new file, 313 lines
-- [x] `tests/test_quota_probe_whitespace.sh` — new file, 12 tests (9 whitespace trim + 3 fmt_duration boundary)
+- [x] `internal/preflight/provider_cutover_test.go`
+- [x] `tests/test_no_claude_e2e_structure.sh`
 
 ## Timing
-- Test executions: 2
-- Approximate total test execution time: 65s
-- Test files written: 1
-
----
-
-## Test Audit Report
-
-### Audit Summary
-Tests audited: 5 files, 32 test functions (15 Go + 12 bash-gating + 5 bash-whitespace)
-Verdict: PASS
-
-### Findings
-
-#### COVERAGE: Go whitespace gate not directly unit-tested
-- File: internal/supervisor/quota_probe_test.go
-- Issue: All Go tests call `probe()` which passes exact provider names (no whitespace) to `probeSpecIncludesClaude`. The whitespace-trim logic at `quota_probe.go:232-235` (`strings.TrimSpace(item)`) has no dedicated Go unit test. The bash `test_quota_probe_whitespace.sh` covers this for the bash implementation, but parity between the Go and bash implementations is only asserted indirectly. A future refactor of the trim logic would not be caught by any Go test.
-- Severity: LOW
-- Action: Add a `TestProbeSpecIncludesClaude` table-driven unit test in `internal/supervisor/quota_probe_test.go` that calls `probeSpecIncludesClaude` directly with whitespace-padded cases (e.g., "codex, claude", " claude", "claude "). No implementation changes needed — the logic is correct, the coverage gap is the issue.
-
-#### EXERCISE: Vacuous TierUsed assertion in process-error test
-- File: internal/runner/provider_chain_test.go:212
-- Issue: `TestChain_RunAgent_ProcessError` asserts `if res != nil && res.TierUsed != ""` to check that TierUsed is not stamped on process error. The current implementation returns `(nil, err)` when the provider returns a non-nil error, so `res == nil` and the inner assertion never evaluates. The assertion is vacuous as written — it passes for the wrong reason (nil guard short-circuits, not an empty TierUsed check). The `err == nil` guard at line 208 does fire correctly.
-- Severity: LOW
-- Action: Add an explicit `if res != nil { t.Fatal("RunAgent on process error: want nil result, got non-nil") }` assertion after the err check to directly verify the nil contract, then remove the compound condition.
-
-#### COVERAGE: _quota_fmt_duration sub-60s path untested
-- File: tests/test_quota_probe_whitespace.sh:129
-- Issue: `_quota_fmt_duration` is tested at 3600s, 7200s, and 3601s only. The branch for inputs < 60s (which emits "${sec}s") is not exercised. The test header explicitly scopes to the 3600s boundary, so this is a deliberate gap rather than an oversight — it is noted here for completeness.
-- Severity: LOW
-- Action: Optional — add `_quota_fmt_duration 30 → 30s` and `_quota_fmt_duration 0 → 0s` cases to complete branch coverage of the duration formatter.
+- Test executions: 5
+- Approximate total test execution time: 15s
+- Test files written: 2
