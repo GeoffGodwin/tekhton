@@ -20,6 +20,12 @@ import (
 // path (supervisor.AgentBinaryEnv); m05's CLI tests relied on the stub
 // path in supervisor.Run, which m06 replaced with a real subprocess
 // launch — every CLI happy-path test needs a launchable binary now.
+//
+// m21: the default provider chain is "codex,claude" which now blocks
+// silent fallthrough to the api-tier claude provider. Pin PROVIDER=claude
+// so the test always exercises the fake claude path the supervisor binary
+// override targets, regardless of whether `codex` is on PATH on the dev
+// machine running the test.
 func useFakeAgent(t *testing.T, mode string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -34,6 +40,7 @@ func useFakeAgent(t *testing.T, mode string) {
 	}
 	t.Setenv(supervisor.AgentBinaryEnv, root)
 	t.Setenv("FAKE_AGENT_MODE", mode)
+	t.Setenv("PROVIDER", "claude")
 }
 
 // runSupervise is a small helper that wires stdin/stdout buffers around the
