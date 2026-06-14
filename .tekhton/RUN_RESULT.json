@@ -1,8 +1,9 @@
 {
   "proto": "tekhton.run.result.v1",
-  "disposition": "success",
+  "disposition": "failure",
   "attempts": 1,
   "agent_calls": 5,
-  "elapsed_secs": 1069,
-  "tests_run": true
+  "elapsed_secs": 327,
+  "recovery": "save_exit",
+  "error_class": "review"
 }

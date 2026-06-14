@@ -2,15 +2,13 @@
 PASS
 
 ## Confidence
-87
+88
 
 ## Reasoning
-- Scope is well-defined: three goals with explicit file tables, and what is explicitly NOT in scope (stable promotion is operator-executed, not code)
-- Acceptance criteria are specific and testable: exact command invocations, observable file artifacts (`hello.txt`, `claude_invocations.log`), concrete sabotage check, table-driven preflight rule assertions
-- Dependency ordering is explicit (m19/m20/m21 required, m22 not) with the technical reason for each dependency stated
-- Watch For section directly addresses the highest-risk implementation areas (fake-codex verdict protocol, finalize regression hotspot, env hygiene, HOME redirection)
-- Fixture milestone content is specified down to the task string ("create file hello.txt with content hello"), removing ambiguity about what the e2e harness actually runs
-- The `TEKHTON_CLAUDE_PRE_JUNE_15` override key is referenced in acceptance criteria but not documented as a new config key — a developer will know to add it, but it is not enumerated in the Files Modified table or the pipeline.conf variable table; low-stakes gap that does not block implementation
-- `scripts/audit-raw-claude.sh` is referenced in Goal 1 assertion 5 without a file-table entry; developer should verify existence or author it, but the intent is unambiguous
-- No UI components; UI testability criterion not applicable
-- No migration impact section needed — new flags (`TEKHTON_CLAUDE_PRE_JUNE_15`, `TEKHTON_E2E`) are opt-in environment overrides, not breaking config changes
+- Scope is tightly bounded: four named goals, six named files, no overlap with other milestones
+- Acceptance criteria are specific and mechanically testable (exact regex input/output, `wc -l ≤270`, byte-identical init output, `go test` and `bash tests/run_tests.sh` pass)
+- Dependency on m19/m21 is declared, and the milestone correctly notes the redaction fix is independent enough to split out as a hotfix if those slip
+- Watch For section pre-empts the two most likely failure modes (over-eager redaction, silent bulk log closure)
+- No user-facing config keys or format changes are introduced, so no Migration Impact section is required
+- No UI components involved; UI testability criterion is not applicable
+- The only minor risk is "retrieve the regex from the m17 security report" — but this is explicitly called out in Watch For with an exact retrieval path (git history of `.tekhton/SECURITY_REPORT.md` around m17 commits), which is sufficient guidance for a competent developer
