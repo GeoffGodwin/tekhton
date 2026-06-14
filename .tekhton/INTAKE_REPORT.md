@@ -5,10 +5,10 @@ PASS
 88
 
 ## Reasoning
-- Scope is precisely defined: four goals with explicit seam locations (file paths and line numbers), a complete file-change table, and a clear dependency chain (m19 only)
-- Acceptance criteria are fully testable: each criterion names the mechanism (fake exec recorder, PATH-shim claude, chain tests with two fake providers), the assertion target (causal event fields, `ErrorSubcategory` string, `TierUsed` non-empty), and the toggle that switches between old and new behavior
-- Ambiguity is minimal: default values for both new config keys are stated, the paid-fallback gate semantics are unambiguous (TierCostRank comparison, `api` tier check, env-key name in error message), and the determinism rule is explicitly called out in Watch For
-- Migration impact for both new keys is distributed across the design section, the pipeline.conf.example file entry, and the Watch For note about the m12 behavior change — the information is present even without a dedicated section
-- Watch For section addresses the most dangerous footguns: date-conditional drift, existing chain tests needing the compat flag, TUI pause panel degraded-mode feed, and budget-cap entanglement
-- Goals are numbered 1, 2, 4, 3 in the Design section (Goal 3 appears after Goal 4) — harmless presentation quirk, both goals are fully specified
-- `scripts/audit-raw-claude.sh` is referenced in an acceptance criterion but not listed in Files Modified; if it is an m21 deliverable rather than a pre-existing artifact a developer should add it to the file list — low risk since the criterion is explicit enough to locate or create it
+- Scope is sharply bounded: the "Watch For" section explicitly names what is NOT in scope (full DESIGN_v5 calibration, capability detection, prompt-based tool injection) — two developers reading this independently would carve the same boundary
+- Files to create and modify are enumerated with change-type labels and descriptions
+- Acceptance criteria are specific and mechanically testable: named function return values, named struct fields, specific line references (`lib/context.sh:100,150`), byte-compare on disk prompt files, two-fake-provider chain test, env-variable presence in stage env
+- Design section provides concrete struct definition, `ProfileFor` semantics, conservative default values, and per-place application rules (inside chain loop, not once up-front) — no guessing required
+- Dependency ordering is declared (m17, m18, m19); the sequencing note calls out the m19 supervise-bridge requirement and the non-blocking nature relative to the June-15 deadline
+- Watch For section pre-empts the three most likely implementation pitfalls (turn-scaling interactions, chain ordering, pre-render vs fallthrough budget)
+- Migration impact is distributed rather than consolidated: new env key is registered in `internal/config/defaults.go` and documented in `docs/v4-env-contract.md`, the override-file mechanism is documented in `docs/v5-polyglot.md`, and `templates/pipeline.conf.example` is in the file list — no information is missing, just not under a dedicated "Migration Impact" header
