@@ -4,15 +4,16 @@
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
-- Runs since audit: 251
+- Runs since audit: 252
 =======
-- Runs since audit: 251
+- Runs since audit: 252
 >>>>>>> Stashed changes
 =======
-- Runs since audit: 251
+- Runs since audit: 252
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-14 | "Implement Milestone m22: qwen-local capability profile: turn/context/format adaptation for 32B-class models"] lib/quota_probe.sh:69-70 â The double-nested parameter expansion trim idiom is correct but opaque; a brief comment (`# trim leading/trailing whitespace`) would help the next reader. Not a blocker.
 - [ ] [2026-06-13 | "Implement Milestone m26: Human-facing terminal output regressions from the Go port (TTY screen-clear + broken TUI)"] [lib/plan_batch.sh:204] Fast-path check `[[ "$first_line" == "#"* ]]` is broader than its doc comment implies: matches any `#`-prefixed line (`#!`, `#word`, `# `), not just top-level markdown headings. The slow-path `grep -n '^# '` is what distinguishes `# ` headings from comments. Harmless in current callers but the comment/behavior discrepancy is worth tracking.
 - [ ] [2026-06-13 | "Implement Milestone m25: CI green: fixture .gitkeep trap + golangci-lint burn-down"] [lib/plan_batch.sh:204] Fast-path check `[[ "$first_line" == "#"* ]]` is broader than its doc comment implies: matches any `#`-prefixed line (`#!`, `#word`, `# `), not just top-level markdown headings. The slow-path `grep -n '^# '` is what distinguishes `# ` headings from comments. Harmless in current callers but the comment/behavior discrepancy is worth tracking.
 - [ ] [2026-06-13 | "Implement Milestone m24: Carried-forward non-blocking burn-down: redaction, docs rot, ceiling pressure"] [lib/plan_batch.sh:204] Fast-path heading check `[[ "$first_line" == "#"* ]]` matches any `#`-prefixed line (including shell-style comments `#!` or `#word`), not just markdown headings `# `. In practice templates won't start with a bare `#word`, but the check is subtly broader than its comment implies.
