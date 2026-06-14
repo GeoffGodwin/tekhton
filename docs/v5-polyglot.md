@@ -6,7 +6,9 @@ auth, troubleshooting tier confusion, and migrating from the pre-m15 implicit
 Claude default.
 
 Related: [v5-provider-seam.md](v5-provider-seam.md) — the Go interface and
-type system behind provider dispatch.
+type system behind provider dispatch. See also
+[cutover-runbook.md](cutover-runbook.md) for the June 15 promotion gate
+and rollback procedure used when moving off `claude --print`.
 
 ---
 

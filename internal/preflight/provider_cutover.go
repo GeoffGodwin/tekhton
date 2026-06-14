@@ -27,10 +27,17 @@ type ProviderCutoverCheck struct{}
 func (ProviderCutoverCheck) Name() string { return "provider_cutover" }
 
 // Run examines the resolved provider spec for billing-tier exposure.
-// TODO: implement m23 Goal 2.
+// When cutoverWarnApplies returns true, emits exactly one WARN finding whose
+// Detail names the suppression env keys so operators know how to resolve it.
 func (ProviderCutoverCheck) Run(_ context.Context, in *Input) Result {
-	_ = in // suppress unused-var lint until implementation lands
-	return Result{}
+	if !cutoverWarnApplies(in) {
+		return Result{}
+	}
+	detail := "claude is in the provider spec at api (metered) tier — runs will incur API charges. " +
+		"Suppress this warning by setting PROVIDER_ALLOW_PAID_FALLBACK=true (explicit opt-in to paid runs) " +
+		"or TEKHTON_CLAUDE_PRE_JUNE_15=true (pre-cutover projects). " +
+		"Switch to PROVIDER=codex or PROVIDER=qwen-local to avoid paid usage."
+	return Result{Findings: []Finding{warn("Provider Cutover (claude api tier)", detail)}}
 }
 
 // cutoverWarnApplies returns true when the provider spec and tier combination
