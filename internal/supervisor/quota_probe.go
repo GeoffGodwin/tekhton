@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -103,7 +104,26 @@ func (s *Supervisor) Probe(ctx context.Context, kind ProbeKind) ProbeResult {
 // probe is the testable workhorse — same shape as Probe but takes the
 // runner as an explicit dep injection. Tests pass a fake; Probe passes
 // runProbeCommand.
+//
+// m21 — Two cost gates run before the runner is invoked:
+//
+//  1. Chain-membership gate: if PROVIDER doesn't contain "claude", the
+//     probe is skipped entirely (a quota pause for codex/qwen-local uses
+//     that provider's own retry-after signal, not a claude probe).
+//
+//  2. Paid-tier gate: when claude's tier is "api" and QUOTA_PROBE_ALLOW_PAID
+//     is unset, ProbeZeroTurn and ProbeFallback (which actually hit the API)
+//     are skipped. ProbeVersion remains active — it's zero-cost.
 func (s *Supervisor) probe(ctx context.Context, kind ProbeKind, runner probeRunner) ProbeResult {
+	if !probeSpecIncludesClaude(os.Getenv("PROVIDER")) {
+		emitProbeDegraded(s.causal, kind, "skipped: claude absent from PROVIDER spec")
+		return ProbeQuotaActive
+	}
+	if probePaidTierBlocked(kind) {
+		emitProbeDegraded(s.causal, kind,
+			"degraded: TEKHTON_CLAUDE_TIER=api and QUOTA_PROBE_ALLOW_PAID unset")
+		return ProbeQuotaActive
+	}
 	if runner == nil {
 		runner = runProbeCommand
 	}
@@ -199,6 +219,51 @@ func isRateLimitStderr(stderr string) bool {
 		}
 	}
 	return false
+}
+
+// probeSpecIncludesClaude reports whether the PROVIDER env spec (which is
+// comma-separated, e.g. "codex,claude") contains the "claude" provider.
+// Empty spec defaults to "codex,claude" so probe behavior matches the m12
+// chain default, which includes claude.
+func probeSpecIncludesClaude(spec string) bool {
+	if strings.TrimSpace(spec) == "" {
+		spec = "codex,claude"
+	}
+	for _, item := range strings.Split(spec, ",") {
+		if strings.TrimSpace(item) == "claude" {
+			return true
+		}
+	}
+	return false
+}
+
+// probePaidTierBlocked reports whether the requested probe kind is blocked
+// by the paid-tier gate. Only ProbeZeroTurn and ProbeFallback (the kinds
+// that actually consume metered API quota) are gated. ProbeVersion is
+// always allowed — it's zero-cost.
+func probePaidTierBlocked(kind ProbeKind) bool {
+	if kind == ProbeVersion {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TEKHTON_CLAUDE_TIER"), "api") &&
+		os.Getenv("QUOTA_PROBE_ALLOW_PAID") != "true" {
+		return true
+	}
+	return false
+}
+
+// emitProbeDegraded emits a causal log entry annotated with a degraded-mode
+// reason so operators can correlate "no probe fired" with the gate that
+// suppressed it.
+func emitProbeDegraded(log *causal.Log, kind ProbeKind, reason string) {
+	if log == nil {
+		return
+	}
+	_, _ = log.Emit(causal.EmitInput{
+		Stage:  "supervisor",
+		Type:   "quota_probe",
+		Detail: fmt.Sprintf("kind=%s %s", kind, reason),
+	})
 }
 
 // emitProbeEvent funnels probe events through a single shape. quota_probe

@@ -85,11 +85,20 @@ func checkClaudeSettingsJSON(in *Input) []Finding {
 // entirely different failure mode — the supervisor will surface it on
 // the first run_agent call).
 //
+// m21 — Goal 4: when the active PROVIDER spec does not include "claude",
+// emit a StatusSkip finding instead of exec'ing the binary. The post-June-15
+// cutover state means a zero-claude run must truly exec zero claude — the
+// preflight liveness check would otherwise fire on every adjacent project.
+//
 // Min version is taken from CLAUDE_MIN_VERSION (default 2.1.140 — the
 // release that introduced `--no-session-persistence` and the
 // permission_denials[] field the V4 supervisor depends on). Bad versions
 // is a comma-separated list in CLAUDE_BAD_VERSIONS (default empty).
 func checkClaudeVersion(in *Input) []Finding {
+	if !providerSpecIncludesClaude(in.GetenvDefault("PROVIDER", "codex,claude")) {
+		return []Finding{skip("Claude CLI version",
+			"PROVIDER spec does not include claude — skipping liveness check.")}
+	}
 	bin := in.GetenvDefault("TEKHTON_CLAUDE_BIN", "claude")
 	if _, err := exec.LookPath(bin); err != nil {
 		return nil
@@ -150,6 +159,20 @@ func compareSemver(a, b string) (int, bool) {
 		}
 	}
 	return 0, true
+}
+
+// providerSpecIncludesClaude reports whether the comma-separated PROVIDER
+// spec contains the "claude" provider. Matches m21's chain-membership gate
+// semantics: the default ("codex,claude") includes claude, a spec like
+// "codex" alone does not, "qwen-local" does not, "codex,claude" does.
+// Whitespace around items is tolerated.
+func providerSpecIncludesClaude(spec string) bool {
+	for _, item := range strings.Split(spec, ",") {
+		if strings.TrimSpace(item) == "claude" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseSemver(v string) ([3]int, bool) {

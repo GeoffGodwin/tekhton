@@ -7,6 +7,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -89,6 +90,7 @@ func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.
 
 	var lastResult *provider.Result
 	var lastErr error
+	var prevProvider provider.Provider
 
 	for _, p := range c.Providers {
 		// Enforce tier limit.
@@ -106,9 +108,31 @@ func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.
 			}
 		}
 
+		// m21 — Goal 2: paid-fallback gate. When falling THROUGH from a
+		// previous provider into one whose tier rank is strictly greater
+		// AND lands on api, require PROVIDER_ALLOW_PAID_FALLBACK=true so a
+		// silent codex→claude(api) fallthrough can't generate a surprise
+		// metered invoice. Same-tier and downward fallthrough are
+		// untouched.
+		if prevProvider != nil && p.Tier() == provider.TierAPI &&
+			provider.TierCostRank(p.Tier()) > provider.TierCostRank(prevProvider.Tier()) &&
+			os.Getenv("PROVIDER_ALLOW_PAID_FALLBACK") != "true" {
+			return &provider.Result{
+				Outcome:          provider.OutcomeUpstreamError,
+				ErrorCategory:    "ENVIRONMENT",
+				ErrorSubcategory: "PAID_FALLBACK_BLOCKED",
+				ErrorMessage: fmt.Sprintf(
+					"chain fallthrough from %q (tier %q) to %q (tier %q) would incur metered API spend; "+
+						"set PROVIDER_ALLOW_PAID_FALLBACK=true to opt in",
+					prevProvider.Name(), prevProvider.Tier(), p.Name(), p.Tier(),
+				),
+			}, nil
+		}
+
 		res, err := p.RunAgent(ctx, req)
 		lastResult = res
 		lastErr = err
+		prevProvider = p
 
 		if err != nil {
 			// Process-level error — stop chain; don't fall through.

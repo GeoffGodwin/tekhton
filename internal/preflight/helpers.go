@@ -159,6 +159,7 @@ func pass(name, detail string) Finding  { return Finding{Name: name, Status: Sta
 func warn(name, detail string) Finding  { return Finding{Name: name, Status: StatusWarn, Detail: detail} }
 func failF(name, detail string) Finding { return Finding{Name: name, Status: StatusFail, Detail: detail} }
 func fixed(name, detail string) Finding { return Finding{Name: name, Status: StatusFixed, Detail: detail} }
+func skip(name, detail string) Finding  { return Finding{Name: name, Status: StatusSkip, Detail: detail} }
 
 // tryFix attempts an auto-remediation command when PREFLIGHT_AUTO_FIX is
 // not disabled. Mirrors bash _pf_try_fix. When the command succeeds we
