@@ -1,98 +1,72 @@
-## Test Audit Report
+## Planned Tests
+- [x] `internal/supervisor/quota_probe_test.go` — m21 probe gating: chain-membership gate and paid-tier degradation
+- [x] `internal/runner/provider_chain_test.go` — m21 paid-fallback gate: block/allow tests + update existing fallthrough tests
+- [x] `internal/preflight/claude_env_test.go` — m21 skip-when-claude-not-in-spec for version check
+- [x] `tests/test_quota_probe_gating.sh` — bash probe gating under PATH-shim claude
 
-### Audit Summary
-Tests audited: 3 files, 12 test functions (3 bash sub-tests in test_tty_no_screen_clear.sh,
-6 bash sub-tests in test_tui_status_contract.sh, 4 Go test functions in status_contract_test.go)
-Verdict: NEEDS_WORK
+## Test Run Results
+Passed: 20  Failed: 13
 
----
+### internal/supervisor/quota_probe_test.go (new file)
+- PASS: TestProbe_ChainMembershipGate_RunnerCalledWhenClaudePresent
+- PASS: TestProbe_ChainMembershipGate_ClaudeInMultiProviderSpec
+- PASS: TestProbe_ChainMembershipGate_DefaultSpecIncludesClaude
+- PASS: TestProbe_PaidTier_VersionProbeAllowedWithoutAllowPaid
+- PASS: TestProbe_PaidTier_AllProbesRunWithAllowPaid/ProbeVersion
+- PASS: TestProbe_PaidTier_AllProbesRunWithAllowPaid/ProbeZeroTurn
+- PASS: TestProbe_PaidTier_AllProbesRunWithAllowPaid/ProbeFallback
+- PASS: TestProbe_PaidTier_SubscriptionTierAllProbesRun/ProbeVersion
+- PASS: TestProbe_PaidTier_SubscriptionTierAllProbesRun/ProbeZeroTurn
+- PASS: TestProbe_PaidTier_SubscriptionTierAllProbesRun/ProbeFallback
+- FAIL: TestProbe_ChainMembershipGate_RunnerNotCalledWhenClaudeAbsent — gate not implemented
+- FAIL: TestProbe_ChainMembershipGate_LocalProviderNotCalled — gate not implemented
+- FAIL: TestProbe_PaidTier_ZeroTurnSkippedWithoutAllowPaid — gate not implemented
+- FAIL: TestProbe_PaidTier_FallbackSkippedWithoutAllowPaid — gate not implemented
+- FAIL: TestProbe_PaidTier_DegradedModeLogsWarning — gate not implemented; log missing "degraded"/"QUOTA_PROBE_ALLOW_PAID" entry
 
-### Findings
+### internal/runner/provider_chain_test.go (modified)
+- PASS: TestChain_RunAgent_FallsThrough (updated: PROVIDER_ALLOW_PAID_FALLBACK=true to preserve pre-m21 intent)
+- PASS: TestChain_RunAgent_AllExhausted (updated: same)
+- PASS: TestChain_RunAgent_PaidFallbackAllowed_ExplicitFlag
+- PASS: TestChain_RunAgent_PaidFallbackGate_SameTierNotBlocked
+- PASS: TestChain_RunAgent_PaidFallbackGate_ApiToApiNotBlocked
+- FAIL: TestChain_RunAgent_PaidFallbackBlocked_DefaultBehavior — gate not implemented; claude called without PROVIDER_ALLOW_PAID_FALLBACK
+- FAIL: TestChain_RunAgent_PaidFallbackBlocked_ErrorNamesEnvKey — gate not implemented; ErrorMessage is empty
 
-#### SCOPE: test_tty_no_screen_clear.sh — Tests A and C assert a guard that does not exist
-- File: tests/test_tty_no_screen_clear.sh:31–66 (Test A), tests/test_tty_no_screen_clear.sh:109–203 (Test C)
-- Issue: Both tests are designed around the premise that `_tui_restore_terminal()` checks
-  `_TUI_ACTIVE` before calling `tput rmcup`. The current implementation in
-  `lib/sidecar_lifecycle.sh:126–130` is unconditional — it calls `tput rmcup`, `tput cnorm`,
-  and `stty icrnl` regardless of `_TUI_ACTIVE`. Test A stubs `tput` and expects rmcup NOT to
-  appear in the call log when `_TUI_ACTIVE=false`. With the current implementation rmcup IS
-  always called, so Test A fails. Test C uses a PTY and will likewise detect `\e[?1049l` in the
-  captured output. Both tests fail in CI. The tester's own report (TESTER_REPORT.md lines 10,12)
-  confirms these failures. The fix described in the test header ("guard every terminal-restore
-  action behind `[[ "${_TUI_ACTIVE:-false}" == "true" ]]`") was never applied to the
-  implementation.
-- Severity: HIGH
-- Action: Apply the `_TUI_ACTIVE` guard to `lib/sidecar_lifecycle.sh::_tui_restore_terminal`
-  (lines 126–130). Change to:
-  ```bash
-  _tui_restore_terminal() {
-      [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
-      tput rmcup 2>/dev/null || true
-      tput cnorm 2>/dev/null || true
-      stty icrnl 2>/dev/null || true
-  }
-  ```
-  Do NOT modify the tests — they encode the correct contract and must stay red until the fix
-  lands.
+### internal/preflight/claude_env_test.go (modified)
+- PASS: TestClaudeEnv_RunsVersionCheckWhenClaudeInProviderSpec
+- FAIL: TestClaudeEnv_SkipsVersionCheckWhenClaudeNotInProviderSpec — gate not implemented; returns StatusPass instead of StatusSkip
+- FAIL: TestClaudeEnv_SkipsVersionCheckWhenLocalProviderOnly — gate not implemented; returns StatusPass instead of StatusSkip
 
-#### SCOPE: status_contract_test.go — Three Go tests fail against current WriteInitial/WriteFinal
-- File: internal/tui/status_contract_test.go:25 (TestWriteInitialFieldName_CurrentAgentStatus),
-  internal/tui/status_contract_test.go:130 (TestWriteInitialFieldName_UsesProtoNotSchema),
-  internal/tui/status_contract_test.go:163 (TestWriteFinalFieldName_CurrentAgentStatus)
-- Issue: The `initialStatus` struct in `internal/tui/status.go:14–28` diverges from both the
-  proto package contract and what Python reads in three concrete ways:
-  1. `status.go:23` — `AgentStatus string \`json:"agent_status"\``. Tests require
-     `"current_agent_status"` (matches `proto.TUIStatusV1Payload.CurrentAgentStatus` at
-     `proto/tui.go:59` and Python `tui_render.py:69,124`).
-  2. `status.go:15` — `Schema string \`json:"schema"\``. Tests require `"proto"` (matches
-     `TUIStatusV1Envelope.Proto` at `proto/tui.go:27` and Python `_read_status()` key lookup).
-  3. `status.go:22` — `RecentEvents []string`. Tests require an array of objects (matching
-     `[]proto.TUIEventEntry`); Python crashes with `AttributeError` on `ev.get("ts")` if any
-     string element is present.
-  All three failing Go tests call the real `WriteInitial`/`WriteFinal` functions and check
-  actual JSON output — assertions are honest. The cascade effect: FAIL verdicts propagate to
-  `test_tui_status_contract.sh` tests E and F (lines 232 and 259), which shell out to
-  `go test -run TestWriteInitialFieldName` / `-run TestWriteFinalFieldName`. Confirmed by
-  tester's own run results (TESTER_REPORT.md lines 18–19, 23–26).
-- Severity: HIGH
-- Action: Eliminate the divergent `initialStatus` struct. Rewrite `WriteInitial` to use
-  `NewState()` (already exists in `state.go:67`) and `SaveAtomic` — the same path
-  `tekhton tui start` uses. `WriteFinal` should likewise mutate a loaded or fresh `State` and
-  call `SaveAtomic`. This collapses both functions onto the production code path, removing the
-  separate struct entirely and making the tests pass.
+### tests/test_quota_probe_gating.sh (new file)
+- PASS: shim infrastructure self-check (direct call)
+- PASS: shim infrastructure self-check (via PATH)
+- PASS: baseline check: claude IS called when PROVIDER=claude
+- PASS: paid-tier gate: version probe IS called at api tier (free probe stays active)
+- PASS: QUOTA_PROBE_ALLOW_PAID=true: zero-turn probe IS called at api tier
+- PASS: QUOTA_PROBE_ALLOW_PAID=true: fallback probe IS called at api tier
+- PASS: subscription tier: zero-turn probe IS called (gate only fires at api tier)
+- FAIL: chain-membership gate: claude not called when PROVIDER=codex — gate not implemented
+- FAIL: chain-membership gate: no probe when PROVIDER=codex,qwen-local — gate not implemented
+- FAIL: paid-tier gate: zero-turn probe not called when tier=api and QUOTA_PROBE_ALLOW_PAID unset — gate not implemented
+- FAIL: paid-tier gate: fallback probe not called when tier=api and QUOTA_PROBE_ALLOW_PAID unset — gate not implemented
 
-#### INTEGRITY: test_tty_no_screen_clear.sh Test B — passes vacuously against current code
-- File: tests/test_tty_no_screen_clear.sh:71–101 (Test B)
-- Issue: Test B verifies that rmcup IS called when `_TUI_ACTIVE=true`. Because the current
-  implementation calls rmcup unconditionally (no guard), Test B passes — but for the wrong
-  reason. It provides no signal that distinguishes "correctly guarded to fire only when active"
-  from "fires unconditionally regardless of _TUI_ACTIVE". After the guard fix in finding 1 is
-  applied, Test B will continue to pass correctly.
-- Severity: LOW
-- Action: No change required. The vacuous-pass issue resolves when finding 1 is fixed. Test B
-  then meaningfully verifies that the guard allows rmcup when _TUI_ACTIVE=true.
+## Bugs Found
 
-#### COVERAGE: test_tui_status_contract.sh — no error-path test for tui append-event
-- File: tests/test_tui_status_contract.sh (Tests B and C)
-- Issue: Tests B and C verify a successfully written event has correct shape. No test covers
-  `tekhton tui append-event` against a missing or corrupt status file. Minor omission.
-- Severity: LOW
-- Action: Consider adding a sub-test that invokes `tekhton tui append-event` without a prior
-  `tui start` (missing status file) and asserts a clean exit with a non-zero code or graceful
-  no-op, to guard against panics on missing state.
+**BUG-m21-1**: `internal/supervisor/quota_probe.go` — `probe()` ignores PROVIDER spec; calls runner unconditionally even when claude is absent from the provider chain (e.g. PROVIDER=codex or PROVIDER=qwen-local). Acceptance criterion 1 of m21 requires the function return early without invoking the runner in this case.
 
----
+**BUG-m21-2**: `internal/supervisor/quota_probe.go` — `probe()` ignores TEKHTON_CLAUDE_TIER and QUOTA_PROBE_ALLOW_PAID; zero-turn and fallback probe kinds run unconditionally at api tier. Acceptance criterion 2 of m21 requires ProbeZeroTurn and ProbeFallback to be skipped when tier==api and QUOTA_PROBE_ALLOW_PAID is not "true". Only ProbeVersion (zero-cost) may run in degraded mode.
 
-### Freshness Sample Assessment (informational — not blocking)
-Files: internal/diagnose/rules/{registry_test.go, resilience_test.go, rules_test.go}
+**BUG-m21-3**: `internal/supervisor/quota_probe.go` — degraded-mode skip produces no log event. Acceptance criterion 2 requires "Log one line explaining the degraded probe mode." The causal log contains only the normal quota_probe event for the skipped attempt; nothing containing "degraded" or "QUOTA_PROBE_ALLOW_PAID" is emitted.
 
-These tests are in good shape and require no action:
-- registry_test.go: The hardcoded 18-rule list is a legitimate parity gate (not an INTEGRITY
-  violation) — it explicitly documents the bash↔Go drift detection intent, and the comment
-  explains the design. TestRules_ReturnsCopy correctly guards against aliased slice mutation.
-- resilience_test.go: Good multi-source coverage across match and no-match paths; uses
-  t.TempDir() for fixture isolation throughout; includes the "ignores .md files" self-trigger
-  guard as an explicit sub-test.
-- rules_test.go: TestParity_AllFixtures reads from testdata/fixtures_v3/ (controlled fixture
-  directory, not mutable pipeline state); correctly pins all env vars with t.Setenv before each
-  sub-test; priority collision tests are load-bearing and non-trivial.
+**BUG-m21-4**: `internal/runner/provider_chain.go` — `RunAgent()` ignores PROVIDER_ALLOW_PAID_FALLBACK; always falls through to higher-cost providers on OutcomeUpstreamError without checking the flag. Acceptance criterion 3 of m21 requires that chain fallthrough from a lower-tier to a TierAPI provider be blocked unless PROVIDER_ALLOW_PAID_FALLBACK=true.
+
+**BUG-m21-5**: `internal/preflight/claude_env.go:92` — `checkClaudeVersion()` ignores PROVIDER spec; runs `claude --version` whenever the binary is discoverable on PATH, even when claude is absent from all stage specs (e.g. PROVIDER=codex, PROVIDER=qwen-local). Acceptance criterion 8 of m21 requires a StatusSkip finding instead of a version check in this case.
+
+**BUG-m21-6**: `internal/config/defaults.go` — QUOTA_PROBE_ALLOW_PAID and PROVIDER_ALLOW_PAID_FALLBACK default entries are missing. Both new m21 config keys must be registered with default values (false) in the defaults table so they are exported in the bash env contract.
+
+## Files Modified
+- [x] `internal/supervisor/quota_probe_test.go` — new file, 252 lines
+- [x] `internal/runner/provider_chain_test.go` — added 5 new tests, updated 2 existing tests
+- [x] `internal/preflight/claude_env_test.go` — added 3 new tests
+- [x] `tests/test_quota_probe_gating.sh` — new file, 313 lines

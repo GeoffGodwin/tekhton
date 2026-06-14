@@ -186,3 +186,96 @@ func assertFindingStatus(t *testing.T, findings []Finding, name string, want Sta
 	}
 	t.Errorf("no finding named %q in result", name)
 }
+
+// ---------------------------------------------------------------------------
+// m21 — Goal 4: gate the preflight claude version check on provider spec
+// ---------------------------------------------------------------------------
+
+// TestClaudeEnv_SkipsVersionCheckWhenClaudeNotInProviderSpec asserts that
+// checkClaudeVersion returns a StatusSkip finding (not nil and not a version
+// result) when PROVIDER is set to a spec that does not include claude.
+//
+// Acceptance criterion 8 of m21: "internal/preflight does not exec claude
+// --version when no resolved stage spec contains claude — checkClaudeVersion
+// returns a skip finding instead."
+//
+// The test creates a fake claude binary on PATH to ensure the binary IS
+// discoverable; the skip must come from the provider-spec gate, not from
+// binary absence.
+func TestClaudeEnv_SkipsVersionCheckWhenClaudeNotInProviderSpec(t *testing.T) {
+	// Create a fake claude binary that exits 0 with a valid version string.
+	fakeDir := t.TempDir()
+	fakeBin := filepath.Join(fakeDir, "claude")
+	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\necho '2.1.146 (Claude Code)'\n"), 0o755); err != nil {
+		t.Fatalf("create fake claude: %v", err)
+	}
+
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Put pipeline.conf as the managed marker.
+	if err := os.WriteFile(filepath.Join(proj, ".claude", "pipeline.conf"), []byte("PROJECT_NAME=test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runClaudeEnv(t, proj, map[string]string{
+		"TEKHTON_CLAUDE_BIN": fakeBin,
+		"PROVIDER":           "codex", // no claude in spec
+	})
+
+	// Must find a "Claude CLI version" finding with StatusSkip.
+	assertFindingStatus(t, got, "Claude CLI version", StatusSkip)
+}
+
+// TestClaudeEnv_RunsVersionCheckWhenClaudeInProviderSpec asserts that when
+// claude IS in the PROVIDER spec, the version check executes normally (happy
+// path). This ensures the gate doesn't over-block.
+func TestClaudeEnv_RunsVersionCheckWhenClaudeInProviderSpec(t *testing.T) {
+	fakeDir := t.TempDir()
+	fakeBin := filepath.Join(fakeDir, "claude")
+	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\necho '2.1.146 (Claude Code)'\n"), 0o755); err != nil {
+		t.Fatalf("create fake claude: %v", err)
+	}
+
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".claude", "pipeline.conf"), []byte("PROJECT_NAME=test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runClaudeEnv(t, proj, map[string]string{
+		"TEKHTON_CLAUDE_BIN": fakeBin,
+		"PROVIDER":           "codex,claude", // claude in spec → check must run
+	})
+
+	// Must find a "Claude CLI version" finding with StatusPass (binary is valid).
+	assertFindingStatus(t, got, "Claude CLI version", StatusPass)
+}
+
+// TestClaudeEnv_SkipsVersionCheckWhenLocalProviderOnly asserts the gate also
+// fires for a local-LLM-only spec ("qwen-local").
+func TestClaudeEnv_SkipsVersionCheckWhenLocalProviderOnly(t *testing.T) {
+	fakeDir := t.TempDir()
+	fakeBin := filepath.Join(fakeDir, "claude")
+	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\necho '2.1.146 (Claude Code)'\n"), 0o755); err != nil {
+		t.Fatalf("create fake claude: %v", err)
+	}
+
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".claude", "pipeline.conf"), []byte("PROJECT_NAME=test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runClaudeEnv(t, proj, map[string]string{
+		"TEKHTON_CLAUDE_BIN": fakeBin,
+		"PROVIDER":           "qwen-local",
+	})
+
+	assertFindingStatus(t, got, "Claude CLI version", StatusSkip)
+}

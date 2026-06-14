@@ -2,14 +2,13 @@
 PASS
 
 ## Confidence
-87
+88
 
 ## Reasoning
-- Scope is tightly bounded to two TTY-only regressions from the V4 port; in-scope/out-of-scope is explicit ("do not let Goal 2's sidecar rewrite hold Goal 1 hostage")
-- Root cause hypotheses are specific and falsifiable (unconditional teardown trap vs `_TUI_ACTIVE` predicate; Go-writer vs Python-reader schema drift with exact field names called out)
-- Files to modify/create are enumerated; change type (Modify vs Create) is stated for each
-- Acceptance criteria are concrete and machine-checkable: named control sequences (`\e[?1049h/l`, `\e[2J`), minimum subcommand count (≥ 3), no-exception assertion on the contract test, named existing test suites that must not regress
-- The one manual criterion (live smoke) is correctly scoped as manual with a documented rationale ("live rendering isn't unit-testable"), which is acceptable
-- Watch For section covers the two highest-risk implementation mistakes (TTY-only repro invisibility, symmetric teardown, nesting-before-fields audit order, canonical-direction discipline) — these are actionable guards, not vague concerns
-- No new user-facing config keys or file formats introduced; no Migration impact section needed
-- `lib/sidecar_lifecycle.sh` is listed as Modify but does not appear in the CLAUDE.md V3 file tree (TUI files are `lib/tui.sh`, `lib/tui_helpers.sh`, etc.). A developer should verify the actual filename before editing; the milestone content supplies enough context (symmetric teardown, `_TUI_ACTIVE` predicate) to locate the correct file regardless of name. Not a blocker.
+- Scope is precisely defined: four goals with explicit seam locations (file paths and line numbers), a complete file-change table, and a clear dependency chain (m19 only)
+- Acceptance criteria are fully testable: each criterion names the mechanism (fake exec recorder, PATH-shim claude, chain tests with two fake providers), the assertion target (causal event fields, `ErrorSubcategory` string, `TierUsed` non-empty), and the toggle that switches between old and new behavior
+- Ambiguity is minimal: default values for both new config keys are stated, the paid-fallback gate semantics are unambiguous (TierCostRank comparison, `api` tier check, env-key name in error message), and the determinism rule is explicitly called out in Watch For
+- Migration impact for both new keys is distributed across the design section, the pipeline.conf.example file entry, and the Watch For note about the m12 behavior change — the information is present even without a dedicated section
+- Watch For section addresses the most dangerous footguns: date-conditional drift, existing chain tests needing the compat flag, TUI pause panel degraded-mode feed, and budget-cap entanglement
+- Goals are numbered 1, 2, 4, 3 in the Design section (Goal 3 appears after Goal 4) — harmless presentation quirk, both goals are fully specified
+- `scripts/audit-raw-claude.sh` is referenced in an acceptance criterion but not listed in Files Modified; if it is an m21 deliverable rather than a pre-existing artifact a developer should add it to the file list — low risk since the criterion is explicit enough to locate or create it

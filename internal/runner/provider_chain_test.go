@@ -3,6 +3,7 @@ package runner_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/provider"
@@ -92,7 +93,13 @@ func TestChain_RunAgent_RecordsTierUsed(t *testing.T) {
 // TestChain_RunAgent_FallsThrough asserts that OutcomeUpstreamError from the
 // first provider causes fallthrough to the second, and TierUsed reflects the
 // second provider's tier.
+//
+// m21 note: the default paid-fallback gate (PROVIDER_ALLOW_PAID_FALLBACK=false)
+// blocks subscription→api fallthrough. This test explicitly opts in so it
+// continues to exercise the fall-through path. See
+// TestChain_RunAgent_PaidFallbackBlocked_DefaultBehavior for the blocking path.
 func TestChain_RunAgent_FallsThrough(t *testing.T) {
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "true") // m21: explicit opt-in for api fallthrough
 	codex := &fixedProvider{name: "codex", tier: provider.TierSubscription, outcome: provider.OutcomeUpstreamError}
 	claude := &fixedProvider{name: "claude", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
 	c := runner.NewChain(codex, claude)
@@ -132,7 +139,11 @@ func TestChain_RunAgent_NoFallthroughOnNonUpstream(t *testing.T) {
 
 // TestChain_RunAgent_AllExhausted asserts that when all providers return
 // UpstreamError, the chain returns the last result.
+//
+// m21 note: PROVIDER_ALLOW_PAID_FALLBACK=true required so the gate doesn't
+// block p1→p2 before p2 gets a chance to exhaust itself.
 func TestChain_RunAgent_AllExhausted(t *testing.T) {
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "true") // m21: both providers exhaust via UpstreamError
 	p1 := &fixedProvider{name: "p1", tier: provider.TierSubscription, outcome: provider.OutcomeUpstreamError}
 	p2 := &fixedProvider{name: "p2", tier: provider.TierAPI, outcome: provider.OutcomeUpstreamError}
 	c := runner.NewChain(p1, p2)
@@ -274,5 +285,119 @@ func TestChain_RunAgent_EmptyProviders(t *testing.T) {
 	}
 	if res.ErrorSubcategory != "EMPTY_CHAIN" {
 		t.Errorf("ErrorSubcategory: want %q, got %q", "EMPTY_CHAIN", res.ErrorSubcategory)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// m21 — paid-fallback gate tests (Goal 2 of m21)
+// ---------------------------------------------------------------------------
+
+// TestChain_RunAgent_PaidFallbackBlocked_DefaultBehavior asserts that when
+// PROVIDER_ALLOW_PAID_FALLBACK is not set (the m21 default), a subscription→api
+// fallthrough is blocked with ErrorSubcategory=PAID_FALLBACK_BLOCKED.
+// Acceptance criterion 5 of m21.
+func TestChain_RunAgent_PaidFallbackBlocked_DefaultBehavior(t *testing.T) {
+	// Unset the flag explicitly to test the default (false) behavior.
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "")
+
+	codex := &fixedProvider{name: "codex", tier: provider.TierSubscription, outcome: provider.OutcomeUpstreamError}
+	claude := &fixedProvider{name: "claude", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(codex, claude)
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+
+	// The chain must stop — not return success — because the api fallthrough is blocked.
+	if err == nil && res != nil && res.Outcome == provider.OutcomeSuccess {
+		t.Error("RunAgent succeeded (claude was called) with default paid-fallback gate; expected block")
+	}
+	if res == nil {
+		t.Fatal("RunAgent: want non-nil result with error details, got nil")
+	}
+	if res.ErrorSubcategory != "PAID_FALLBACK_BLOCKED" {
+		t.Errorf("ErrorSubcategory: want PAID_FALLBACK_BLOCKED, got %q", res.ErrorSubcategory)
+	}
+}
+
+// TestChain_RunAgent_PaidFallbackBlocked_ErrorNamesEnvKey asserts that the
+// error message produced by the paid-fallback gate explicitly names the
+// PROVIDER_ALLOW_PAID_FALLBACK env key so operators know how to unblock.
+// Acceptance criterion 5 of m21: "the error message must name the env key to flip."
+func TestChain_RunAgent_PaidFallbackBlocked_ErrorNamesEnvKey(t *testing.T) {
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "")
+
+	codex := &fixedProvider{name: "codex", tier: provider.TierSubscription, outcome: provider.OutcomeUpstreamError}
+	claude := &fixedProvider{name: "claude", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(codex, claude)
+
+	res, _ := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if res == nil {
+		t.Fatal("RunAgent: want non-nil result, got nil")
+	}
+	if !strings.Contains(res.ErrorMessage, "PROVIDER_ALLOW_PAID_FALLBACK") {
+		t.Errorf("ErrorMessage %q does not name PROVIDER_ALLOW_PAID_FALLBACK", res.ErrorMessage)
+	}
+}
+
+// TestChain_RunAgent_PaidFallbackAllowed_ExplicitFlag asserts that when
+// PROVIDER_ALLOW_PAID_FALLBACK=true, the chain falls through to the api-tier
+// provider and stamps TierUsed correctly.
+// Acceptance criterion 6 of m21.
+func TestChain_RunAgent_PaidFallbackAllowed_ExplicitFlag(t *testing.T) {
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "true")
+
+	codex := &fixedProvider{name: "codex", tier: provider.TierSubscription, outcome: provider.OutcomeUpstreamError}
+	claude := &fixedProvider{name: "claude", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(codex, claude)
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if err != nil {
+		t.Fatalf("RunAgent: unexpected error with PROVIDER_ALLOW_PAID_FALLBACK=true: %v", err)
+	}
+	if res.Outcome != provider.OutcomeSuccess {
+		t.Errorf("Outcome: want Success, got %v", res.Outcome)
+	}
+	if res.TierUsed != provider.TierAPI {
+		t.Errorf("TierUsed: want api (claude won), got %q", res.TierUsed)
+	}
+}
+
+// TestChain_RunAgent_PaidFallbackGate_SameTierNotBlocked asserts that the
+// paid-fallback gate does NOT fire when cost rank stays the same or decreases
+// — only an INCREASE to api is blocked. This covers subscription→subscription
+// and local→local fallthrough paths.
+func TestChain_RunAgent_PaidFallbackGate_SameTierNotBlocked(t *testing.T) {
+	// PROVIDER_ALLOW_PAID_FALLBACK not set (default=false) — same-tier must
+	// still fall through freely.
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "")
+
+	sub1 := &fixedProvider{name: "sub1", tier: provider.TierSubscription, outcome: provider.OutcomeUpstreamError}
+	sub2 := &fixedProvider{name: "sub2", tier: provider.TierSubscription, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(sub1, sub2)
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if err != nil {
+		t.Fatalf("RunAgent: unexpected error for same-tier fallthrough: %v", err)
+	}
+	if res.Outcome != provider.OutcomeSuccess {
+		t.Errorf("Outcome: want Success (same-tier fallthrough), got %v", res.Outcome)
+	}
+}
+
+// TestChain_RunAgent_PaidFallbackGate_ApiToApiNotBlocked asserts that
+// api→api fallthrough (same tier, higher→higher is still the same rank) is
+// not blocked. The gate only fires when the cost rank *increases* to api.
+func TestChain_RunAgent_PaidFallbackGate_ApiToApiNotBlocked(t *testing.T) {
+	t.Setenv("PROVIDER_ALLOW_PAID_FALLBACK", "")
+
+	api1 := &fixedProvider{name: "api1", tier: provider.TierAPI, outcome: provider.OutcomeUpstreamError}
+	api2 := &fixedProvider{name: "api2", tier: provider.TierAPI, outcome: provider.OutcomeSuccess}
+	c := runner.NewChain(api1, api2)
+
+	res, err := c.RunAgent(context.Background(), &provider.Request{Prompt: "test"})
+	if err != nil {
+		t.Fatalf("RunAgent: unexpected error for api→api fallthrough: %v", err)
+	}
+	if res.Outcome != provider.OutcomeSuccess {
+		t.Errorf("Outcome: want Success (api→api fallthrough), got %v", res.Outcome)
 	}
 }
