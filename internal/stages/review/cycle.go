@@ -126,6 +126,22 @@ func runOneCycle(ctx context.Context, cfg *config, budget *reviewparse.CycleBudg
 	out.Report = report
 	log.Info(fmt.Sprintf("Reviewer verdict: %s", report.Verdict))
 
+	// 3b. S3 milestone-purpose gate: fold any NOT_MET acceptance criterion into
+	// a Complex Blocker and downgrade an APPROVED verdict, so a diff that does
+	// not actually satisfy the milestone's criteria cannot be accepted —
+	// regardless of what the reviewer wrote in Verdict/Blockers. No-op when the
+	// reviewer emitted no criteria verdicts (non-milestone runs, or the toggle
+	// off). MILESTONE_AWARE_REVIEW=false reverts.
+	if envBool("MILESTONE_AWARE_REVIEW", true) {
+		if len(report.CriteriaVerdicts) > 0 {
+			log.Info("Acceptance criteria: " + report.CriteriaSummary())
+		}
+		if n := report.EnforceUnmetCriteria(); n > 0 {
+			log.Warn(fmt.Sprintf("S3: %d acceptance criterion(s) NOT_MET — forcing rework (verdict now %s).",
+				n, report.Verdict))
+		}
+	}
+
 	// 4. REPLAN_REQUIRED branch.
 	if report.Verdict == reviewparse.VerdictReplanRequired {
 		decision, err := triggerReplan(ctx, cfg, cfg.ReviewerReportFile)

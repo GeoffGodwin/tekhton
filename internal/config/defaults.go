@@ -279,6 +279,7 @@ var baseDefaults = []defaultRule{
 	{"MILESTONE_AUTO_MIGRATE", lit("true")},
 	{"MILESTONE_REQUIRE_SUBSTANTIVE_WORK", lit("true")},
 	{"MILESTONE_DELIVERABLE_GATE_ENABLED", lit("true")},
+	{"MILESTONE_AWARE_REVIEW", lit("true")},
 	{"MILESTONE_WINDOW_PCT", lit("30")},
 	{"MILESTONE_WINDOW_MAX_CHARS", lit("20000")},
 

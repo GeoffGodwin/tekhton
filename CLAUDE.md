@@ -460,6 +460,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `MILESTONE_AUTO_MIGRATE` | Auto-extract inline milestones on first run (default: true) |
 | `MILESTONE_REQUIRE_SUBSTANTIVE_WORK` | m27. Block marking a milestone done when it produced no substantive (non-artifact) file changes — guards against no-op agents that self-report COMPLETE while the test suite stays green. Set false to revert to pre-m27 behavior. (default: true) |
 | `MILESTONE_DELIVERABLE_GATE_ENABLED` | S2. Fail acceptance if a file the milestone declares as Create/Add in its `## Files Modified` table was never created (catches a milestone self-completing with unrelated work, e.g. m22). Declared Modify files not in the changeset are a non-blocking drift note. Set false to revert. (default: true) |
+| `MILESTONE_AWARE_REVIEW` | S3. In milestone runs the reviewer emits a per-criterion `## Acceptance Criteria Verdicts` section; any `NOT_MET` criterion is folded into a Complex Blocker and an APPROVED verdict is downgraded, forcing rework regardless of the reviewer's verdict. Catches "files exist but don't satisfy the criteria" that S2's existence-check can't. Set false to revert. (default: true) |
 | `REPO_MAP_ENABLED` | Enable tree-sitter repo map generation (default: false) |
 | `REPO_MAP_TOKEN_BUDGET` | Max tokens for repo map output (default: 2048) |
 | `REPO_MAP_CACHE_DIR` | Index cache directory (default: .claude/index) |

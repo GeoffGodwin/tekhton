@@ -54,6 +54,7 @@ type Report struct {
 	NonBlockingNotes  []string
 	CoverageGaps      []string
 	ACPVerdicts       []ACPVerdict
+	CriteriaVerdicts  []CriterionVerdict // S3 — per-acceptance-criterion verdicts
 	DriftObservations []string
 	// SpecialistSection is captured if "## Specialist Blockers" is present;
 	// the bash helper appends that section to the report. Empty when absent.
@@ -101,6 +102,7 @@ const (
 	secNonBlockingNotes   = "## Non-Blocking Notes"
 	secCoverageGaps       = "## Coverage Gaps"
 	secACPVerdicts        = "## ACP Verdicts"
+	secCriteriaVerdicts   = "## Acceptance Criteria Verdicts"
 	secDriftObservations  = "## Drift Observations"
 	secSpecialistBlockers = "## Specialist Blockers"
 	secVerdict            = "## Verdict"
@@ -140,6 +142,8 @@ func parseBody(body string) *Report {
 			r.CoverageGaps = bulletList(accum)
 		case secACPVerdicts:
 			r.ACPVerdicts = parseACPRows(accum)
+		case secCriteriaVerdicts:
+			r.CriteriaVerdicts = parseCriterionRows(accum)
 		case secDriftObservations:
 			r.DriftObservations = bulletList(accum)
 		case secSpecialistBlockers:
@@ -288,8 +292,8 @@ func canonicalHeading(line string) string {
 	trimmed := strings.TrimRight(line, " \t")
 	for _, h := range []string{
 		secComplexBlockers, secSimpleBlockers, secNonBlockingNotes,
-		secCoverageGaps, secACPVerdicts, secDriftObservations,
-		secSpecialistBlockers, secVerdict,
+		secCoverageGaps, secACPVerdicts, secCriteriaVerdicts,
+		secDriftObservations, secSpecialistBlockers, secVerdict,
 	} {
 		if strings.HasPrefix(trimmed, h) {
 			return h

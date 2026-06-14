@@ -160,6 +160,10 @@ APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUIRED | REPLAN_REQUIRED
 
 ## Coverage Gaps
 - item (or 'None')
+{{IF:MILESTONE_BLOCK}}
+## Acceptance Criteria Verdicts
+- <criterion text> — MET | NOT_MET | UNVERIFIABLE — <evidence> (one line per criterion)
+{{ENDIF:MILESTONE_BLOCK}}
 ```
 
 The pipeline parses these exact headings. 'None' must be the literal word None on its own line
@@ -196,6 +200,23 @@ Write your evaluations in {{REVIEWER_REPORT_FILE}} as an additional section:
 
 ACPs that are REJECT or MODIFY count as Complex Blockers (code must be reworked).
 ACPs that are ACCEPT do not block — note them so the architecture doc can be updated.
+
+{{IF:MILESTONE_BLOCK}}
+## Acceptance Criteria Verification — REQUIRED for milestone runs
+
+The active milestone block above lists this milestone's **Acceptance Criteria**.
+Verify EACH criterion against the actual diff (not the coder's summary), and
+write one verdict line per criterion in {{REVIEWER_REPORT_FILE}} under the
+`## Acceptance Criteria Verdicts` heading:
+
+- <criterion text> — MET | NOT_MET | UNVERIFIABLE — <evidence: file:line, test name, or why unverifiable>
+
+Rules:
+- **MET** only when the diff demonstrably satisfies the criterion — cite evidence.
+- **NOT_MET** when the criterion is unsatisfied or its declared deliverable is absent/incomplete/stubbed.
+- **UNVERIFIABLE** only when you genuinely cannot determine it (e.g. it needs a live/manual check).
+- A NOT_MET criterion is a hard failure: the pipeline folds it into a Complex Blocker and forces rework regardless of your Verdict. Never mark a milestone APPROVED while any criterion is NOT_MET.
+{{ENDIF:MILESTONE_BLOCK}}
 
 If there is no `## Architecture Change Proposals` section in {{CODER_SUMMARY_FILE}},
 omit the `## ACP Verdicts` section entirely.

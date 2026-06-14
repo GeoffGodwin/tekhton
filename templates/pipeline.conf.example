@@ -44,6 +44,10 @@ SCOUT_MAX_TURNS=20
 DYNAMIC_TURNS_ENABLED=true
 
 # Milestone mode overrides (uncomment to customize):
+# S3: reviewer verifies each milestone acceptance criterion (MET/NOT_MET/
+# UNVERIFIABLE); a NOT_MET forces rework regardless of the verdict. Set false
+# to revert to verdict-only review.
+# MILESTONE_AWARE_REVIEW=true
 # MILESTONE_MAX_REVIEW_CYCLES=4
 # MILESTONE_CODER_MAX_TURNS=70
 # MILESTONE_JR_CODER_MAX_TURNS=30
