@@ -56,10 +56,42 @@ _quota_detect_probe_mode() {
     log "[quota] Probe mode: fallback (real-cost probe, min-interval ${QUOTA_PROBE_MIN_INTERVAL:-600}s)"
 }
 
+# _quota_probe_spec_includes_claude — m21 chain-membership gate. Returns 0
+# when the PROVIDER spec (comma-separated) names "claude", 1 otherwise.
+# Empty/unset PROVIDER defaults to "codex,claude" (the chain default), which
+# includes claude.
+_quota_probe_spec_includes_claude() {
+    local spec="${PROVIDER:-codex,claude}"
+    local item
+    local -a items
+    IFS=',' read -ra items <<< "$spec"
+    for item in "${items[@]}"; do
+        item="${item#"${item%%[![:space:]]*}"}"  # trim leading/trailing whitespace
+        item="${item%"${item##*[![:space:]]}"}"
+        [[ "$item" == "claude" ]] && return 0
+    done
+    return 1
+}
+
 # _quota_probe — returns 0 if the probe succeeds (quota possibly available),
 # 1 if the probe's stderr matches is_rate_limit_error (still exhausted).
+#
+# m21 — two gates apply before any claude binary is invoked:
+#   1. Chain-membership: skip if PROVIDER spec excludes claude.
+#   2. Paid-tier: skip zero_turn/fallback modes when TEKHTON_CLAUDE_TIER=api
+#      and QUOTA_PROBE_ALLOW_PAID is not "true". Version probe stays active.
 _quota_probe() {
+    if ! _quota_probe_spec_includes_claude; then
+        return 1
+    fi
+
     _quota_detect_probe_mode
+
+    if [[ "${TEKHTON_CLAUDE_TIER:-}" == "api" ]] \
+       && [[ "${QUOTA_PROBE_ALLOW_PAID:-false}" != "true" ]] \
+       && [[ "$_QUOTA_PROBE_MODE" != "version" ]]; then
+        return 1
+    fi
 
     local probe_stderr
     probe_stderr=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/quota_probe_XXXXXX.txt")

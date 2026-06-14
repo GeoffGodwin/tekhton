@@ -49,6 +49,7 @@ func ResolveProvider(stage string) (provider.Provider, error) {
 	if rt := os.Getenv("TEKHTON_REQUIRE_TIER"); rt != "" {
 		chain.RequiredTier = rt
 	}
+	chain.Causal = chainCausalEmitter()
 	return chain, nil
 }
 

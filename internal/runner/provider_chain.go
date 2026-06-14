@@ -19,6 +19,24 @@ var ErrTierLimitExceeded = fmt.Errorf("runner: %w", errTierLimit)
 
 var errTierLimit = fmt.Errorf("tier limit exceeded")
 
+// CausalEmitter receives provider-chain causal events. A nil Chain.Causal is
+// a no-op — the chain works correctly without it, only losing the signal.
+// Package-local (mirrors the same pattern in internal/gates) to avoid an
+// import cycle on a shared causal package.
+type CausalEmitter interface {
+	Emit(eventType string, fields map[string]string)
+}
+
+// CausalFunc adapts a function to CausalEmitter.
+type CausalFunc func(eventType string, fields map[string]string)
+
+// Emit implements CausalEmitter.
+func (f CausalFunc) Emit(eventType string, fields map[string]string) {
+	if f != nil {
+		f(eventType, fields)
+	}
+}
+
 // Chain wraps multiple providers and falls through to the next on
 // OutcomeUpstreamError. On success it records the winning provider's
 // tier in Result.TierUsed.
@@ -30,6 +48,11 @@ type Chain struct {
 	// rejected at RunAgent time with ErrorSubcategory = "TIER_LIMIT_EXCEEDED".
 	// Empty string means no restriction.
 	RequiredTier string
+
+	// Causal, when non-nil, receives a "provider_fallthrough" event each time
+	// the chain abandons a provider (OutcomeUpstreamError) for the next one —
+	// the m21 cost-visibility signal. nil is a no-op.
+	Causal CausalEmitter
 }
 
 // NewChain constructs a chain from the given providers in the order supplied.
@@ -92,7 +115,7 @@ func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.
 	var lastErr error
 	var prevProvider provider.Provider
 
-	for _, p := range c.Providers {
+	for i, p := range c.Providers {
 		// Enforce tier limit.
 		if c.RequiredTier != "" {
 			if provider.TierCostRank(p.Tier()) > provider.TierCostRank(c.RequiredTier) {
@@ -141,6 +164,19 @@ func (c *Chain) RunAgent(ctx context.Context, req *provider.Request) (*provider.
 
 		if res.Outcome == provider.OutcomeUpstreamError {
 			// Retryable upstream failure — fall through to next provider.
+			if c.Causal != nil {
+				fields := map[string]string{
+					"from":              p.Name(),
+					"from_tier":         p.Tier(),
+					"error_category":    res.ErrorCategory,
+					"error_subcategory": res.ErrorSubcategory,
+				}
+				if i+1 < len(c.Providers) {
+					fields["to"] = c.Providers[i+1].Name()
+					fields["to_tier"] = c.Providers[i+1].Tier()
+				}
+				c.Causal.Emit("provider_fallthrough", fields)
+			}
 			continue
 		}
 
