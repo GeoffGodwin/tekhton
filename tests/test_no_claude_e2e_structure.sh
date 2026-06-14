@@ -34,7 +34,7 @@ else
     fail "e2e script missing at tests/test_no_claude_e2e.sh"
 fi
 
-if [[ -x "$E2E_SCRIPT" ]] || bash -n "$E2E_SCRIPT" 2>/dev/null; then
+if bash -n "$E2E_SCRIPT" 2>/dev/null; then
     pass "e2e script has valid bash syntax"
 else
     fail "e2e script has bash syntax errors"

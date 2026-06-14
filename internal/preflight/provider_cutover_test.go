@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +14,8 @@ import (
 
 func TestCutoverWarnApplies_NoClaudeInSpec_False(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":             "codex",
-		"TEKHTON_CLAUDE_TIER":  "api",
+		"PROVIDER":            "codex",
+		"TEKHTON_CLAUDE_TIER": "api",
 	}}
 	if cutoverWarnApplies(in) {
 		t.Error("warn should not apply when claude is absent from spec")
@@ -23,8 +24,8 @@ func TestCutoverWarnApplies_NoClaudeInSpec_False(t *testing.T) {
 
 func TestCutoverWarnApplies_LocalProviderOnly_False(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":             "qwen-local",
-		"TEKHTON_CLAUDE_TIER":  "api",
+		"PROVIDER":            "qwen-local",
+		"TEKHTON_CLAUDE_TIER": "api",
 	}}
 	if cutoverWarnApplies(in) {
 		t.Error("warn should not apply for local-only spec")
@@ -33,8 +34,8 @@ func TestCutoverWarnApplies_LocalProviderOnly_False(t *testing.T) {
 
 func TestCutoverWarnApplies_ClaudeInSpec_ApiTier_True(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":             "claude",
-		"TEKHTON_CLAUDE_TIER":  "api",
+		"PROVIDER":            "claude",
+		"TEKHTON_CLAUDE_TIER": "api",
 	}}
 	if !cutoverWarnApplies(in) {
 		t.Error("warn should apply when claude is in spec at api tier")
@@ -43,8 +44,8 @@ func TestCutoverWarnApplies_ClaudeInSpec_ApiTier_True(t *testing.T) {
 
 func TestCutoverWarnApplies_ClaudeInChain_ApiTier_True(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":             "codex,claude",
-		"TEKHTON_CLAUDE_TIER":  "api",
+		"PROVIDER":            "codex,claude",
+		"TEKHTON_CLAUDE_TIER": "api",
 	}}
 	if !cutoverWarnApplies(in) {
 		t.Error("warn should apply when claude appears in a mixed-chain spec at api tier")
@@ -53,8 +54,8 @@ func TestCutoverWarnApplies_ClaudeInChain_ApiTier_True(t *testing.T) {
 
 func TestCutoverWarnApplies_SubscriptionTier_False(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":             "claude",
-		"TEKHTON_CLAUDE_TIER":  "subscription",
+		"PROVIDER":            "claude",
+		"TEKHTON_CLAUDE_TIER": "subscription",
 	}}
 	if cutoverWarnApplies(in) {
 		t.Error("warn should not apply when tier is subscription (not metered)")
@@ -63,8 +64,8 @@ func TestCutoverWarnApplies_SubscriptionTier_False(t *testing.T) {
 
 func TestCutoverWarnApplies_LocalTier_False(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":             "claude",
-		"TEKHTON_CLAUDE_TIER":  "local",
+		"PROVIDER":            "claude",
+		"TEKHTON_CLAUDE_TIER": "local",
 	}}
 	if cutoverWarnApplies(in) {
 		t.Error("warn should not apply when tier is local")
@@ -84,8 +85,8 @@ func TestCutoverWarnApplies_NoTierSet_False(t *testing.T) {
 
 func TestCutoverWarnApplies_AllowPaidFallback_False(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":                   "claude",
-		"TEKHTON_CLAUDE_TIER":        "api",
+		"PROVIDER":                     "claude",
+		"TEKHTON_CLAUDE_TIER":          "api",
 		"PROVIDER_ALLOW_PAID_FALLBACK": "true",
 	}}
 	if cutoverWarnApplies(in) {
@@ -95,9 +96,9 @@ func TestCutoverWarnApplies_AllowPaidFallback_False(t *testing.T) {
 
 func TestCutoverWarnApplies_PreJune15Override_False(t *testing.T) {
 	in := &Input{Env: map[string]string{
-		"PROVIDER":                    "claude",
-		"TEKHTON_CLAUDE_TIER":         "api",
-		"TEKHTON_CLAUDE_PRE_JUNE_15":  "true",
+		"PROVIDER":                   "claude",
+		"TEKHTON_CLAUDE_TIER":        "api",
+		"TEKHTON_CLAUDE_PRE_JUNE_15": "true",
 	}}
 	if cutoverWarnApplies(in) {
 		t.Error("warn should not apply when TEKHTON_CLAUDE_PRE_JUNE_15=true")
@@ -107,8 +108,8 @@ func TestCutoverWarnApplies_PreJune15Override_False(t *testing.T) {
 func TestCutoverWarnApplies_TierApiCaseInsensitive(t *testing.T) {
 	for _, tier := range []string{"API", "Api", "aPi"} {
 		in := &Input{Env: map[string]string{
-			"PROVIDER":             "claude",
-			"TEKHTON_CLAUDE_TIER":  tier,
+			"PROVIDER":            "claude",
+			"TEKHTON_CLAUDE_TIER": tier,
 		}}
 		if !cutoverWarnApplies(in) {
 			t.Errorf("warn should apply for tier %q (case-insensitive api match)", tier)
@@ -222,14 +223,22 @@ func TestProviderCutover_WarnMentionsEnvKeys(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("expected WARN finding; got none")
 	}
+	var warnSeen bool
 	for _, f := range got {
 		if f.Status != StatusWarn {
 			continue
 		}
-		// The detail must mention at least one of the suppression keys so
-		// the operator knows how to resolve the warning.
-		if f.Detail == "" {
-			t.Error("WARN finding has empty Detail — must mention suppression env keys")
+		warnSeen = true
+		// The detail must NAME the suppression keys so the operator knows how
+		// to resolve the warning — not merely be non-empty.
+		if !strings.Contains(f.Detail, "PROVIDER_ALLOW_PAID_FALLBACK") {
+			t.Errorf("WARN Detail must name PROVIDER_ALLOW_PAID_FALLBACK; got: %q", f.Detail)
 		}
+		if !strings.Contains(f.Detail, "TEKHTON_CLAUDE_PRE_JUNE_15") {
+			t.Errorf("WARN Detail must name TEKHTON_CLAUDE_PRE_JUNE_15; got: %q", f.Detail)
+		}
+	}
+	if !warnSeen {
+		t.Error("expected a StatusWarn finding")
 	}
 }

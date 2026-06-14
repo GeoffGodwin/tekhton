@@ -17,13 +17,11 @@ import (
 //   - Suppressed when TEKHTON_CLAUDE_PRE_JUNE_15=true (explicit pre-cutover opt-out).
 //   - Severity warn; PREFLIGHT_FAIL_ON_WARN=true escalates to blocking.
 //
-// NOTE: This file is a scaffold stub. Run() is not yet implemented.
-// Tests in provider_cutover_test.go document expected behaviour and
-// currently FAIL — see BUG entries in .tekhton/TESTER_REPORT.md.
+// Registered in orchestrator.go checkOrder (after claude_env) so it runs on
+// every preflight pass.
 type ProviderCutoverCheck struct{}
 
-// Name returns the canonical check name. Must be added to checkOrder in
-// orchestrator.go before the check executes in production runs.
+// Name returns the canonical check name. Matches the checkOrder entry.
 func (ProviderCutoverCheck) Name() string { return "provider_cutover" }
 
 // Run examines the resolved provider spec for billing-tier exposure.

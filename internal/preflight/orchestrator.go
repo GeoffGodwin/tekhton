@@ -143,6 +143,7 @@ var checkOrder = []string{
 	"ui_audit",
 	"env",
 	"claude_env",
+	"provider_cutover",
 	"test_cmd",
 	"services_infer",
 	"services",
@@ -160,13 +161,14 @@ func CheckOrder() []string {
 // family means: (1) implement Check in a new file, (2) register the
 // factory here, (3) add the name to checkOrder.
 var goNativeChecks = map[string]func() Check{
-	"foundation":     func() Check { return &FoundationCheck{} },
-	"ui_audit":       func() Check { return &UIConfigCheck{} },
-	"env":            func() Check { return &EnvCheck{} },
-	"claude_env":     func() Check { return &ClaudeEnvCheck{} },
-	"test_cmd":       func() Check { return &TestCmdCheck{} },
-	"services_infer": func() Check { return &ServicesInferCheck{} },
-	"services":       func() Check { return &ServicesCheck{} },
+	"foundation":       func() Check { return &FoundationCheck{} },
+	"ui_audit":         func() Check { return &UIConfigCheck{} },
+	"env":              func() Check { return &EnvCheck{} },
+	"claude_env":       func() Check { return &ClaudeEnvCheck{} },
+	"provider_cutover": func() Check { return &ProviderCutoverCheck{} },
+	"test_cmd":         func() Check { return &TestCmdCheck{} },
+	"services_infer":   func() Check { return &ServicesInferCheck{} },
+	"services":         func() Check { return &ServicesCheck{} },
 }
 
 // Orchestrator owns the registry and run loop. Constructed by
