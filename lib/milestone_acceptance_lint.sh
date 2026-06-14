@@ -130,6 +130,88 @@ _lint_config_has_self_referential_check() {
     echo "Lint: config milestone lacks self-referential check — add a criterion verifying the configuration works within the pipeline."
 }
 
+# _lint_extract_deliverables FILE
+# Echoes the first-column paths of the "## Files Modified" table, one per line.
+# Skips the header/separator rows and pure-Delete rows (a deletion needs no
+# verifying criterion).
+_lint_extract_deliverables() {
+    local file="$1"
+    awk '
+        /^## Files Modified/ { ins=1; next }
+        ins && /^## / { exit }
+        ins && /^\|/ {
+            n=split($0, c, "|"); if (n < 3) next
+            path=c[2]; type=c[3]
+            gsub(/`/, "", path); gsub(/^[ \t]+|[ \t]+$/, "", path)
+            gsub(/^[ \t]+|[ \t]+$/, "", type)
+            if (path=="" || path=="File" || path ~ /^-+$/) next
+            if (tolower(type) ~ /delete/) next
+            print path
+        }
+    ' "$file" 2>/dev/null
+}
+
+# lint_milestone_blocking MILESTONE_FILE
+# S4 — high-confidence, low-false-positive BLOCKING authoring checks. Echoes one
+# finding per line; empty = clean. These fail the --draft write and the
+# standalone gate. Findings:
+#   (a) the file declares Files Modified but has no Acceptance Criteria section;
+#   (b) a vague acceptance criterion with no observable predicate.
+# Per-file coverage is intentionally NOT here — it is advisory
+# (lint_milestone_coverage) because criteria legitimately reference symbols
+# (ProfileFor) rather than filenames (profile.go), so coverage flags would be
+# false-positive-prone as a hard gate. Runtime deliverable existence is enforced
+# by S2 (the deliverable gate) instead.
+lint_milestone_blocking() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    local criteria findings=""
+    criteria=$(_lint_extract_criteria "$file")
+
+    local have_deliverables=false
+    if [[ -n "$(_lint_extract_deliverables "$file")" ]]; then
+        have_deliverables=true
+    fi
+    if [[ "$have_deliverables" = true ]] && [[ -z "$criteria" ]]; then
+        findings+="declares Files Modified but has no '## Acceptance Criteria' section"$'\n'
+    fi
+
+    if [[ -n "$criteria" ]]; then
+        local vague v
+        vague=$(grep -niE 'works? correctly|as expected|handles? edge cases|works? properly|behaves? correctly|where relevant|if needed|and so on|etc\.' <<< "$criteria" || true)
+        while IFS= read -r v; do
+            [[ -z "$v" ]] && continue
+            findings+="vague criterion (use an observable predicate): ${v#*:}"$'\n'
+        done <<< "$vague"
+    fi
+
+    findings="${findings%$'\n'}"
+    [[ -n "$findings" ]] && printf '%s\n' "$findings"
+    return 0
+}
+
+# lint_milestone_coverage MILESTONE_FILE
+# S4 — ADVISORY per-file coverage hint: a Files-Modified deliverable whose path
+# or basename is named in NO acceptance criterion. Surfaced for the author to
+# improve, NOT blocking (criteria may reference a symbol rather than the file).
+lint_milestone_coverage() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    local criteria findings="" d base
+    criteria=$(_lint_extract_criteria "$file")
+    [[ -n "$criteria" ]] || return 0
+    while IFS= read -r d; do
+        [[ -z "$d" ]] && continue
+        base=$(basename "$d")
+        if ! grep -qF "$d" <<< "$criteria" && ! grep -qF "$base" <<< "$criteria"; then
+            findings+="deliverable '${d}' has no verifying acceptance criterion"$'\n'
+        fi
+    done < <(_lint_extract_deliverables "$file")
+    findings="${findings%$'\n'}"
+    [[ -n "$findings" ]] && printf '%s\n' "$findings"
+    return 0
+}
+
 # lint_acceptance_criteria MILESTONE_FILE
 # Main entry point. Returns warning lines (empty if all checks pass).
 lint_acceptance_criteria() {

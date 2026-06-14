@@ -79,6 +79,32 @@ draft_milestones_validate_output() {
         errors=$((errors + 1))
     fi
 
+    # S4 — BLOCKING authoring lint: a vague criterion or deliverables with no
+    # Acceptance Criteria section fails the write so the milestone cannot be
+    # authored mis-specified (high-confidence checks only).
+    if declare -f lint_milestone_blocking &>/dev/null; then
+        local block_findings
+        block_findings=$(lint_milestone_blocking "$file" 2>/dev/null || true)
+        if [[ -n "$block_findings" ]]; then
+            echo "ERROR: $(basename "$file") — milestone lint failed:" >&2
+            while IFS= read -r block_line; do
+                [[ -n "$block_line" ]] && echo "  ${block_line}" >&2
+            done <<< "$block_findings"
+            errors=$((errors + 1))
+        fi
+    fi
+    # S4 — ADVISORY coverage hint (non-blocking).
+    if declare -f lint_milestone_coverage &>/dev/null; then
+        local cov_findings
+        cov_findings=$(lint_milestone_coverage "$file" 2>/dev/null || true)
+        if [[ -n "$cov_findings" ]]; then
+            echo "COVERAGE (advisory): $(basename "$file") — deliverables without a named criterion:" >&2
+            while IFS= read -r cov_line; do
+                [[ -n "$cov_line" ]] && echo "  ${cov_line}" >&2
+            done <<< "$cov_findings"
+        fi
+    fi
+
     # Acceptance criteria quality lint (non-blocking; emitted during authoring
     # so warnings are actionable before the milestone is run). See
     # lib/milestone_acceptance_lint.sh for the rule set.
