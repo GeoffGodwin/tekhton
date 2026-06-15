@@ -151,54 +151,23 @@ check_milestone_acceptance() {
     fi
 
     # --- Automatable check 3: Check for files mentioned in acceptance criteria ---
+    # S5 — read criteria from the active milestone's DAG .md file first; CLAUDE.md
+    # carries no inline milestone criteria under DAG mode, so the pre-S5 read
+    # always came back empty and check 3 silently no-op'd. Fall back to the inline
+    # CLAUDE.md parse for non-DAG projects.
     local criteria_line=""
-    local all_ms_data
-    all_ms_data=$(parse_milestones "$claude_md" 2>/dev/null) || true
-    criteria_line=$(echo "$all_ms_data" | awk -F'|' -v n="$milestone_num" '$1 == n {print $3; exit}')
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" = true ]] \
+       && declare -f _milestone_criteria_semijoined &>/dev/null; then
+        criteria_line=$(_milestone_criteria_semijoined "$milestone_num")
+    fi
+    if [[ -z "$criteria_line" ]]; then
+        local all_ms_data
+        all_ms_data=$(parse_milestones "$claude_md" 2>/dev/null) || true
+        criteria_line=$(echo "$all_ms_data" | awk -F'|' -v n="$milestone_num" '$1 == n {print $3; exit}')
+    fi
 
     if [[ -n "$criteria_line" ]]; then
-        # Look for file-existence criteria (patterns like "file X exists" or "X passes")
-        local has_manual=false
-        IFS=';' read -ra criteria_items <<< "$criteria_line"
-        for item in "${criteria_items[@]}"; do
-            # Trim leading/trailing whitespace
-            item="${item#"${item%%[![:space:]]*}"}"
-            item="${item%"${item##*[![:space:]]}"}"
-
-            if [[ -z "$item" ]]; then
-                continue
-            fi
-
-            # Check if this looks like an automatable file-existence criterion
-            if [[ "$item" =~ (bash[[:space:]]+-n|shellcheck)[[:space:]]+(.*) ]]; then
-                # Syntax check criterion — try to run it
-                local check_target="${BASH_REMATCH[2]}"
-                # Only run if target looks safe (no shell metacharacters)
-                if [[ "$check_target" =~ ^[a-zA-Z0-9_./*-]+$ ]]; then
-                    local check_exit=0
-                    if [[ "$item" =~ ^bash[[:space:]]+-n ]]; then
-                        bash -n "${check_target}" 2>/dev/null || check_exit=$?
-                    fi
-                    if [[ "$check_exit" -eq 0 ]]; then
-                        success "Criterion: ${item}"
-                    else
-                        warn "Criterion FAILED: ${item}"
-                        all_pass=false
-                    fi
-                else
-                    log "MANUAL: ${item}"
-                    has_manual=true
-                fi
-            else
-                # Non-automatable criterion — mark as manual
-                log "MANUAL: ${item}"
-                has_manual=true
-            fi
-        done
-
-        if [[ "$has_manual" = true ]]; then
-            log "(Manual criteria require human verification)"
-        fi
+        _run_automatable_criteria "$criteria_line" || all_pass=false
     fi
 
     # --- Automatable check 4: Docs strict mode — block on unresolved doc findings ---
