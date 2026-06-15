@@ -5,5 +5,6 @@
   "agent_calls": 5,
   "elapsed_secs": 327,
   "recovery": "save_exit",
-  "error_class": "review"
+  "error_class": "review",
+  "tests_run": true
 }
